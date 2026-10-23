@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentación</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span id="brand-name">VantTec Docs</span></a>
+    <button type="button" class="search-btn" id="search-open" aria-label="Buscar">⌕ <span>Buscar</span><kbd>/</kbd></button>
+    <button type="button" class="menu-btn" id="menu-btn" aria-label="Menú" aria-expanded="false">☰</button>
+    <nav class="topnav" id="topnav">
+      <a href="#arquitectura">Arquitectura</a>
+      <a href="#estado">Estado</a>
+      <a href="#paquetes">Paquetes</a>
+      <a href="#paginas">Todas las páginas</a>
+      <a href="wiki/" class="nav-cta">Grafo ↗</a>
+      <a href="/" class="nav-quiet">Proyectos</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="inicio" class="hero">
+      <p class="eyebrow" id="eyebrow"></p>
+      <h1 id="title">Cargando…</h1>
+      <p class="lead" id="summary"></p>
+      <dl class="stats">
+        <div><dt>Páginas</dt><dd id="stat-pages">—</dd></div>
+        <div><dt>Afirmaciones verificadas</dt><dd id="stat-claims">—</dd></div>
+        <div><dt>Diagramas</dt><dd id="stat-diagrams">—</dd></div>
+        <div><dt>Commit publicado</dt><dd id="stat-commit">—</dd></div>
+      </dl>
+    </section>
+
+    <section id="arquitectura" class="block">
+      <div class="block-head">
+        <h2>Arquitectura</h2>
+        <div class="block-actions">
+          <select id="diagram-picker" aria-label="Elegir diagrama"></select>
+          <a id="diagram-open" class="btn" target="_blank" rel="noopener">Pantalla completa ↗</a>
+        </div>
+      </div>
+      <p class="hint">Diagrama interactivo (Archify): arrastra para moverte, rueda o pellizco para zoom, clic en un nodo para ver su código.</p>
+      <div class="frame frame-diagram">
+        <iframe id="diagram-frame" title="Diagrama de arquitectura" loading="lazy"></iframe>
+        <button type="button" class="frame-shield" id="diagram-shield">Toca para interactuar con el diagrama</button>
+      </div>
+    </section>
+
+    <section id="estado" class="block">
+      <div class="block-head"><h2>Estado real del código</h2><a class="btn" data-page="operations/estado.md">Abrir página</a></div>
+      <article class="prose" id="estado-body"><p class="muted">Cargando…</p></article>
+    </section>
+
+    <section id="paquetes" class="block">
+      <div class="block-head"><h2>Paquetes</h2></div>
+      <div class="cards" id="package-cards"></div>
+    </section>
+
+    <section id="empezar" class="block">
+      <div class="block-head"><h2>Empezar</h2></div>
+      <article class="prose" id="quickstart-body"><p class="muted">Cargando…</p></article>
+    </section>
+
+    <section id="paginas" class="block">
+      <div class="block-head">
+        <h2>Todas las páginas</h2>
+        <a class="btn btn-primary" href="wiki/" target="_blank" rel="noopener">Explorar el grafo ↗</a>
+      </div>
+      <div class="page-list" id="page-list"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>
+      <h3>¿Cómo se actualiza?</h3>
+      <ol>
+        <li>Se edita <code>openwiki/</code> en el repo del proyecto (a mano o con <code>/actualizar-docs</code>), o se agrega un HTML de Archify en <code>docs/arch/</code>.</li>
+        <li>El CI <code>wiki-claims</code> confirma que las citas siguen apuntando al código.</li>
+        <li>Con el merge a <code>main</code>, el repo avisa al portal y este se reconstruye.</li>
+      </ol>
+    </div>
+    <p class="muted" id="build-info"></p>
+  </footer>
+
+  <dialog id="reader" class="reader">
+    <div class="reader-bar">
+      <div class="reader-head">
+        <span id="reader-title"></span>
+        <span class="reader-meta" id="reader-meta"></span>
+      </div>
+      <div class="reader-actions">
+        <a id="reader-graph" class="btn btn-small" target="_blank" rel="noopener">En el grafo ↗</a>
+        <a id="reader-source" class="btn btn-small" target="_blank" rel="noopener">Fuente ↗</a>
+        <button type="button" id="reader-close" aria-label="Cerrar">✕</button>
+      </div>
+    </div>
+    <article class="prose" id="reader-body"></article>
+  </dialog>
+
+  <dialog id="search" class="search">
+    <input type="search" id="search-input" placeholder="Buscar en la documentación…" autocomplete="off">
+    <ul id="search-results"></ul>
+  </dialog>
+</body>
+</html>

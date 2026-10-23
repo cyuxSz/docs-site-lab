@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VantTec · Documentación</title>
+  <meta name="description" content="Portal de documentación de los proyectos de software de VantTec.">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/home.js" defer></script>
+</head>
+<body class="home">
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>VantTec Docs</a>
+    <nav class="topnav">
+      <span class="user" id="user"></span>
+      <a href="/auth/logout" class="nav-quiet">Salir</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Portal de documentación</p>
+      <h1>Cómo funciona cada proyecto</h1>
+      <p class="lead">Arquitectura, estado real del código y wiki de cada repositorio. Todo se genera desde los propios repos: cada afirmación enlaza a la línea de código que la respalda.</p>
+    </section>
+
+    <section class="block">
+      <div class="block-head"><h2>Proyectos</h2></div>
+      <div class="cards cards-wide" id="projects"><p class="muted">Cargando…</p></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>
+      <h3>¿Cómo se actualiza?</h3>
+      <ol>
+        <li>Cada repo guarda su documentación en <code>openwiki/</code> y <code>docs/arch/</code>, junto al código.</li>
+        <li>El CI <code>wiki-claims</code> confirma que las citas siguen apuntando al código.</li>
+        <li>Al hacer merge a <code>main</code>, el repo avisa a este portal y se reconstruye solo.</li>
+      </ol>
+    </div>
+    <p class="muted" id="build-info"></p>
+  </footer>
+</body>
+</html>

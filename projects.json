@@ -1,0 +1,17 @@
+[
+  {
+    "id": "uuv",
+    "name": "UUV · uuv_software",
+    "summary": "Vehículo submarino autónomo: control, navegación, visión, misiones y simulación en ROS 2.",
+    "repo": "cyuxSz/uuv-docs-lab",
+    "branch": "main",
+    "note": "Copia de prueba de vanttec/uuv_software"
+  },
+  {
+    "id": "proyecto-x",
+    "name": "Proyecto X",
+    "summary": "Proyecto ficticio con el que se probaron las herramientas de documentación.",
+    "repo": "cyuxSz/docs-lab-proyecto-x",
+    "branch": "main"
+  }
+]
