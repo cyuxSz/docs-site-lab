@@ -80,9 +80,14 @@ async function isAllowed(login, token) {
   if (users.includes(login.toLowerCase())) return true;
   const org = process.env.ALLOWED_ORG;
   if (!org) return false;
+  // Si la org aprobó la OAuth App, esto ve también a los miembros con membresía privada.
   const res = await gh(`/user/memberships/orgs/${encodeURIComponent(org)}`, token);
-  if (!res.ok) return false;
-  return (await res.json()).state === "active";
+  if (res.ok && (await res.json()).state === "active") return true;
+  // Si la org restringe apps de terceros, solo se pueden ver los miembros con membresía pública.
+  const pub = await fetch(`https://api.github.com/orgs/${encodeURIComponent(org)}/public_members/${encodeURIComponent(login)}`, {
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "docs-site-lab" },
+  });
+  return pub.status === 204;
 }
 
 export default async function middleware(request) {
@@ -118,7 +123,7 @@ export default async function middleware(request) {
     if (!token) return page(401, "No se pudo iniciar sesión", 'GitHub no devolvió un token. <a href="/auth/login">Reintentar</a>.');
     const user = await (await gh("/user", token)).json();
     if (!user.login || !(await isAllowed(user.login, token))) {
-      return page(403, "Sin acceso", `@${user.login || "?"} no pertenece a ${process.env.ALLOWED_ORG || "la lista de acceso"}. Si sí perteneces, pide a un admin de la org que apruebe la app o que te agregue a ALLOWED_USERS.`);
+      return page(403, "Sin acceso", `No se pudo confirmar que @${user.login || "?"} pertenece a ${process.env.ALLOWED_ORG || "la lista de acceso"}. Si sí perteneces, haz pública tu membresía en <a href="https://github.com/orgs/${process.env.ALLOWED_ORG}/people">la página de miembros de la org</a> o pide a un admin que apruebe la app, y <a href="/auth/login">vuelve a intentar</a>.`);
     }
     const session = await sign({ login: user.login, exp: Date.now() + SESSION_DAYS * 864e5 });
     const target = back.startsWith("/") && !back.startsWith("//") ? back : "/";
