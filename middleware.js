@@ -6,6 +6,10 @@
 //   SESSION_SECRET                          32+ caracteres aleatorios para firmar la cookie
 //   ALLOWED_ORG                             p. ej. vanttec (requiere que la org permita la OAuth App)
 //   ALLOWED_USERS                           opcional, logins separados por coma (respaldo si la org restringe apps)
+//   PRODUCTION_HOST                         opcional; por defecto VERCEL_PROJECT_PRODUCTION_URL (p. ej. docs-site-lab.vercel.app)
+//
+// Los Preview tienen otro dominio y GitHub solo acepta el callback de producción: el preview manda a producción
+// a iniciar sesión y recibe de vuelta un pase firmado de 60 s (/auth/handoff) que canjea por su propia cookie.
 import { next } from "@vercel/functions";
 
 export const config = {
@@ -14,6 +18,8 @@ export const config = {
 
 const COOKIE = "docs_session";
 const SESSION_DAYS = 7;
+const HANDOFF_MS = 60_000;
+const PROD_HOST = process.env.PRODUCTION_HOST || process.env.VERCEL_PROJECT_PRODUCTION_URL || "";
 const enc = new TextEncoder();
 
 const b64url = (bytes) => Buffer.from(bytes).toString("base64url");
@@ -69,6 +75,20 @@ function page(status, title, message) {
   return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
+// Solo se entrega el pase a previews del mismo proyecto: https://<proyecto>-<algo>.vercel.app
+function isPreviewOrigin(origin) {
+  if (!PROD_HOST || !origin) return false;
+  try {
+    const u = new URL(origin);
+    const project = PROD_HOST.split(".")[0];
+    return u.protocol === "https:" && u.origin === origin && u.hostname.endsWith(".vercel.app") && u.hostname.startsWith(`${project}-`);
+  } catch {
+    return false;
+  }
+}
+
+const safeTarget = (back) => (back && back.startsWith("/") && !back.startsWith("//") ? back : "/");
+
 async function gh(path, token) {
   return fetch(`https://api.github.com${path}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "docs-site-lab" },
@@ -101,18 +121,30 @@ export default async function middleware(request) {
   const jar = cookies(request);
 
   if (path === "/auth/login") {
+    const back = safeTarget(url.searchParams.get("next"));
+    if (process.env.VERCEL_ENV === "preview" && PROD_HOST && url.host !== PROD_HOST) {
+      const prod = new URL(`https://${PROD_HOST}/auth/login`);
+      prod.searchParams.set("next", back);
+      prod.searchParams.set("preview", url.origin);
+      return redirect(prod.toString());
+    }
+    const preview = url.searchParams.get("preview");
     const state = b64url(crypto.getRandomValues(new Uint8Array(24)));
-    const back = url.searchParams.get("next") || "/";
     const auth = new URL("https://github.com/login/oauth/authorize");
     auth.searchParams.set("client_id", GITHUB_CLIENT_ID);
     auth.searchParams.set("redirect_uri", `${url.origin}/auth/callback`);
     auth.searchParams.set("scope", "read:org");
     auth.searchParams.set("state", state);
-    return redirect(auth.toString(), [setCookie("oauth_state", `${state}|${back}`, 600)]);
+    const pending = JSON.stringify({ state, back, preview: isPreviewOrigin(preview) ? preview : null });
+    return redirect(auth.toString(), [setCookie("oauth_state", pending, 600)]);
   }
 
   if (path === "/auth/callback") {
-    const [state, back = "/"] = (jar.oauth_state || "").split("|");
+    let pending = {};
+    try {
+      pending = JSON.parse(jar.oauth_state || "{}");
+    } catch {}
+    const { state, back, preview } = pending;
     if (!state || url.searchParams.get("state") !== state) return page(400, "Sesión expirada", 'Vuelve a <a href="/auth/login">iniciar sesión</a>.');
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
@@ -126,14 +158,30 @@ export default async function middleware(request) {
       return page(403, "Sin acceso", `No se pudo confirmar que @${user.login || "?"} pertenece a ${process.env.ALLOWED_ORG || "la lista de acceso"}. Si sí perteneces, haz pública tu membresía en <a href="https://github.com/orgs/${process.env.ALLOWED_ORG}/people">la página de miembros de la org</a> o pide a un admin que apruebe la app, y <a href="/auth/login">vuelve a intentar</a>.`);
     }
     const session = await sign({ login: user.login, exp: Date.now() + SESSION_DAYS * 864e5 });
-    const target = back.startsWith("/") && !back.startsWith("//") ? back : "/";
-    return redirect(target, [setCookie(COOKIE, session, SESSION_DAYS * 86400), setCookie("oauth_state", "", 0)]);
+    const done = [setCookie(COOKIE, session, SESSION_DAYS * 86400), setCookie("oauth_state", "", 0)];
+    if (isPreviewOrigin(preview)) {
+      const pass = await sign({ login: user.login, aud: preview, exp: Date.now() + HANDOFF_MS });
+      const handoff = new URL(`${preview}/auth/handoff`);
+      handoff.searchParams.set("t", pass);
+      handoff.searchParams.set("next", safeTarget(back));
+      return redirect(handoff.toString(), done);
+    }
+    return redirect(safeTarget(back), done);
+  }
+
+  if (path === "/auth/handoff") {
+    const pass = await verify(url.searchParams.get("t")).catch(() => null);
+    if (!pass || pass.aud !== url.origin) return page(400, "Pase inválido", 'El pase expiró o no es para este sitio. <a href="/auth/login">Reintentar</a>.');
+    const session = await sign({ login: pass.login, exp: Date.now() + SESSION_DAYS * 864e5 });
+    return redirect(safeTarget(url.searchParams.get("next")), [setCookie(COOKIE, session, SESSION_DAYS * 86400)]);
   }
 
   if (path === "/auth/logout") return redirect("/auth/signed-out", [setCookie(COOKIE, "", 0)]);
   if (path === "/auth/signed-out") return page(200, "Sesión cerrada", '<a href="/auth/login">Entrar de nuevo</a>');
 
-  const session = await verify(jar[COOKIE]).catch(() => null);
+  const verified = await verify(jar[COOKIE]).catch(() => null);
+  // Un pase de preview (lleva aud) no sirve como cookie de sesión.
+  const session = verified && !verified.aud ? verified : null;
   if (!session) {
     if (path === "/auth/me") return Response.json({ login: null }, { status: 401 });
     return redirect(`/auth/login?next=${encodeURIComponent(url.pathname + url.search)}`);
