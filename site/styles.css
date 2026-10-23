@@ -120,6 +120,15 @@ select { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line);
 .card-meta { color: var(--muted); font-size: 12px; }
 .card-meta:empty { display: none; }
 .card-link { color: var(--accent); font-size: 14px; font-weight: 600; }
+.card-status { font-size: 13px; }
+.card-status:empty { display: none; }
+.project-card.is-empty, .project-card.is-error { cursor: default; box-shadow: none; border-style: dashed; }
+.project-card.is-empty:hover, .project-card.is-error:hover { border-color: var(--line); }
+.project-card.is-empty .card-link { color: var(--muted); }
+.project-card.is-error .card-link, .project-card.is-error .card-status { color: var(--warn); }
+
+.alert { margin: 0 0 12px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--warn); color: var(--warn); font-size: 14px; }
+.alert-error { font-weight: 600; }
 
 .page-list { columns: 2 320px; column-gap: 32px; margin-top: 16px; }
 .page-group { break-inside: avoid; margin-bottom: 20px; }
