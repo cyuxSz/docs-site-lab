@@ -1,0 +1,13 @@
+{
+  "name": "docs-site-lab",
+  "private": true,
+  "type": "module",
+  "description": "Portal de documentación multi-proyecto (prueba) con login de GitHub",
+  "engines": { "node": ">=22.22.0" },
+  "scripts": {
+    "build": "node tools/build.mjs"
+  },
+  "dependencies": {
+    "@vercel/functions": "3.3.0"
+  }
+}
