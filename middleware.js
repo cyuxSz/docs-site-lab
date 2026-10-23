@@ -87,13 +87,15 @@ async function isAllowed(login, token) {
 
 export default async function middleware(request) {
   const url = new URL(request.url);
+  // vercel.json usa trailingSlash: /auth/login llega como /auth/login/.
+  const path = url.pathname.replace(/\/+$/, "") || "/";
   const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_SECRET } = process.env;
   if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !SESSION_SECRET || SESSION_SECRET.length < 32) {
     return page(503, "Login sin configurar", "Faltan GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET o SESSION_SECRET (32+ caracteres) en Vercel.");
   }
   const jar = cookies(request);
 
-  if (url.pathname === "/auth/login") {
+  if (path === "/auth/login") {
     const state = b64url(crypto.getRandomValues(new Uint8Array(24)));
     const back = url.searchParams.get("next") || "/";
     const auth = new URL("https://github.com/login/oauth/authorize");
@@ -104,7 +106,7 @@ export default async function middleware(request) {
     return redirect(auth.toString(), [setCookie("oauth_state", `${state}|${back}`, 600)]);
   }
 
-  if (url.pathname === "/auth/callback") {
+  if (path === "/auth/callback") {
     const [state, back = "/"] = (jar.oauth_state || "").split("|");
     if (!state || url.searchParams.get("state") !== state) return page(400, "Sesión expirada", 'Vuelve a <a href="/auth/login">iniciar sesión</a>.');
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
@@ -123,14 +125,14 @@ export default async function middleware(request) {
     return redirect(target, [setCookie(COOKIE, session, SESSION_DAYS * 86400), setCookie("oauth_state", "", 0)]);
   }
 
-  if (url.pathname === "/auth/logout") return redirect("/auth/signed-out", [setCookie(COOKIE, "", 0)]);
-  if (url.pathname === "/auth/signed-out") return page(200, "Sesión cerrada", '<a href="/auth/login">Entrar de nuevo</a>');
+  if (path === "/auth/logout") return redirect("/auth/signed-out", [setCookie(COOKIE, "", 0)]);
+  if (path === "/auth/signed-out") return page(200, "Sesión cerrada", '<a href="/auth/login">Entrar de nuevo</a>');
 
   const session = await verify(jar[COOKIE]).catch(() => null);
   if (!session) {
-    if (url.pathname === "/auth/me") return Response.json({ login: null }, { status: 401 });
+    if (path === "/auth/me") return Response.json({ login: null }, { status: 401 });
     return redirect(`/auth/login?next=${encodeURIComponent(url.pathname + url.search)}`);
   }
-  if (url.pathname === "/auth/me") return Response.json({ login: session.login });
+  if (path === "/auth/me") return Response.json({ login: session.login });
   return next({ headers: { "Cache-Control": "private, no-store" } });
 }
