@@ -110,6 +110,30 @@ function splitFrontmatter(text) {
   return { fields, body: text.slice(m[0].length) };
 }
 
+// Las wikis son Markdown puro (la auditoría no encontró HTML incrustado). Cualquier etiqueta HTML fuera de bloques de
+// código se escapa y se muestra como texto: así nadie mete <script>, <iframe> o formularios en el portal desde un repo.
+// La CSP del sitio es la segunda barrera.
+export function neutralizeHtml(body) {
+  let fence = null;
+  return body
+    .split("\n")
+    .map((line) => {
+      const f = line.match(/^\s*(`{3,}|~{3,})/);
+      if (f) {
+        if (!fence) fence = f[1][0];
+        else if (f[1][0] === fence) fence = null;
+        return line;
+      }
+      if (fence) return line;
+      // Fuera de `código en línea`, "<" seguido de letra, "/", "!" o "?" abre HTML: se escapa.
+      return line
+        .split(/(`+[^`]*`+)/)
+        .map((part, i) => (i % 2 ? part : part.replace(/<(?=[A-Za-z\/!?])/g, "&lt;")))
+        .join("");
+    })
+    .join("\n");
+}
+
 // Enlaces de la wiki: .md -> ruta del portal; código -> GitHub en el commit construido.
 function rewriteLinks(body, id, rel, repoUrl, sha, links) {
   return body.replace(/\]\((?!https?:|mailto:|#)([^)\s]+?)(#[^)\s]*)?\)/g, (all, target, anchor = "") => {
@@ -142,7 +166,7 @@ function buildProject(project) {
     if (rel.startsWith(".") || !rel.endsWith(".md")) continue;
     const { fields, body } = splitFrontmatter(readFileSync(file, "utf8"));
     const links = new Set();
-    const text = rewriteLinks(body, project.id, rel, repoUrl, sha, links);
+    const text = rewriteLinks(neutralizeHtml(body), project.id, rel, repoUrl, sha, links);
     const { date, author } = lastChange(dir, `openwiki/${rel}`);
     const title = fields.title || (body.match(/^#\s+(.+)$/m) || [])[1] || rel;
     const page = {
