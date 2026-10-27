@@ -44,9 +44,9 @@ Si el repo tiene `openwiki/.graph/ros.json` (lo genera `tools/ros_graph.py` en e
 | `ALLOWED_ORG` | Org cuyos miembros pueden entrar (p. ej. `vanttec`) |
 | `ALLOWED_USERS` | Opcional: logins separados por coma, como respaldo |
 | `PRODUCTION_HOST` | Opcional; por defecto `VERCEL_PROJECT_PRODUCTION_URL`. Los Preview mandan a este dominio a iniciar sesión |
-| `PREVIEW_HOST_SUFFIX` | Para el login en Preview: el sufijo de las URLs de tu equipo, p. ej. `-cyuxsz.vercel.app`. Sin él, los previews no reciben pase (además, Vercel ya los protege con su propio login) |
+| `PREVIEW_TRUST_VERCEL_AUTH` | `1` para que los Preview no pidan login de GitHub. Solo con Vercel Authentication activo en *Deployment Protection*; si no, los Preview responden 403 |
 
-Las variables del login deben estar marcadas también para **Preview**, o los previews responden 503.
+Los Preview no usan la OAuth App: los protege el login de Vercel (ver `PREVIEW_TRUST_VERCEL_AUTH`).
 
 ## Avisos en la portada
 - **Sin documentación aún:** la rama de `projects.json` no tiene `openwiki/` ni `docs/arch/`; si hay ramas `docs/*` sin mergear, las nombra.
