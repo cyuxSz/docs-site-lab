@@ -12,19 +12,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - name: Sintaxis
-        run: for f in middleware.js tools/build.mjs site/*.js wiki-enhance/*.js; do node --check "$f"; done
+        run: for f in middleware.js tools/*.mjs; do node --check "$f"; done
       - name: Build
         # Sin el secret, los repos privados solo avisan; los públicos sí deben construirse.
         env:
           DOCS_STRICT: "1"
           DOCS_GITHUB_TOKEN: ${{ secrets.DOCS_GITHUB_TOKEN }}
-        run: node tools/build.mjs
+        run: npm run build
       - name: Resumen
         if: always()
-        run: test -f dist/projects.json && node -e 'const d=require("./dist/projects.json");for(const p of d.projects)console.log(p.error?"✗":p.empty?"○":"✓",p.id,p.message||"");for(const a of d.alerts)console.log("!",a.text)' || true
+        run: test -f .content/projects.json && node -e 'const d=require("./.content/projects.json");for(const p of d.projects)console.log(p.error?"✗":p.empty?"○":"✓",p.id,p.message||"");for(const a of d.alerts)console.log("!",a.text)' || true
