@@ -125,12 +125,14 @@ const statusOf = (pkg: string) => {
       </main>
     </div>
   </div>
-  <script is:inline define:vars={{ id: p.id }}>
+  <script>
     // Enlaces del portal anterior: /<id>/#/p/<ruta>.md -> /<id>/<ruta>/
     const m = location.hash.match(/^#\/p\/(.+)$/);
     if (m) {
+      const id = location.pathname.split("/")[1];
       const slug = decodeURIComponent(m[1]).replace(/\.md$/, "").replace(/(^|\/)index$/, "");
-      location.replace(`/${id}/${slug ? slug + "/" : ""}`);
+      // Solo rutas internas: el hash viene de la URL y no debe poder sacar al usuario del sitio.
+      if (/^[\w./-]*$/.test(slug) && !slug.includes("..")) location.replace(`/${id}/${slug ? slug + "/" : ""}`);
     }
   </script>
 </Base>

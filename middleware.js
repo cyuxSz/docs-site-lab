@@ -62,8 +62,17 @@ function cookies(request) {
 const setCookie = (name, value, maxAge) =>
   `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 
+// Las respuestas del login no pasan por las cabeceras de vercel.json. no-referrer evita que el pase de
+// /auth/handoff (va en la URL) salga en el Referer.
+const SECURITY_HEADERS = {
+  "Cache-Control": "no-store",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+};
+
 function redirect(location, extraCookies = []) {
-  const headers = new Headers({ Location: location, "Cache-Control": "no-store" });
+  const headers = new Headers({ ...SECURITY_HEADERS, Location: location });
   for (const c of extraCookies) headers.append("Set-Cookie", c);
   return new Response(null, { status: 302, headers });
 }
@@ -72,7 +81,10 @@ function page(status, title, message) {
   const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
 <style>body{font:16px/1.6 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0a1420;color:#e4ecf4}main{max-width:420px;padding:24px;text-align:center}a{color:#3cc3d2}</style>
 <main><h1>${title}</h1><p>${message}</p></main></html>`;
-  return new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response(html, {
+    status,
+    headers: { ...SECURITY_HEADERS, "content-type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" },
+  });
 }
 
 // Solo se entrega el pase a previews del mismo proyecto: https://<proyecto>-<algo>.vercel.app
