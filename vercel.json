@@ -1,8 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm install",
-  "buildCommand": "node tools/build.mjs",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": null,
-  "trailingSlash": true
+  "trailingSlash": true,
+  "redirects": [
+    { "source": "/:project/wiki/", "destination": "/:project/grafo/", "permanent": true },
+    { "source": "/:project/content/:path*", "destination": "/:project/", "permanent": true }
+  ]
 }
