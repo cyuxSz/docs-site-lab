@@ -25,6 +25,17 @@ Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acces
 | `SESSION_SECRET` | 32+ caracteres aleatorios para firmar la cookie de sesión |
 | `ALLOWED_ORG` | Org cuyos miembros pueden entrar (p. ej. `vanttec`) |
 | `ALLOWED_USERS` | Opcional: logins separados por coma, como respaldo |
+| `PRODUCTION_HOST` | Opcional; por defecto `VERCEL_PROJECT_PRODUCTION_URL`. Los Preview mandan a este dominio a iniciar sesión |
+
+Las variables del login deben estar marcadas también para **Preview**, o los previews responden 503.
+
+## Avisos en la portada
+- **Sin documentación aún:** la rama de `projects.json` no tiene `openwiki/` ni `docs/arch/`; si hay ramas `docs/*` sin mergear, las nombra.
+- **No se pudo construir:** muestra el motivo (rama inexistente, repo privado sin token…). El token nunca aparece en el mensaje.
+- **Token:** si `DOCS_GITHUB_TOKEN` caduca en 14 días o menos, o ya no es válido, sale un aviso arriba.
+
+## CI
+`.github/workflows/build.yml` corre el build en cada PR con `DOCS_STRICT=1`. Para que también construya los repos privados, agrega `DOCS_GITHUB_TOKEN` en *Settings → Secrets and variables → Actions*; sin él, esos repos solo avisan.
 
 ## Probar en local
 ```bash
