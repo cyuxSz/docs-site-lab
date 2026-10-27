@@ -1,0 +1,102 @@
+---
+// Esqueleto común: barra superior, búsqueda (Pagefind) y pie. El login lo resuelve middleware.js antes de servir.
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  project?: { id: string; name: string };
+  current?: "wiki" | "grafo";
+}
+const { title, description = "Documentación de los proyectos de software de VantTec.", project, current } = Astro.props;
+---
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="sr-only" href="#contenido">Saltar al contenido</a>
+    <header class="topbar">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span>VantTec Docs</span></a>
+      {project && <a class="crumb" href={`/${project.id}/`}>{project.name}</a>}
+      <nav class="topnav" aria-label="Principal">
+        {project && <a href={`/${project.id}/`} aria-current={current === "wiki" ? "page" : undefined} class="hide-sm">Wiki</a>}
+        {project && <a href={`/${project.id}/grafo/`} aria-current={current === "grafo" ? "page" : undefined}>Grafo</a>}
+        <button class="search-btn" type="button" data-search-open aria-label="Buscar (tecla /)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <span>Buscar</span><kbd>/</kbd>
+        </button>
+        <span class="user" id="user"></span>
+        <a href="/auth/logout">Salir</a>
+      </nav>
+    </header>
+
+    <slot />
+
+    <footer class="footer">
+      <h3>¿Cómo se actualiza?</h3>
+      <ol>
+        <li>Cada repo guarda su documentación en <code>openwiki/</code> y <code>docs/arch/</code>, junto al código.</li>
+        <li>El CI confirma que las citas y el grafo ROS siguen coincidiendo con el código.</li>
+        <li>Al hacer merge a <code>main</code>, el repo avisa a este portal y se reconstruye solo.</li>
+      </ol>
+      <slot name="footer" />
+    </footer>
+
+    <dialog class="search-dialog" id="search" aria-label="Buscar en la documentación">
+      <div class="search-bar"><strong>Buscar</strong><button type="button" data-search-close aria-label="Cerrar">×</button></div>
+      <div id="pagefind" data-pagefind-ignore="all"></div>
+    </dialog>
+
+    <script>
+      // Pagefind UI se descarga la primera vez que se abre la búsqueda, no en cada página.
+      const dialog = document.getElementById("search") as HTMLDialogElement;
+      let loaded = false;
+      async function openSearch() {
+        dialog.showModal();
+        if (!loaded) {
+          loaded = true;
+          const css = document.createElement("link");
+          css.rel = "stylesheet";
+          css.href = "/pagefind/pagefind-ui.css";
+          document.head.append(css);
+          try {
+            await new Promise((resolve, reject) => {
+              const s = document.createElement("script");
+              s.src = "/pagefind/pagefind-ui.js";
+              s.onload = resolve;
+              s.onerror = reject;
+              document.head.append(s);
+            });
+            // @ts-expect-error global que define pagefind-ui.js
+            new window.PagefindUI({ element: "#pagefind", showSubResults: true, resetStyles: false, autofocus: true });
+          } catch {
+            document.getElementById("pagefind")!.textContent = "La búsqueda solo existe en el sitio construido (npm run build).";
+          }
+        }
+        (dialog.querySelector("input") as HTMLInputElement | null)?.focus();
+      }
+      document.querySelectorAll("[data-search-open]").forEach((b) => b.addEventListener("click", openSearch));
+      dialog.querySelector("[data-search-close]")!.addEventListener("click", () => dialog.close());
+      document.addEventListener("keydown", (e) => {
+        const typing = (e.target as HTMLElement).closest("input, textarea, [contenteditable]");
+        if (e.key === "/" && !typing && !dialog.open) {
+          e.preventDefault();
+          openSearch();
+        }
+      });
+      fetch("/auth/me")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((me) => {
+          if (me?.login) document.getElementById("user")!.textContent = `@${me.login}`;
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>

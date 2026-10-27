@@ -1,0 +1,57 @@
+.rg { display: flex; flex-direction: column; gap: 10px; }
+.rg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; font-size: 14px; }
+.rg-tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--surface); }
+.rg-tabs button { border: 0; background: none; color: var(--muted); font: inherit; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.rg-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.rg-field { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.rg-field select { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; max-width: 60vw; }
+.rg-check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+.rg-count { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.rg-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.rg-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.rg-chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.rg-chip.rg-static { cursor: default; }
+.rg-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
+.rg-stage { position: relative; height: min(72vh, 720px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.rg-canvas { position: absolute; inset: 0; touch-action: none; }
+.rg-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); }
+.rg-shield {
+  position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding: 20px;
+  border: 0; cursor: pointer; font: inherit; font-weight: 600; color: #fff;
+  background: linear-gradient(transparent 55%, rgba(5, 12, 20, .6));
+}
+.rg-zoom { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; }
+.rg-zoom button {
+  min-width: 36px; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 17px; cursor: pointer; box-shadow: var(--shadow);
+}
+
+.rg-drawer {
+  position: absolute; top: 10px; right: 10px; bottom: 10px; width: min(360px, calc(100% - 20px)); overflow-y: auto;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: 0 8px 30px rgba(5, 12, 20, .18);
+  font-size: 14px;
+}
+.rg-drawer header { display: flex; justify-content: space-between; gap: 8px; align-items: start; margin-bottom: 8px; }
+.rg-drawer header button { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.rg-title { display: block; font-family: var(--mono); font-size: 15px; overflow-wrap: anywhere; }
+.rg-sub { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+.rg-row { margin: 6px 0; }
+.rg-row code { margin-right: 4px; }
+.rg-drawer h4 { margin: 14px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.rg-drawer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rg-drawer li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.rg-link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; font-family: var(--mono); font-size: 13px; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.rg-type { color: var(--muted); font-size: 12px; }
+.rg-drawer li a { text-decoration: none; font-size: 13px; }
+.rg-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+@media (max-width: 760px) {
+  .rg-stage { height: 68vh; }
+  .rg-count { margin-left: 0; }
+  .rg-drawer { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 55%; }
+}

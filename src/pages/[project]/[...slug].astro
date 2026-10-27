@@ -1,0 +1,72 @@
+---
+// Una página de la wiki, ya renderizada en el build (sin fetch en el navegador).
+import { getCollection, render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import SideNav from "../../components/SideNav.astro";
+import { builtProjects, project as load, fmtDate, STATUS_LABEL } from "../../lib/data";
+import { TYPE_LABEL } from "../../lib/labels";
+
+export async function getStaticPaths() {
+  const ok = new Set(builtProjects().map((p) => p.id));
+  const docs = await getCollection("docs", (d) => ok.has(d.data.project) && d.data.path !== "index.md");
+  return docs.map((entry) => {
+    const slug = entry.data.path.replace(/\.md$/, "").replace(/(^|\/)index$/, "");
+    return { params: { project: entry.data.project, slug }, props: { entry } };
+  });
+}
+
+const { entry } = Astro.props;
+const p = load(entry.data.project);
+const { Content, headings } = await render(entry);
+const route = `/${p.id}/${Astro.params.slug}/`;
+const toc = headings.filter((h) => h.depth === 2);
+const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
+const rosNodes = pkg && p.ros ? p.ros.nodes.filter((n) => n.category === "ros2_node" && n.package === pkg) : [];
+const hasMermaid = entry.body?.includes("```mermaid") ?? false;
+---
+<Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={{ id: p.id, name: p.name }} current="wiki">
+  <div class="container">
+    <div class="doc">
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
+      <main id="contenido">
+        <article class="prose" data-pagefind-body>
+          <meta data-pagefind-filter="proyecto[content]" content={p.name} />
+          <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />
+          {pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
+          <Content />
+        </article>
+      </main>
+      <aside class="meta" aria-label="Datos de la página" data-pagefind-ignore="all">
+        <dl>
+          <div><dt>Actualizado</dt><dd>{fmtDate(entry.data.updated)}{entry.data.author && <span class="muted"> · {entry.data.author}</span>}</dd></div>
+          <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>
+          {entry.data.owner && <div><dt>Responsable</dt><dd>{entry.data.owner}</dd></div>}
+          <div><dt>Fuente</dt><dd><a href={entry.data.source}>Ver en GitHub</a></dd></div>
+          {rosNodes.length > 0 && (
+            <div>
+              <dt>Nodos en el grafo</dt>
+              <dd>
+                <ul style="list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px">
+                  {rosNodes.map((n) => (
+                    <li><a href={`/${p.id}/grafo/?node=${encodeURIComponent(n.id)}`}><code>{n.label}</code></a> <span class={`badge badge-${n.status}`}>{STATUS_LABEL[n.status ?? ""]}</span></li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          )}
+        </dl>
+        {toc.length > 1 && (
+          <ul class="toc" aria-label="En esta página">
+            {toc.map((h) => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}
+          </ul>
+        )}
+      </aside>
+    </div>
+  </div>
+  {hasMermaid && (
+    <script>
+      import { renderMermaid } from "../../scripts/mermaid";
+      renderMermaid();
+    </script>
+  )}
+</Base>
