@@ -7,6 +7,8 @@
 //   ALLOWED_ORG                             p. ej. vanttec (requiere que la org permita la OAuth App)
 //   ALLOWED_USERS                           opcional, logins separados por coma (respaldo si la org restringe apps)
 //   PRODUCTION_HOST                         opcional; por defecto VERCEL_PROJECT_PRODUCTION_URL (p. ej. docs-site-lab.vercel.app)
+//   PREVIEW_HOST_SUFFIX                     sufijo de los Preview de tu equipo, p. ej. -cyuxsz.vercel.app (Vercel recorta el
+//                                           nombre del proyecto en esas URLs, así que no basta con el prefijo)
 //
 // Los Preview tienen otro dominio y GitHub solo acepta el callback de producción: el preview manda a producción
 // a iniciar sesión y recibe de vuelta un pase firmado de 60 s (/auth/handoff) que canjea por su propia cookie.
@@ -87,13 +89,14 @@ function page(status, title, message) {
   });
 }
 
-// Solo se entrega el pase a previews del mismo proyecto: https://<proyecto>-<algo>.vercel.app
+// Solo se entrega el pase a previews del mismo equipo de Vercel: https://<algo><PREVIEW_HOST_SUFFIX>.
+// Sin el sufijo configurado, ningún preview recibe pase (falla cerrado).
 function isPreviewOrigin(origin) {
-  if (!PROD_HOST || !origin) return false;
+  const suffix = process.env.PREVIEW_HOST_SUFFIX || "";
+  if (!PROD_HOST || !origin || !/^-[a-z0-9-]+\.vercel\.app$/.test(suffix)) return false;
   try {
     const u = new URL(origin);
-    const project = PROD_HOST.split(".")[0];
-    return u.protocol === "https:" && u.origin === origin && u.hostname.endsWith(".vercel.app") && u.hostname.startsWith(`${project}-`);
+    return u.protocol === "https:" && u.origin === origin && !u.port && u.hostname.endsWith(suffix) && u.hostname.length > suffix.length;
   } catch {
     return false;
   }
