@@ -5,9 +5,20 @@
   "description": "Portal de documentación multi-proyecto (prueba) con login de GitHub",
   "engines": { "node": ">=22.22.0" },
   "scripts": {
-    "build": "node tools/build.mjs"
+    "fetch": "node tools/fetch.mjs",
+    "build": "node tools/fetch.mjs && astro build && node tools/postbuild.mjs && pagefind --site dist",
+    "dev": "astro dev"
   },
   "dependencies": {
-    "@vercel/functions": "3.3.0"
+    "@astrojs/react": "4.4.2",
+    "@vercel/functions": "3.3.0",
+    "astro": "5.18.2",
+    "graphology": "0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "mermaid": "11.16.0",
+    "pagefind": "1.4.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "sigma": "3.0.3"
   }
 }

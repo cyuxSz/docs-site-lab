@@ -1,0 +1,136 @@
+---
+import Base from "../../layouts/Base.astro";
+import SideNav from "../../components/SideNav.astro";
+import { builtProjects, project as load, fmtDate, STATUS_LABEL } from "../../lib/data";
+
+export function getStaticPaths() {
+  return builtProjects().map((p) => ({ params: { project: p.id } }));
+}
+
+const p = load(Astro.params.project!);
+const packages = p.pageList.filter((x) => x.path.startsWith("packages/") && x.type !== "index");
+const highlight = ["quickstart.md", "onboarding.md", "operations/estado.md", "architecture/overview.md"]
+  .map((path) => p.pageList.find((x) => x.path === path))
+  .filter((x) => x !== undefined);
+const rosNodes = p.ros?.nodes.filter((n) => n.category === "ros2_node") ?? [];
+const byStatus = (s: string) => rosNodes.filter((n) => n.status === s).length;
+const statusOf = (pkg: string) => {
+  const own = rosNodes.filter((n) => n.package === pkg);
+  return Object.keys(STATUS_LABEL)
+    .map((s) => [s, own.filter((n) => n.status === s).length] as const)
+    .filter(([, c]) => c);
+};
+---
+<Base title={`${p.name} · VantTec Docs`} description={p.summary} project={{ id: p.id, name: p.name }} current="wiki">
+  <div class="container">
+    <div class="doc">
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} hasDiagrams={p.diagramList.length > 0} />
+      <main id="contenido" data-pagefind-body>
+        <meta data-pagefind-filter="proyecto[content]" content={p.name} />
+        <section class="hero" style="padding-top: 8px">
+          {p.note && <p class="eyebrow">{p.note}</p>}
+          <h1>{p.name}</h1>
+          <p class="lead">{p.summary}</p>
+          <dl class="stats">
+            <div><dt>Páginas</dt><dd>{p.pages}</dd></div>
+            <div><dt>Afirmaciones verificadas</dt><dd>{p.claims}</dd></div>
+            {p.ros && <div><dt>Nodos ROS en uso</dt><dd>{byStatus("en_uso")}<span class="muted" style="font-size:15px"> / {rosNodes.length}</span></dd></div>}
+            {p.ros && <div><dt>Nodos rotos</dt><dd style={byStatus("roto") ? "color: var(--danger)" : undefined}>{byStatus("roto")}</dd></div>}
+            <div><dt>Actualizado</dt><dd style="font-size:18px">{fmtDate(p.updated)}</dd></div>
+          </dl>
+        </section>
+
+        {highlight.length > 0 && (
+          <section class="block">
+            <div class="block-head"><h2>Empieza aquí</h2></div>
+            <div class="cards">
+              {highlight.map((x) => (
+                <a class="card" href={x.route}>
+                  <span class="card-title">{x.title}</span>
+                  <span class="card-desc">{x.description}</span>
+                  <span class="card-link">Leer →</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {p.ros && (
+          <section class="block" data-pagefind-ignore>
+            <div class="block-head">
+              <h2>Configuraciones</h2>
+              <a class="btn btn-primary" href={`/${p.id}/grafo/`}>Abrir el grafo</a>
+            </div>
+            <p class="hint">Cada configuración es un launch file en uso. El grafo filtrado muestra solo sus nodos, topics y hardware.</p>
+            <div class="cards">
+              {p.ros.configs.map((c) => {
+                const launch = p.ros!.launches.find((l) => l.path === c.launch);
+                return (
+                  <a class="card" href={`/${p.id}/grafo/?config=${c.id}`}>
+                    <span class="card-title">{c.label}</span>
+                    <span class="card-desc"><code>{c.launch.split("/").slice(-2).join("/")}</code></span>
+                    <span class="card-meta">{launch?.nodes.length ?? 0} nodos{launch?.broken.length ? ` · ${launch.broken.length} roto(s)` : ""}</span>
+                  </a>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {packages.length > 0 && (
+          <section class="block">
+            <div class="block-head"><h2>Paquetes</h2></div>
+            <div class="cards">
+              {packages.map((x) => {
+                const pkg = x.path.replace(/^packages\/|\.md$/g, "");
+                return (
+                  <a class="card" href={x.route}>
+                    <span class="card-title mono">{x.title}</span>
+                    <span class="card-desc">{x.description}</span>
+                    {p.ros && statusOf(pkg).length > 0 && (
+                      <span class="card-meta">
+                        {statusOf(pkg).map(([s, c]) => <span class={`badge badge-${s}`}>{c} {STATUS_LABEL[s].toLowerCase()}</span>)}
+                      </span>
+                    )}
+                    <span class="card-meta">{x.claims} afirmaciones{x.owner ? ` · ${x.owner}` : ""}</span>
+                  </a>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {p.diagramList.length > 0 && (
+          <section class="block" id="diagramas">
+            <div class="block-head"><h2>Diagramas</h2></div>
+            <p class="hint">Diagramas interactivos de Archify. Se abren aparte porque pesan cientos de KB.</p>
+            <div class="cards">
+              {p.diagramList.map((d) => (
+                <a class="card" href={d.file} target="_blank" rel="noopener">
+                  <span class="card-title">{d.title}</span>
+                  <span class="card-meta">{d.kb} KB</span>
+                  <span class="card-link">Abrir en otra pestaña ↗</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section class="block">
+          <p class="hint">
+            Construido desde <a href={`${p.repoUrl}/tree/${p.sha}`}><code>{p.repo}@{p.sha?.slice(0, 7)}</code></a>
+            {p.lastUpdate?.date && <span> · última revisión de la wiki: {fmtDate(p.lastUpdate.date)}</span>}
+          </p>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script is:inline define:vars={{ id: p.id }}>
+    // Enlaces del portal anterior: /<id>/#/p/<ruta>.md -> /<id>/<ruta>/
+    const m = location.hash.match(/^#\/p\/(.+)$/);
+    if (m) {
+      const slug = decodeURIComponent(m[1]).replace(/\.md$/, "").replace(/(^|\/)index$/, "");
+      location.replace(`/${id}/${slug ? slug + "/" : ""}`);
+    }
+  </script>
+</Base>

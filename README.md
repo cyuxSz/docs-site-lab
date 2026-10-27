@@ -3,11 +3,16 @@
 Sitio que junta la documentación de varios repos en un solo portal con login de GitHub. **No tiene contenido propio**: en cada build trae `openwiki/` y `docs/arch/` de cada repo listado en [`projects.json`](projects.json).
 
 ```
-projects.json            qué repos se publican
-tools/build.mjs          build: clona solo openwiki/ y docs/arch/, exporta el visor de OpenWiki, arma dist/
-site/                    portada multi-proyecto y página de cada proyecto
-wiki-enhance/            capa sobre el visor de OpenWiki: pestañas en celular, enlaces directos, sin saltos de scroll
-middleware.js            login con GitHub (solo miembros de ALLOWED_ORG o ALLOWED_USERS)
+projects.json                qué repos se publican
+tools/fetch.mjs              paso 1: clona solo openwiki/ y docs/arch/ de cada repo y deja todo en .content/
+src/                         paso 2: sitio Astro estático (páginas ya renderizadas, sin fetch en el navegador)
+  pages/index.astro          portada multi-proyecto
+  pages/[project]/           resumen, páginas de la wiki, grafo y sus JSON (ros.json, paginas.json)
+  components/RoboticsGraph   grafo con Sigma.js + React (client:visible): filtros, vecindario y panel lateral
+  lib/graph.ts               layout ForceAtlas2 calculado en el build, uno por configuración
+tools/postbuild.mjs          paso 3: copia los diagramas de Archify a dist/<id>/arch/
+                             paso 4: pagefind indexa dist/ para la búsqueda
+middleware.js                login con GitHub (solo miembros de ALLOWED_ORG o ALLOWED_USERS)
 ```
 
 ## Cómo se actualiza
@@ -16,6 +21,19 @@ middleware.js            login con GitHub (solo miembros de ALLOWED_ORG o ALLOWE
 3. Vercel reconstruye el portal. No hay que tocar este repo.
 
 Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acceso de lectura al token `DOCS_GITHUB_TOKEN`.
+
+## Rutas
+| Ruta | Qué es |
+|---|---|
+| `/<id>/` | Resumen del proyecto: estadísticas, configuraciones, paquetes y diagramas |
+| `/<id>/<ruta>/` | Una página de la wiki (`openwiki/<ruta>.md`; `index.md` → carpeta) |
+| `/<id>/grafo/?config=<id>&node=<id>` | Grafo; los parámetros se pueden compartir |
+| `/<id>/arch/<archivo>.html` | Diagrama de Archify |
+
+Los enlaces viejos `/<id>/#/p/<ruta>.md` se redirigen en el navegador; `/<id>/wiki/` y `/<id>/content/*` con `vercel.json`.
+
+## Grafo
+Si el repo tiene `openwiki/.graph/ros.json` (lo genera `tools/ros_graph.py` en el repo de código), el grafo muestra nodos, topics, servicios y hardware. Sin él, muestra cómo se enlazan las páginas de la wiki. En los dos casos hay una tabla con los mismos datos para lectores de pantalla y para la búsqueda.
 
 ## Variables de entorno en Vercel
 | Variable | Para qué |
@@ -39,7 +57,8 @@ Las variables del login deben estar marcadas también para **Preview**, o los pr
 
 ## Probar en local
 ```bash
-node tools/build.mjs
+npm ci
+npm run build                     # o, con repos ya clonados: DOCS_LOCAL_REPOS="uuv=../uuv-lab" npm run build
 python -m http.server --directory dist
 ```
 En local no corre el login (el middleware solo se ejecuta en Vercel).

@@ -1,0 +1,72 @@
+---
+// Grafo del proyecto. El texto y la tabla salen en el HTML; Sigma y los datos llegan solo al hacer scroll al grafo.
+import Base from "../../layouts/Base.astro";
+import RoboticsGraph from "../../components/RoboticsGraph.tsx";
+import { builtProjects, project as load, STATUS_LABEL } from "../../lib/data";
+
+export function getStaticPaths() {
+  return builtProjects().map((p) => ({ params: { project: p.id } }));
+}
+
+const p = load(Astro.params.project!);
+const views = [
+  ...(p.ros ? [{ id: "ros", label: "Nodos ROS", url: `/${p.id}/ros.json` }] : []),
+  { id: "paginas", label: "Páginas de la wiki", url: `/${p.id}/paginas.json` },
+];
+
+// Tabla alternativa: lo mismo que el grafo, en texto (lectores de pantalla y búsqueda).
+const ros = p.ros;
+const label = (id: string) => ros?.nodes.find((n) => n.id === id)?.label ?? id;
+const rows = (ros?.nodes ?? [])
+  .filter((n) => n.category === "ros2_node" && n.status !== "externo")
+  .sort((a, b) => (a.package ?? "").localeCompare(b.package ?? "") || a.label.localeCompare(b.label))
+  .map((n) => ({
+    ...n,
+    pubs: ros!.edges.filter((e) => e.source === n.id && e.kind !== "hw").map((e) => label(e.target)),
+    subs: ros!.edges.filter((e) => e.target === n.id && e.kind !== "hw").map((e) => label(e.source)),
+  }));
+const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label ?? id;
+---
+<Base title={`Grafo · ${p.name}`} description={`Nodos, topics y hardware de ${p.name}.`} project={{ id: p.id, name: p.name }} current="grafo">
+  <main class="container" id="contenido">
+    <section class="hero" style="padding-bottom: 12px">
+      <p class="eyebrow">Grafo</p>
+      <h1>{p.ros ? "Nodos, topics y hardware" : "Mapa de la wiki"}</h1>
+      <p class="lead">
+        {p.ros
+          ? "Generado desde el código en cada build. Elige una configuración para ver solo lo que corre en ella; pasa el cursor o toca un nodo para resaltar sus conexiones."
+          : "Cómo se enlazan las páginas de la wiki entre sí."}
+      </p>
+    </section>
+
+    <RoboticsGraph client:visible projectId={p.id} views={views} />
+
+    {rows.length > 0 && (
+      <section class="block" data-pagefind-body>
+        <meta data-pagefind-filter="proyecto[content]" content={p.name} />
+        <meta data-pagefind-filter="tipo[content]" content="Grafo ROS" />
+        <div class="block-head"><h2>Los mismos datos en tabla</h2></div>
+        <p class="hint">Cada nodo de ROS del repo con lo que publica o sirve y lo que recibe. Para verlo en el grafo, usa el enlace del nombre.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th scope="col">Nodo</th><th scope="col">Paquete</th><th scope="col">Estado</th><th scope="col">Publica / sirve</th><th scope="col">Recibe</th><th scope="col">Configuraciones</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((n) => (
+                <tr>
+                  <td><a href={`?node=${encodeURIComponent(n.id)}`}><code>{n.label}</code></a></td>
+                  <td><code>{n.package}</code></td>
+                  <td><span class={`badge badge-${n.status}`}>{STATUS_LABEL[n.status ?? ""]}</span></td>
+                  <td>{n.pubs.map((t) => <code style="display:block">{t}</code>)}</td>
+                  <td>{n.subs.map((t) => <code style="display:block">{t}</code>)}</td>
+                  <td>{n.configs.map(configLabel).join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    )}
+  </main>
+</Base>

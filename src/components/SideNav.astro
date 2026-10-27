@@ -1,0 +1,41 @@
+---
+// Navegación de la wiki por secciones. En celular queda plegada detrás de un botón; el estado inicial lo decide
+// el CSS (no un script después de pintar) para no mover la página al cargar.
+import { sections, type PageInfo } from "../lib/data";
+
+interface Props {
+  projectId: string;
+  projectName: string;
+  pages: PageInfo[];
+  currentRoute?: string;
+  hasDiagrams: boolean;
+}
+const { projectId, projectName, pages, currentRoute, hasDiagrams } = Astro.props;
+---
+<nav class="sidenav" aria-label={`Páginas de ${projectName}`} data-pagefind-ignore="all">
+  <button class="sidenav-toggle" type="button" aria-expanded="false" aria-controls="sidenav-list">Páginas de {projectName}</button>
+  <div class="sidenav-list" id="sidenav-list">
+    {sections(pages).map((s) => (
+      <div>
+        <h2>{s.label}</h2>
+        <ul>
+          {s.pages.map((p) => (
+            <li><a href={p.route} aria-current={p.route === currentRoute ? "page" : undefined}>{p.type === "index" ? `Resumen de ${s.label.toLowerCase()}` : p.title}</a></li>
+          ))}
+        </ul>
+      </div>
+    ))}
+    <ul class="extra">
+      <li><a href={`/${projectId}/grafo/`}>Grafo de nodos ROS</a></li>
+      {hasDiagrams && <li><a href={`/${projectId}/#diagramas`}>Diagramas</a></li>}
+    </ul>
+  </div>
+</nav>
+<script>
+  document.querySelectorAll<HTMLButtonElement>(".sidenav-toggle").forEach((b) =>
+    b.addEventListener("click", () => {
+      const open = b.closest(".sidenav")!.classList.toggle("open");
+      b.setAttribute("aria-expanded", String(open));
+    }),
+  );
+</script>
