@@ -6,6 +6,10 @@
 // - Las conexiones son tenues y unos puntos verdes viajan por ellas en el sentido del dato (canvas encima de Sigma);
 //   con un nodo enfocado solo se animan y resaltan las suyas.
 // - En pantallas táctiles hay que tocar una vez para activarlo, así no atrapa el scroll de la página.
+// Prueba A/B (<html data-diseno>, ver Base.astro):
+// - A "Mapa guiado": columnas en el sentido del dato (de arriba abajo en teléfono), topics como etiqueta de la flecha,
+//   abre en la configuración del recorrido guiado y lo muestra la primera vez.
+// - B "Explorador": acomodo libre (ForceAtlas2) con topics como nodos y un recuadro "Cómo leer este grafo".
 import { useEffect, useMemo, useRef, useState } from "react";
 import Graph from "graphology";
 import type Sigma from "sigma";
@@ -26,11 +30,29 @@ interface Props {
 const STATUS_LABEL: Record<string, string> = { en_uso: "En uso", legado: "Legado", sin_uso: "Sin uso", roto: "Roto", externo: "Externo" };
 const BROKEN = "#EF4444";
 const HIDDEN_BY_DEFAULT = new Set(["legado", "sin_uso"]);
+const OWNERS = new Set(["node", "hardware", "page"]);
+const TOUR_SEEN = "recorrido-visto";
 
 const FLOW = { light: "#16a34a", dark: "#4ade80" };
 
-const reducedMotion =() => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+const isNarrow = (el: HTMLElement) => el.clientWidth < 600;
+
+const storage = {
+  get: (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {}
+  },
+};
 
 // Etiqueta del nodo resaltado con los colores del tema (la de Sigma es siempre un recuadro blanco).
 function drawHover(dark: boolean) {
@@ -73,6 +95,7 @@ function writeParams(view: string, config: string, node: string | null) {
 
 export default function RoboticsGraph({ projectId, views }: Props) {
   const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null } : readParams()), []);
+  const [diseno, setDiseno] = useState<"a" | "b">("a");
   const [view, setView] = useState(views.find((v) => v.id === initial.view)?.id ?? views[0].id);
   const [data, setData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,21 +104,26 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [showOld, setShowOld] = useState(false);
   const [selected, setSelected] = useState<string | null>(initial.node);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [tourStep, setTourStep] = useState<number | null>(null);
   const [touch, setTouch] = useState(false);
   const [active, setActive] = useState(true);
   const [ready, setReady] = useState(0);
+  const [stageHeight, setStageHeight] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
 
   const container = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const sigma = useRef<Sigma | null>(null);
   const graph = useRef<Graph | null>(null);
-  const state = useRef({ selected, hovered });
-  state.current = { selected, hovered };
+  const tourNode = tourStep !== null ? data?.tour?.[tourStep]?.node ?? null : null;
+  const state = useRef({ selected, hovered, tourNode });
+  state.current = { selected, hovered, tourNode };
 
   useEffect(() => {
     const coarse = matchMedia("(pointer: coarse)").matches;
     setTouch(coarse);
     setActive(!coarse);
+    setDiseno(document.documentElement.dataset.diseno === "b" ? "b" : "a");
   }, []);
 
   // Datos de la vista elegida (JSON estático generado en el build).
@@ -108,11 +136,26 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       .catch((e) => setError(String(e.message || e)));
   }, [view]);
 
+  // Diseño A en la vista ROS: flechas nodo → nodo y columnas.
+  const capas = diseno === "a" && data?.view === "ros" && Boolean(data.flowEdges);
   const nodeById = useMemo(() => new Map((data?.nodes ?? []).map((n) => [n.id, n])), [data]);
   const groupColor = useMemo(() => new Map((data?.groups ?? []).map((g) => [g.id, g.color])), [data]);
+  const tour = data?.tour ?? [];
+  // Configuración donde se ven todos los nodos del recorrido (p. ej. el sub real).
+  const tourConfig = useMemo(
+    () => data?.configs.find((c) => tour.every((s) => nodeById.get(s.node)?.configs.includes(c.id)))?.id ?? null,
+    [data],
+  );
+
+  // Diseño A: abre en la configuración del recorrido y lo muestra la primera vez.
+  useEffect(() => {
+    if (!capas || !data) return;
+    if (!initial.config && config === "all" && (tourConfig || data.configs[0])) setConfig(tourConfig ?? data.configs[0].id);
+    if (tour.length && tourConfig && !initial.node && !storage.get(TOUR_SEEN)) setTourStep(0);
+  }, [capas, data]);
 
   // Qué se ve con los filtros actuales. Un topic o servicio solo se muestra si algún nodo visible lo usa,
-  // para que al ocultar el legado no queden topics sueltos.
+  // para que al ocultar el legado no queden topics sueltos. En el diseño A los topics no son nodos.
   const visibleIds = useMemo(() => {
     const ids = new Set<string>();
     if (!data) return ids;
@@ -122,16 +165,16 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       if (config !== "all" && !n.configs.includes(config)) return false;
       return true;
     };
-    const owners = new Set(["node", "hardware", "page"]);
-    for (const n of data.nodes) if (owners.has(n.kind) && passes(n)) ids.add(n.id);
+    for (const n of data.nodes) if (OWNERS.has(n.kind) && passes(n)) ids.add(n.id);
+    if (capas) return ids;
     for (const e of data.edges) {
       for (const [a, b] of [[e.source, e.target], [e.target, e.source]]) {
         const other = nodeById.get(b);
-        if (ids.has(a) && other && !owners.has(other.kind) && passes(other)) ids.add(b);
+        if (ids.has(a) && other && !OWNERS.has(other.kind) && passes(other)) ids.add(b);
       }
     }
     return ids;
-  }, [data, config, hiddenGroups, showOld]);
+  }, [data, config, hiddenGroups, showOld, capas]);
   const visibleRef = useRef(visibleIds);
   visibleRef.current = visibleIds;
   const visible = (n: GraphNode | undefined) => Boolean(n && visibleRef.current.has(n.id));
@@ -143,18 +186,20 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     for (const n of data.nodes) {
       g.addNode(n.id, { x: n.x, y: n.y, size: n.size, label: n.label, color: n.status === "roto" ? BROKEN : groupColor.get(n.group) ?? "#888" });
     }
-    data.edges.forEach((e, i) => {
-      if (g.hasNode(e.source) && g.hasNode(e.target)) g.addEdgeWithKey(`e${i}`, e.source, e.target, { size: 0.8, label: e.label ?? undefined });
+    const edgeList = capas ? data.flowEdges! : data.edges;
+    edgeList.forEach((e, i) => {
+      if (g.hasNode(e.source) && g.hasNode(e.target)) g.addEdgeWithKey(`e${i}`, e.source, e.target, { size: capas ? 1 : 0.8, label: e.label ?? undefined });
     });
     graph.current = g;
 
     const dark = isDark();
+    const el = container.current;
+    const narrow = isNarrow(el);
     const faded = dark ? "#1f2d3d" : "#e3e8ee";
     // Colores sólidos ya mezclados con el fondo: Sigma pinta las líneas sin respetar bien el alfa.
-    const edgeColor = dark ? "#26384a" : "#d3dbe4";
+    const edgeColor = capas ? (dark ? "#34485e" : "#c3ccd7") : dark ? "#26384a" : "#d3dbe4";
     const edgeFaded = dark ? "#152230" : "#eef2f6";
     const edgeFocus = dark ? "#3cc3d2" : "#0b7a8a";
-    const el = container.current;
     const flow = overlay.current;
     let cancelled = false;
     let renderer: Sigma | null = null;
@@ -164,6 +209,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     // Fase al azar por conexión para que los puntos no salgan todos a la vez.
     const phase = new Map<string, number>();
     g.forEachEdge((id) => phase.set(id, Math.random()));
+    const focusOf = () => state.current.hovered ?? state.current.selected ?? state.current.tourNode;
 
     const tick = (now: number) => {
       raf = 0;
@@ -179,7 +225,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      const focus = state.current.hovered ?? state.current.selected;
+      const focus = focusOf();
       const color = dark ? FLOW.dark : FLOW.light;
       ctx.fillStyle = color;
       ctx.shadowColor = color;
@@ -216,35 +262,51 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     import("sigma").then(({ default: SigmaClass }) => {
       if (cancelled) return;
       renderer = new SigmaClass(g, el, {
-        defaultEdgeType: "line",
-        renderEdgeLabels: false,
+        defaultEdgeType: capas ? "arrow" : "line",
+        renderEdgeLabels: capas,
+        edgeLabelColor: { color: dark ? "#93a3b5" : "#5a6878" },
+        edgeLabelSize: 11,
+        edgeLabelFont: "ui-monospace, monospace",
         labelColor: { color: dark ? "#e4ecf4" : "#0f1b2a" },
         labelFont: "system-ui, sans-serif",
         labelSize: 12,
-        labelDensity: 1,
-        labelRenderedSizeThreshold: 4,
+        // A tiene pocos nodos: todas las etiquetas. B en teléfono: solo las de los nodos grandes.
+        labelDensity: capas ? 1 : narrow ? 0.5 : 1,
+        labelGridCellSize: capas ? 60 : 100,
+        labelRenderedSizeThreshold: capas ? 0 : narrow ? 9 : 4,
         zIndex: true,
+        // Margen para que la etiqueta del último nodo (a su derecha) no se corte en el borde.
+        stagePadding: capas ? 70 : 30,
         defaultDrawNodeHover: drawHover(dark),
         minCameraRatio: 0.08,
         maxCameraRatio: 4,
         nodeReducer: (id, attrs) => {
           const n = nodeById.get(id);
           if (!visible(n)) return { ...attrs, hidden: true };
-          const focus = state.current.hovered ?? state.current.selected;
+          const focus = focusOf();
           if (!focus || !g.hasNode(focus)) return attrs;
           if (id === focus) return { ...attrs, highlighted: true, zIndex: 2, forceLabel: true };
           if (g.areNeighbors(id, focus)) return { ...attrs, zIndex: 1, forceLabel: true };
-          return { ...attrs, color: faded, label: "", zIndex: 0 };
+          return { ...attrs, color: faded, label: capas ? attrs.label : "", zIndex: 0 };
         },
         edgeReducer: (id, attrs) => {
           const [s, t] = g.extremities(id);
           if (!visible(nodeById.get(s)) || !visible(nodeById.get(t))) return { ...attrs, hidden: true };
-          const focus = state.current.hovered ?? state.current.selected;
-          if (!focus) return { ...attrs, color: edgeColor };
+          const focus = focusOf();
+          // El nombre del topic solo aparece en las flechas del nodo enfocado, para no llenar el dibujo de texto.
+          if (!focus) return { ...attrs, color: edgeColor, label: undefined };
           if (s === focus || t === focus) return { ...attrs, type: "arrow", color: edgeFocus, size: 2.4, zIndex: 1 };
-          return { ...attrs, color: edgeFaded };
+          return { ...attrs, color: edgeFaded, label: undefined };
         },
       });
+      renderer.on("enterNode", ({ node }) => setHovered(node));
+      renderer.on("leaveNode", () => setHovered(null));
+      renderer.on("clickNode", ({ node }) => {
+        setTourStep(null);
+        setSelected(node);
+      });
+      renderer.on("clickStage", () => setSelected(null));
+      sigma.current = renderer;
       // Solo se anima mientras el grafo está en pantalla.
       io = new IntersectionObserver(([entry]) => {
         onScreen = entry.isIntersecting;
@@ -252,11 +314,6 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       });
       io.observe(el);
       start();
-      renderer.on("enterNode", ({ node }) => setHovered(node));
-      renderer.on("leaveNode", () => setHovered(null));
-      renderer.on("clickNode", ({ node }) => setSelected(node));
-      renderer.on("clickStage", () => setSelected(null));
-      sigma.current = renderer;
       setReady((n) => n + 1);
     });
     return () => {
@@ -267,36 +324,63 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       renderer?.kill();
       sigma.current = null;
     };
-  }, [data]);
+  }, [data, capas]);
 
   // Al cambiar el filtro: posiciones del layout de ese filtro (calculado en el build) y encuadre de lo visible.
+  // En teléfono, el diseño A gira las columnas para que el dato baje de arriba abajo, y el alto del lienzo se ajusta
+  // a la forma del dibujo para no dejar huecos.
   useEffect(() => {
     const r = sigma.current;
     const g = graph.current;
-    if (!r || !g || !data) return;
+    const el = container.current;
+    if (!r || !g || !data || !el) return;
     const key = config !== "all" ? config : showOld ? "old" : "all";
+    const narrow = isNarrow(el);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const n of data.nodes) {
-      const xy = n.pos?.[key];
+      let xy = (capas && n.pos?.[`capas:${key}`]) || n.pos?.[key];
+      // Girado, las filas pasan a ser horizontales: se separan más porque el teléfono es angosto y las etiquetas
+      // van a la derecha de cada nodo.
+      if (xy && capas && narrow) xy = [xy[1] * 4, -xy[0]];
       if (xy) g.mergeNodeAttributes(n.id, { x: xy[0], y: xy[1] });
       if (!visibleIds.has(n.id)) continue;
       const { x, y } = g.getNodeAttributes(n.id);
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
-    if (Number.isFinite(x0)) r.setCustomBBox({ x: [x0, x1], y: [y0, y1] });
+    if (Number.isFinite(x0)) {
+      r.setCustomBBox({ x: [x0, x1], y: [y0, y1] });
+      if (narrow) {
+        const aspect = (y1 - y0 || 1) / (x1 - x0 || 1);
+        // Tope de 62 % del alto: deja lugar a la tarjeta del recorrido y a la barra del navegador.
+        setStageHeight(Math.round(Math.min(innerHeight * 0.62, Math.max(340, el.clientWidth * aspect * 1.1 + 60))));
+      } else setStageHeight(null);
+    }
     r.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
     r.refresh();
+    // Si el primer dibujo cae justo cuando Sigma termina de montarse se pierde: se repite en el siguiente cuadro.
+    const frame = requestAnimationFrame(() => r.refresh());
+    return () => cancelAnimationFrame(frame);
   }, [visibleIds, ready]);
+
+  // Sigma no se entera solo de que cambió el alto del contenedor.
+  useEffect(() => {
+    const r = sigma.current;
+    if (!r) return;
+    r.resize();
+    r.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+    r.refresh();
+  }, [stageHeight]);
 
   useEffect(() => {
     sigma.current?.refresh({ skipIndexation: true });
-  }, [selected, hovered]);
+  }, [selected, hovered, tourStep]);
 
   useEffect(() => {
     if (data) writeParams(view, config, selected);
   }, [view, config, selected, data]);
 
-  // Al elegir un nodo (también desde ?node=) la cámara lo centra.
+  // Al elegir un nodo (también desde ?node=) la cámara lo centra. En el recorrido no se mueve: se ve todo el camino
+  // y solo cambia lo resaltado.
   useEffect(() => {
     const r = sigma.current;
     if (!r || !selected || !graph.current?.hasNode(selected)) return;
@@ -320,6 +404,31 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       return next;
     });
 
+  const startTour = () => {
+    setSelected(null);
+    if (tourConfig && config !== tourConfig) setConfig(tourConfig);
+    setTourStep(0);
+  };
+  const endTour = () => {
+    storage.set(TOUR_SEEN, "1");
+    setTourStep(null);
+    camera("reset");
+  };
+
+  // Buscador: nombres de los nodos que se ven ahora.
+  const searchable = useMemo(
+    () => (data?.nodes ?? []).filter((n) => visibleIds.has(n.id) && OWNERS.has(n.kind)).sort((a, b) => a.label.localeCompare(b.label)),
+    [data, visibleIds],
+  );
+  const goTo = (text: string) => {
+    setQuery(text);
+    const hit = searchable.find((n) => n.label.toLowerCase() === text.trim().toLowerCase());
+    if (!hit) return;
+    setTourStep(null);
+    setSelected(hit.id);
+    setQuery("");
+  };
+
   const node = selected ? nodeById.get(selected) : undefined;
   const neighbors = useMemo(() => {
     if (!node || !data) return { out: [], in: [] };
@@ -330,6 +439,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const codeUrl = (file?: string, line?: number | null) => (file && data ? `${data.repoUrl}/blob/${data.sha}/${file}${line ? `#L${line}` : ""}` : undefined);
   const verbs = node?.kind === "node" ? ["Publica / sirve", "Recibe de"] : node?.kind === "page" ? ["Enlaza a", "La enlazan"] : ["Lo usan", "Viene de"];
   const visibleCount = visibleIds.size;
+  const step = tourStep !== null ? tour[tourStep] : null;
 
   return (
     <div className="rg" data-pagefind-ignore="all">
@@ -337,7 +447,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {views.length > 1 && (
           <div className="rg-tabs" role="tablist" aria-label="Vista">
             {views.map((v) => (
-              <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => { setSelected(null); setConfig("all"); setHiddenGroups(new Set()); setView(v.id); }}>
+              <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => { setSelected(null); setTourStep(null); setConfig("all"); setHiddenGroups(new Set()); setView(v.id); }}>
                 {v.label}
               </button>
             ))}
@@ -346,7 +456,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {data && data.configs.length > 0 && (
           <label className="rg-field">
             <span>Configuración</span>
-            <select value={config} onChange={(e) => { setSelected(null); setConfig(e.target.value); }}>
+            <select value={config} onChange={(e) => { setSelected(null); setTourStep(null); setConfig(e.target.value); }}>
               <option value="all">Todo el repo</option>
               {data.configs.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
@@ -357,13 +467,32 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} /> Mostrar legado y sin uso
           </label>
         )}
-        <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.length}` : ""}</span>
+        {data && (
+          <label className="rg-field rg-search">
+            <span className="sr-only">Ir a un nodo</span>
+            <input
+              type="search"
+              list={`rg-nodes-${projectId}`}
+              placeholder="Ir a nodo…"
+              value={query}
+              onChange={(e) => goTo(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && goTo(query)}
+            />
+            <datalist id={`rg-nodes-${projectId}`}>
+              {searchable.map((n) => <option key={n.id} value={n.label} />)}
+            </datalist>
+          </label>
+        )}
+        {capas && tour.length > 0 && tourStep === null && (
+          <button className="rg-tour-btn" onClick={startTour}>▶ Recorrido</button>
+        )}
+        <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.filter((n) => !capas || OWNERS.has(n.kind)).length}` : ""}</span>
       </div>
 
       {data && (
         <div className="rg-legend" aria-label="Capas">
-          {data.groups.map((gr) => (
-            <button key={gr.id} className="rg-chip" aria-pressed={!hiddenGroups.has(gr.id)} onClick={() => toggleGroup(gr.id)}>
+          {data.groups.filter((gr) => !capas || !["topic", "service"].includes(gr.id)).map((gr) => (
+            <button key={gr.id} className="rg-chip" aria-pressed={!hiddenGroups.has(gr.id)} title={gr.hint} onClick={() => toggleGroup(gr.id)}>
               <span className="rg-dot" style={{ background: gr.color }} />
               {gr.label}
             </button>
@@ -372,15 +501,36 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         </div>
       )}
 
-      <div className="rg-stage">
+      {diseno === "b" && data && (
+        <details className="rg-help">
+          <summary>Cómo leer este grafo</summary>
+          <ul>
+            <li>Cada <strong>círculo grande</strong> es un programa (nodo de ROS) o una pieza de hardware; los <strong>chicos</strong> son los mensajes que se pasan (topics y servicios).</li>
+            <li>Los <span className="rg-flowdot" aria-hidden="true" /> <strong>puntos verdes</strong> viajan en la dirección en que va el dato.</li>
+            <li>{touch ? "Toca" : "Pasa el cursor sobre"} un nodo para resaltar con quién habla; tócalo o haz clic para ver su detalle.</li>
+            {data.groups.filter((gr) => gr.hint).length > 0 && (
+              <li>
+                Qué significa cada color:
+                <ul className="rg-colors">
+                  {data.groups.filter((gr) => gr.hint).map((gr) => (
+                    <li key={gr.id}><span className="rg-dot rg-inline" style={{ background: gr.color }} /> <strong>{gr.label}</strong>: {gr.hint}</li>
+                  ))}
+                </ul>
+              </li>
+            )}
+          </ul>
+        </details>
+      )}
+
+      <div className="rg-stage" style={stageHeight ? { height: stageHeight } : undefined}>
         <div ref={container} className="rg-canvas" style={{ pointerEvents: active ? "auto" : "none" }} role="img" aria-label={`Grafo: ${data?.title ?? ""}. La tabla de abajo tiene la misma información en texto.`} />
         <canvas ref={overlay} className="rg-flow" aria-hidden="true" />
         {!data && !error && <p className="rg-msg">Cargando el grafo…</p>}
         {error && <p className="rg-msg">No se pudo cargar el grafo ({error}).</p>}
-        {touch && !active && data && (
+        {touch && !active && data && !step && (
           <button className="rg-shield" onClick={() => setActive(true)}>Tocar para explorar el grafo</button>
         )}
-        <div className="rg-zoom" hidden={!active}>
+        <div className="rg-zoom" hidden={!active || Boolean(step)}>
           {touch && active && <button onClick={() => { setActive(false); setSelected(null); }} aria-label="Soltar el grafo y volver a desplazar la página">Listo</button>}
           <button onClick={() => camera("in")} aria-label="Acercar">+</button>
           <button onClick={() => camera("out")} aria-label="Alejar">−</button>
@@ -427,6 +577,21 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </aside>
         )}
       </div>
+
+      {step && tourStep !== null && (
+        <div className="rg-tour" role="dialog" aria-label="Recorrido guiado" aria-live="polite">
+          <p className="rg-tour-step">Paso {tourStep + 1} de {tour.length}</p>
+          <p>{step.text}</p>
+          <div className="rg-tour-actions">
+            <button onClick={endTour}>Saltar</button>
+            <span />
+            {tourStep > 0 && <button onClick={() => setTourStep(tourStep - 1)}>Anterior</button>}
+            {tourStep < tour.length - 1
+              ? <button className="rg-primary" onClick={() => setTourStep(tourStep + 1)}>Siguiente</button>
+              : <button className="rg-primary" onClick={endTour}>Terminar</button>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

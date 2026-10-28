@@ -5,7 +5,14 @@
     "summary": "Vehículo submarino autónomo: control, navegación, visión, misiones y simulación en ROS 2.",
     "repo": "cyuxSz/uuv-docs-lab",
     "branch": "main",
-    "note": "Copia de prueba de vanttec/uuv_software"
+    "note": "Copia de prueba de vanttec/uuv_software",
+    "tour": [
+      { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2: además de ver, calcula dónde está el sub." },
+      { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },
+      { "node": "uuv_mission/instruction_handler", "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo." },
+      { "node": "uuv_control/asmc", "text": "El control (ASMC) compara dónde está con dónde debe estar y calcula las fuerzas (/forces)." },
+      { "node": "uuv_control/thrust_allocator", "text": "thrust_allocator reparte esas fuerzas entre los 6 motores. En este launch el paso al Arduino está comentado." }
+    ]
   },
   {
     "id": "proyecto-x",
