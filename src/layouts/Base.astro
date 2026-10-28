@@ -1,6 +1,7 @@
 ---
 // Esqueleto común: barra superior, búsqueda (Pagefind) y pie. El login lo resuelve middleware.js antes de servir.
 import "../styles/global.css";
+import disenoScript from "../scripts/diseno-inline.js?raw";
 
 interface Props {
   title: string;
@@ -19,6 +20,7 @@ const { title, description = "Documentación de los proyectos de software de Van
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script is:inline set:html={disenoScript} />
   </head>
   <body>
     <a class="sr-only" href="#contenido">Saltar al contenido</a>
@@ -32,6 +34,7 @@ const { title, description = "Documentación de los proyectos de software de Van
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
           <span>Buscar</span><kbd>/</kbd>
         </button>
+        <button class="diseno-chip" type="button" id="diseno" title="Cambiar de diseño (prueba A/B)">Diseño</button>
         <span class="user" id="user"></span>
         <a href="/auth/logout">Salir</a>
       </nav>
@@ -91,6 +94,25 @@ const { title, description = "Documentación de los proyectos de software de Van
           openSearch();
         }
       });
+      // Chip A/B: muestra el diseño actual y cambia al otro recargando con ?diseno=.
+      const chip = document.getElementById("diseno")!;
+      const diseno = document.documentElement.dataset.diseno === "b" ? "b" : "a";
+      // En teléfono solo se ve la letra (.hide-sm), para no empujar "Salir" fuera de la pantalla.
+      chip.innerHTML = `<span class="hide-sm">Diseño </span>${diseno.toUpperCase()}`;
+      chip.addEventListener("click", () => {
+        const url = new URL(location.href);
+        url.searchParams.set("diseno", diseno === "a" ? "b" : "a");
+        location.assign(url);
+      });
+
+      // Tablas en tarjetas (diseño A, teléfono): cada celda lleva el nombre de su columna.
+      document.querySelectorAll<HTMLTableElement>(".prose table, .data-table").forEach((table) => {
+        const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent?.trim() ?? "");
+        table.querySelectorAll("tbody tr").forEach((tr) => {
+          [...tr.children].forEach((td, i) => heads[i] && td.setAttribute("data-label", heads[i]));
+        });
+      });
+
       fetch("/auth/me")
         .then((r) => (r.ok ? r.json() : null))
         .then((me) => {
