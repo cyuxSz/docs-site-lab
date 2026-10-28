@@ -54,6 +54,8 @@ export interface ProjectSummary {
   repo: string;
   branch: string;
   note?: string;
+  // Recorrido guiado del grafo (diseño A): ids de ros.json en orden, con una frase cada uno.
+  tour?: { node: string; text: string }[];
   repoUrl?: string;
   sha?: string;
   pages?: number;
