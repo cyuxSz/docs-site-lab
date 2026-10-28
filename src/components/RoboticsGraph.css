@@ -17,8 +17,21 @@
 .rg-chip.rg-static { cursor: default; }
 .rg-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
 
-.rg-stage { position: relative; height: min(72vh, 720px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+/* Fondo tipo OpenWiki: halo suave al centro y retícula de puntos tenue. */
+.rg-stage {
+  position: relative; height: min(72vh, 720px); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  background:
+    radial-gradient(circle, var(--rg-grid) 1px, transparent 1.2px) 0 0 / 22px 22px,
+    radial-gradient(ellipse at 50% 45%, var(--rg-glow), transparent 70%),
+    var(--surface);
+  --rg-grid: rgba(15, 27, 42, .07);
+  --rg-glow: rgba(11, 122, 138, .07);
+}
+@media (prefers-color-scheme: dark) {
+  .rg-stage { --rg-grid: rgba(228, 236, 244, .06); --rg-glow: rgba(60, 195, 210, .1); }
+}
 .rg-canvas { position: absolute; inset: 0; touch-action: none; }
+.rg-flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .rg-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); }
 .rg-shield {
   position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding: 20px;

@@ -3,6 +3,8 @@
 // - Filtros por configuración (launch en uso), por capa y por estado.
 // - Al pasar o tocar un nodo se atenúa todo lo que no es su vecindario.
 // - Al hacer clic se abre un panel con sus topics, tipos de mensaje y enlaces a código y documentación.
+// - Las conexiones son tenues y unos puntos verdes viajan por ellas en el sentido del dato (canvas encima de Sigma);
+//   con un nodo enfocado solo se animan y resaltan las suyas.
 // - En pantallas táctiles hay que tocar una vez para activarlo, así no atrapa el scroll de la página.
 import { useEffect, useMemo, useRef, useState } from "react";
 import Graph from "graphology";
@@ -25,7 +27,9 @@ const STATUS_LABEL: Record<string, string> = { en_uso: "En uso", legado: "Legado
 const BROKEN = "#EF4444";
 const HIDDEN_BY_DEFAULT = new Set(["legado", "sin_uso"]);
 
-const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const FLOW = { light: "#16a34a", dark: "#4ade80" };
+
+const reducedMotion =() => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
 
 // Etiqueta del nodo resaltado con los colores del tema (la de Sigma es siempre un recuadro blanco).
@@ -82,6 +86,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [ready, setReady] = useState(0);
 
   const container = useRef<HTMLDivElement>(null);
+  const overlay = useRef<HTMLCanvasElement>(null);
   const sigma = useRef<Sigma | null>(null);
   const graph = useRef<Graph | null>(null);
   const state = useRef({ selected, hovered });
@@ -139,21 +144,79 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       g.addNode(n.id, { x: n.x, y: n.y, size: n.size, label: n.label, color: n.status === "roto" ? BROKEN : groupColor.get(n.group) ?? "#888" });
     }
     data.edges.forEach((e, i) => {
-      if (g.hasNode(e.source) && g.hasNode(e.target)) g.addEdgeWithKey(`e${i}`, e.source, e.target, { size: 1.2, label: e.label ?? undefined });
+      if (g.hasNode(e.source) && g.hasNode(e.target)) g.addEdgeWithKey(`e${i}`, e.source, e.target, { size: 0.8, label: e.label ?? undefined });
     });
     graph.current = g;
 
     const dark = isDark();
     const faded = dark ? "#1f2d3d" : "#e3e8ee";
-    const edgeColor = dark ? "rgba(148,163,184,0.35)" : "rgba(71,85,105,0.3)";
+    // Colores sólidos ya mezclados con el fondo: Sigma pinta las líneas sin respetar bien el alfa.
+    const edgeColor = dark ? "#26384a" : "#d3dbe4";
+    const edgeFaded = dark ? "#152230" : "#eef2f6";
+    const edgeFocus = dark ? "#3cc3d2" : "#0b7a8a";
     const el = container.current;
+    const flow = overlay.current;
     let cancelled = false;
     let renderer: Sigma | null = null;
+    let raf = 0;
+    let onScreen = true;
+    let io: IntersectionObserver | null = null;
+    // Fase al azar por conexión para que los puntos no salgan todos a la vez.
+    const phase = new Map<string, number>();
+    g.forEachEdge((id) => phase.set(id, Math.random()));
+
+    const tick = (now: number) => {
+      raf = 0;
+      const r = renderer;
+      const ctx = flow?.getContext("2d");
+      if (cancelled || !r || !flow || !ctx || !onScreen) return;
+      const dpr = devicePixelRatio || 1;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (flow.width !== Math.round(w * dpr) || flow.height !== Math.round(h * dpr)) {
+        flow.width = Math.round(w * dpr);
+        flow.height = Math.round(h * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const focus = state.current.hovered ?? state.current.selected;
+      const color = dark ? FLOW.dark : FLOW.light;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      const t = now / 1000;
+      g.forEachEdge((id, _attrs, s, tg) => {
+        if (!visible(nodeById.get(s)) || !visible(nodeById.get(tg))) return;
+        const on = Boolean(focus && (s === focus || tg === focus));
+        if (focus && !on) return;
+        const a = r.getNodeDisplayData(s);
+        const b = r.getNodeDisplayData(tg);
+        if (!a || !b) return;
+        const p = r.framedGraphToViewport(a);
+        const q = r.framedGraphToViewport(b);
+        const len = Math.hypot(q.x - p.x, q.y - p.y);
+        if (len < 4) return;
+        // Velocidad constante en pantalla: las conexiones largas tardan más.
+        const duration = Math.max(0.9, len / (on ? 110 : 60));
+        const count = on ? Math.min(4, 1 + Math.floor(len / 120)) : 1;
+        ctx.globalAlpha = on ? 1 : 0.8;
+        ctx.shadowBlur = on ? 10 : 4;
+        for (let k = 0; k < count; k++) {
+          const f = (t / duration + phase.get(id)! + k / count) % 1;
+          ctx.beginPath();
+          ctx.arc(p.x + (q.x - p.x) * f, p.y + (q.y - p.y) * f, on ? 3.2 : 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    const start = () => {
+      if (!raf && !reducedMotion()) raf = requestAnimationFrame(tick);
+    };
     // Sigma usa WebGL al importarse: se carga solo en el navegador.
     import("sigma").then(({ default: SigmaClass }) => {
       if (cancelled) return;
       renderer = new SigmaClass(g, el, {
-        defaultEdgeType: "arrow",
+        defaultEdgeType: "line",
         renderEdgeLabels: false,
         labelColor: { color: dark ? "#e4ecf4" : "#0f1b2a" },
         labelFont: "system-ui, sans-serif",
@@ -178,10 +241,17 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           if (!visible(nodeById.get(s)) || !visible(nodeById.get(t))) return { ...attrs, hidden: true };
           const focus = state.current.hovered ?? state.current.selected;
           if (!focus) return { ...attrs, color: edgeColor };
-          if (s === focus || t === focus) return { ...attrs, color: dark ? "#3cc3d2" : "#0b7a8a", size: 2, zIndex: 1 };
-          return { ...attrs, hidden: true };
+          if (s === focus || t === focus) return { ...attrs, type: "arrow", color: edgeFocus, size: 2.4, zIndex: 1 };
+          return { ...attrs, color: edgeFaded };
         },
       });
+      // Solo se anima mientras el grafo está en pantalla.
+      io = new IntersectionObserver(([entry]) => {
+        onScreen = entry.isIntersecting;
+        if (onScreen) start();
+      });
+      io.observe(el);
+      start();
       renderer.on("enterNode", ({ node }) => setHovered(node));
       renderer.on("leaveNode", () => setHovered(null));
       renderer.on("clickNode", ({ node }) => setSelected(node));
@@ -191,6 +261,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     });
     return () => {
       cancelled = true;
+      cancelAnimationFrame(raf);
+      io?.disconnect();
+      flow?.getContext("2d")?.clearRect(0, 0, flow.width, flow.height);
       renderer?.kill();
       sigma.current = null;
     };
@@ -301,6 +374,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
 
       <div className="rg-stage">
         <div ref={container} className="rg-canvas" style={{ pointerEvents: active ? "auto" : "none" }} role="img" aria-label={`Grafo: ${data?.title ?? ""}. La tabla de abajo tiene la misma información en texto.`} />
+        <canvas ref={overlay} className="rg-flow" aria-hidden="true" />
         {!data && !error && <p className="rg-msg">Cargando el grafo…</p>}
         {error && <p className="rg-msg">No se pudo cargar el grafo ({error}).</p>}
         {touch && !active && data && (
