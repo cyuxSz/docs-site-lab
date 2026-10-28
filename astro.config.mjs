@@ -1,6 +1,11 @@
 // Sitio estático: el login lo hace middleware.js (Routing Middleware de Vercel), no Astro.
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { defineConfig } from "astro/config";
 import react from "@astrojs/react";
+
+// Script en línea de la prueba A/B (Base.astro): Astro no calcula el hash de los is:inline, así que va a mano.
+const disenoHash = `sha256-${createHash("sha256").update(readFileSync(new URL("./src/scripts/diseno-inline.js", import.meta.url), "utf8")).digest("base64")}`;
 
 export default defineConfig({
   output: "static",
@@ -18,7 +23,7 @@ export default defineConfig({
     // Estilos con 'unsafe-inline' porque Mermaid y Shiki los escriben en línea.
     // frame-ancestors no funciona en <meta>: va como cabecera en vercel.json.
     csp: {
-      scriptDirective: { resources: ["'self'", "'wasm-unsafe-eval'"] },
+      scriptDirective: { resources: ["'self'", "'wasm-unsafe-eval'"], hashes: [disenoHash] },
       styleDirective: { resources: ["'self'", "'unsafe-inline'"] },
       directives: [
         "default-src 'self'",

@@ -114,6 +114,12 @@ function splitFrontmatter(text) {
 // código se escapa y se muestra como texto: así nadie mete <script>, <iframe> o formularios en el portal desde un repo.
 // La CSP del sitio es la segunda barrera.
 export function neutralizeHtml(body) {
+  // Fuera de `código en línea`, "<" seguido de letra, "/", "!" o "?" abre HTML: se escapa.
+  return outsideCode(body, (text) => text.replace(/<(?=[A-Za-z\/!?])/g, "&lt;"));
+}
+
+// Aplica fn solo al texto que no está en bloques ``` ni en `código en línea`.
+function outsideCode(body, fn) {
   let fence = null;
   return body
     .split("\n")
@@ -125,13 +131,22 @@ export function neutralizeHtml(body) {
         return line;
       }
       if (fence) return line;
-      // Fuera de `código en línea`, "<" seguido de letra, "/", "!" o "?" abre HTML: se escapa.
       return line
         .split(/(`+[^`]*`+)/)
-        .map((part, i) => (i % 2 ? part : part.replace(/<(?=[A-Za-z\/!?])/g, "&lt;")))
+        .map((part, i) => (i % 2 ? part : fn(part)))
         .join("");
     })
     .join("\n");
+}
+
+// Los emojis de estado de las tablas de la wiki se vuelven íconos del portal (mismos colores que el grafo); el texto
+// que sigue al emoji ya explica el estado, así que el ícono solo lleva el nombre para lectores de pantalla.
+// Va después de neutralizeHtml: este HTML lo genera el portal, no el repo.
+const STATUS_EMOJI = { "✅": ["en_uso", "En uso"], "🟡": ["legado", "Legado"], "⚪": ["sin_uso", "Sin uso"], "❌": ["roto", "Roto"] };
+export function statusBadges(body) {
+  return outsideCode(body, (text) =>
+    text.replace(/(✅|🟡|⚪|❌)️?/gu, (_, e) => `<span class="st st-${STATUS_EMOJI[e][0]}" role="img" aria-label="${STATUS_EMOJI[e][1]}" title="${STATUS_EMOJI[e][1]}"></span>`),
+  );
 }
 
 // Enlaces de la wiki: .md -> ruta del portal; código -> GitHub en el commit construido.
@@ -166,7 +181,7 @@ function buildProject(project) {
     if (rel.startsWith(".") || !rel.endsWith(".md")) continue;
     const { fields, body } = splitFrontmatter(readFileSync(file, "utf8"));
     const links = new Set();
-    const text = rewriteLinks(neutralizeHtml(body), project.id, rel, repoUrl, sha, links);
+    const text = rewriteLinks(statusBadges(neutralizeHtml(body)), project.id, rel, repoUrl, sha, links);
     const { date, author } = lastChange(dir, `openwiki/${rel}`);
     const title = fields.title || (body.match(/^#\s+(.+)$/m) || [])[1] || rel;
     const page = {

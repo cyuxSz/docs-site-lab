@@ -8,6 +8,7 @@ export interface GraphCategory {
   id: string;
   label: string;
   color: string;
+  hint?: string; // qué hace, en una línea, para quien no conoce el proyecto
 }
 
 export interface GraphNode {
@@ -47,20 +48,24 @@ export interface GraphData {
   groups: GraphCategory[];
   nodes: GraphNode[];
   edges: GraphEdge[];
+  // Diseño A ("por capas"): flechas nodo → nodo con el topic o servicio como etiqueta, sin los topics como nodos.
+  flowEdges?: GraphEdge[];
+  // Recorrido guiado del diseño A (projects.json → tour).
+  tour?: { node: string; text: string }[];
 }
 
 // Paleta de la propuesta (azul ROS, verde visión, violeta IA, naranja hardware), ampliada a las capas del repo.
 export const LAYERS: GraphCategory[] = [
-  { id: "control", label: "Control", color: "#007ACC" },
-  { id: "mision", label: "Misión", color: "#0B9AA8" },
-  { id: "navegacion", label: "Navegación", color: "#10B981" },
-  { id: "vision", label: "Visión / IA", color: "#8B5CF6" },
-  { id: "visualizacion", label: "Visualización", color: "#64748B" },
-  { id: "simulacion", label: "Simulación", color: "#B7791F" },
-  { id: "externo", label: "Paquetes externos", color: "#94A3B8" },
-  { id: "hardware", label: "Hardware", color: "#F97316" },
-  { id: "topic", label: "Topics", color: "#9AA5B1" },
-  { id: "service", label: "Servicios y acciones", color: "#D4A017" },
+  { id: "control", label: "Control", color: "#007ACC", hint: "calcula las fuerzas para mover el sub" },
+  { id: "mision", label: "Misión", color: "#0B9AA8", hint: "decide a dónde ir y qué hacer" },
+  { id: "navegacion", label: "Navegación", color: "#10B981", hint: "sabe dónde está el sub" },
+  { id: "vision", label: "Visión / IA", color: "#8B5CF6", hint: "reconoce objetos en la cámara" },
+  { id: "visualizacion", label: "Visualización", color: "#64748B", hint: "muestra datos para depurar" },
+  { id: "simulacion", label: "Simulación", color: "#B7791F", hint: "Gazebo, el sub virtual" },
+  { id: "externo", label: "Paquetes externos", color: "#94A3B8", hint: "herramientas de ROS, no del equipo" },
+  { id: "hardware", label: "Hardware", color: "#F97316", hint: "cámara, Arduino y motores" },
+  { id: "topic", label: "Topics", color: "#9AA5B1", hint: "canales de mensajes entre nodos" },
+  { id: "service", label: "Servicios y acciones", color: "#D4A017", hint: "pregunta y respuesta entre nodos" },
 ];
 
 const PAGE_TYPES: GraphCategory[] = [
@@ -105,19 +110,110 @@ function subset(nodes: GraphNode[], edges: GraphEdge[], pass: (n: GraphNode) => 
   return { nodes: nodes.filter((n) => ids.has(n.id)), edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
 }
 
+// Diseño A: los topics y servicios dejan de ser nodos. Cada productor → topic → consumidor se vuelve una flecha
+// productor → consumidor con el nombre del topic; si dos nodos comparten varios topics, van en la misma etiqueta.
+function flowEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEdge[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const owner = (id: string) => ["node", "hardware"].includes(byId.get(id)?.kind ?? "");
+  const pairs = new Map<string, GraphEdge>();
+  const add = (source: string, target: string, label: string | null | undefined, from: GraphEdge) => {
+    if (source === target) return;
+    const key = `${source}→${target}`;
+    const prev = pairs.get(key);
+    if (prev) {
+      if (label && !prev.label?.split(", ").includes(label)) prev.label = prev.label ? `${prev.label}, ${label}` : label;
+    } else pairs.set(key, { source, target, label: label ?? null, kind: "flow", file: from.file, line: from.line });
+  };
+  for (const e of edges) if (owner(e.source) && owner(e.target)) add(e.source, e.target, e.label, e);
+  for (const mid of nodes.filter((n) => !owner(n.id))) {
+    const ins = edges.filter((e) => e.target === mid.id && owner(e.source));
+    const outs = edges.filter((e) => e.source === mid.id && owner(e.target));
+    for (const a of ins) for (const b of outs) add(a.source, b.target, mid.label, a);
+  }
+  return [...pairs.values()];
+}
+
+// Diseño A: columnas de izquierda a derecha según el camino del dato (camino más largo desde las fuentes, ignorando
+// ciclos) y orden dentro de cada columna con dos pasadas de baricentro para cruzar menos flechas.
+function layered(nodes: GraphNode[], edges: GraphEdge[]) {
+  const ids = new Set(nodes.map((n) => n.id));
+  const es = edges.filter((e) => ids.has(e.source) && ids.has(e.target) && e.source !== e.target);
+  const out = new Map<string, string[]>();
+  const inc = new Map<string, string[]>();
+  for (const e of es) {
+    out.set(e.source, [...(out.get(e.source) ?? []), e.target]);
+    inc.set(e.target, [...(inc.get(e.target) ?? []), e.source]);
+  }
+  // Quita las flechas que cierran ciclos (DFS) para poder ordenar.
+  const state = new Map<string, number>();
+  const back = new Set<string>();
+  const visit = (id: string) => {
+    state.set(id, 1);
+    for (const t of out.get(id) ?? []) {
+      if (state.get(t) === 1) back.add(`${id}→${t}`);
+      else if (!state.get(t)) visit(t);
+    }
+    state.set(id, 2);
+  };
+  const sorted = [...nodes].sort((a, b) => (inc.get(a.id)?.length ?? 0) - (inc.get(b.id)?.length ?? 0) || a.id.localeCompare(b.id));
+  for (const n of sorted) if (!state.get(n.id)) visit(n.id);
+  const rank = new Map<string, number>();
+  // Sin las flechas de regreso queda un grafo acíclico; el 0 provisional solo protege de un ciclo que se escape.
+  const rankOf = (id: string): number => {
+    if (rank.has(id)) return rank.get(id)!;
+    rank.set(id, 0);
+    const preds = (inc.get(id) ?? []).filter((s) => !back.has(`${s}→${id}`));
+    const r = preds.length ? Math.max(...preds.map((s) => rankOf(s) + 1)) : 0;
+    rank.set(id, r);
+    return r;
+  };
+  for (const n of nodes) rankOf(n.id);
+  // Nodos sueltos (sin flechas) a la última columna, para que no estorben al flujo.
+  const maxRank = Math.max(0, ...rank.values());
+  for (const n of nodes) if (!out.get(n.id)?.length && !inc.get(n.id)?.length) rank.set(n.id, maxRank + 1);
+  const columns: string[][] = [];
+  for (const n of nodes) (columns[rank.get(n.id)!] ??= []).push(n.id);
+  const order = new Map<string, number>();
+  columns.forEach((col) => col.sort().forEach((id, i) => order.set(id, i)));
+  const bary = (id: string, neighbors: string[] | undefined) => {
+    const ys = (neighbors ?? []).map((x) => order.get(x)!).filter((v) => v !== undefined);
+    return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : order.get(id)!;
+  };
+  for (let pass = 0; pass < 4; pass++) {
+    const list = pass % 2 ? [...columns].reverse() : columns;
+    for (const col of list) {
+      if (!col) continue;
+      col.sort((a, b) => bary(a, pass % 2 ? out.get(a) : inc.get(a)) - bary(b, pass % 2 ? out.get(b) : inc.get(b)));
+      col.forEach((id, i) => order.set(id, i));
+    }
+  }
+  // Coordenadas: columnas separadas 10, filas 3; cada columna centrada en vertical. Sigma usa y hacia arriba.
+  const pos = new Map<string, [number, number]>();
+  columns.forEach((col, c) => col?.forEach((id, i) => pos.set(id, [c * 10, round(-(i - (col.length - 1) / 2) * 3)])));
+  return pos;
+}
+
 // Un layout por filtro: al elegir una configuración, sus ~20 nodos se reparten en todo el lienzo.
-function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory[], configs: string[]) {
+// Con flow, además guarda "capas:<filtro>" para el diseño A.
+function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory[], configs: string[], flow?: GraphEdge[]) {
   const old = new Set(["legado", "sin_uso"]);
   const filters: Record<string, (n: GraphNode) => boolean> = {
     all: (n) => !(n.kind === "node" && old.has(n.status ?? "")),
     old: () => true,
   };
   for (const c of configs) filters[c] = (n) => n.configs.includes(c);
+  const owners = new Set(["node", "hardware"]);
   for (const [key, pass] of Object.entries(filters)) {
     const s = subset(nodes, edges, pass);
     for (const [id, xy] of layout(s.nodes, s.edges, groups)) {
       const n = nodes.find((x) => x.id === id)!;
       n.pos = { ...n.pos, [key]: xy };
+    }
+    if (!flow) continue;
+    const kept = s.nodes.filter((n) => owners.has(n.kind));
+    for (const [id, xy] of layered(kept, flow)) {
+      const n = nodes.find((x) => x.id === id)!;
+      n.pos = { ...n.pos, [`capas:${key}`]: xy };
     }
   }
   for (const n of nodes) [n.x, n.y] = n.pos?.old ?? n.pos?.all ?? [0, 0];
@@ -153,7 +249,8 @@ export function rosGraph(p: ProjectData): GraphData | null {
   const edges: GraphEdge[] = p.ros.edges.map((e) => ({ source: e.source, target: e.target, label: e.label, kind: e.kind, file: e.file, line: e.line }));
   const used = new Set(nodes.map((n) => n.group));
   const groups = LAYERS.filter((g) => used.has(g.id));
-  layoutAll(nodes, edges, groups, p.ros.configs.map((c) => c.id));
+  const flow = flowEdges(nodes, edges);
+  layoutAll(nodes, edges, groups, p.ros.configs.map((c) => c.id), flow);
   return {
     view: "ros",
     title: "Nodos ROS",
@@ -163,6 +260,8 @@ export function rosGraph(p: ProjectData): GraphData | null {
     groups,
     nodes,
     edges,
+    flowEdges: flow,
+    tour: (p.tour ?? []).filter((s) => nodes.some((n) => n.id === s.node)),
   };
 }
 

@@ -1,0 +1,159 @@
+---
+// Prueba A/B con personas: 5 tareas medidas sobre el portal. Cada participante recibe un diseño al azar
+// (o el que se elija aquí) y al final copia el resumen o lo manda al formulario del equipo.
+// Todo corre en el navegador: no hay servidor que guarde resultados.
+import Base from "../layouts/Base.astro";
+
+// Enlace del formulario donde se juntan los resultados (Google Forms o Tally). Vacío: solo se copian.
+const FORM_URL = "";
+
+const tasks = [
+  { q: "En el sub real, ¿qué nodo convierte las fuerzas en el empuje de cada motor?", start: "/uuv/grafo/" },
+  { q: "¿Por qué topic le dice la misión al control a dónde ir?", start: "/uuv/grafo/" },
+  { q: "Encuentra un ejecutable de uuv_control que ningún launch usa.", start: "/uuv/packages/uuv_control/" },
+  { q: "Abre el diagrama «UUV: sub real y simulación». ¿Qué nodo está comentado en el launch del sub real?", start: "/uuv/" },
+  { q: "¿En qué pin del Arduino se conecta el motor 1?", start: "/uuv/operations/hardware/" },
+];
+---
+<Base title="Prueba de lectura · VantTec Docs" description="Prueba A/B del portal con personas.">
+  <main class="container prueba" id="contenido" data-pagefind-ignore="all">
+    <section class="hero" style="padding-bottom: 8px">
+      <p class="eyebrow">Prueba de lectura</p>
+      <h1>¿Qué tan fácil es encontrar las cosas?</h1>
+      <p class="lead">Son 5 preguntas. Cada una abre el portal en otra pestaña: busca la respuesta, regresa aquí y escríbela. No es un examen: medimos el portal, no a ti.</p>
+    </section>
+
+    <section class="block" id="inicio">
+      <label class="field">Tu nombre o alias <input id="who" autocomplete="off" /></label>
+      <fieldset class="field">
+        <legend>Diseño que vas a probar</legend>
+        <label><input type="radio" name="d" value="azar" checked /> Al azar</label>
+        <label><input type="radio" name="d" value="a" /> A · Mapa guiado</label>
+        <label><input type="radio" name="d" value="b" /> B · Explorador</label>
+      </fieldset>
+      <button class="btn btn-primary" id="go" type="button">Empezar</button>
+    </section>
+
+    <ol class="tasks" id="tasks" hidden>
+      {tasks.map((t, i) => (
+        <li class="task" data-i={i} data-start={t.start}>
+          <p class="task-q">{t.q}</p>
+          <div class="task-row">
+            <button class="btn" type="button" data-open>Abrir el portal ↗</button>
+            <span class="task-time" aria-live="polite"></span>
+          </div>
+          <label class="field">Respuesta <input data-answer autocomplete="off" /></label>
+          <fieldset class="field ease">
+            <legend>¿Qué tan fácil fue?</legend>
+            {[1, 2, 3, 4, 5].map((n) => <label><input type="radio" name={`ease-${i}`} value={n} /> {n}</label>)}
+            <span class="muted">1 = muy difícil · 5 = muy fácil</span>
+          </fieldset>
+          <button class="btn btn-primary" type="button" data-done>Listo, siguiente</button>
+        </li>
+      ))}
+    </ol>
+
+    <section class="block" id="fin" hidden>
+      <h2>¡Gracias!</h2>
+      <label class="field">¿Algo que te confundió o que cambiarías? <textarea id="comment" rows="4"></textarea></label>
+      <p class="hint">Copia el resumen y mándaselo a quien organiza la prueba{FORM_URL ? ", o pégalo en el formulario" : ""}.</p>
+      <textarea id="summary" rows="10" readonly></textarea>
+      <div class="task-row">
+        <button class="btn btn-primary" id="copy" type="button">Copiar resumen</button>
+        {FORM_URL && <a class="btn" href={FORM_URL} target="_blank" rel="noopener">Abrir formulario ↗</a>}
+      </div>
+    </section>
+  </main>
+
+  <style>
+    .prueba { max-width: 760px; }
+    .field { display: grid; gap: 6px; margin: 12px 0; border: 0; padding: 0; }
+    .field input:not([type="radio"]), .field textarea, #summary {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit;
+    }
+    fieldset.field { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+    fieldset.field legend { width: 100%; margin-bottom: 4px; }
+    .tasks { padding: 0; list-style: none; counter-reset: t; }
+    .task { margin: 0 0 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .task[hidden] { display: none; }
+    .task-q { margin: 0 0 10px; font-weight: 600; }
+    .task-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .task-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+    #summary { font-family: var(--mono); font-size: 13px; }
+  </style>
+
+  <script>
+    // Tiempo por tarea: desde que abre el portal hasta que pulsa "Listo".
+    const qs = <T extends Element>(s: string, root: ParentNode = document) => root.querySelector<T>(s)!;
+    const tasks = [...document.querySelectorAll<HTMLLIElement>(".task")];
+    const results: { tarea: number; respuesta: string; facilidad: number | null; segundos: number | null }[] = [];
+    let diseno: "a" | "b" = "a";
+    let started: number | null = null;
+    let timer = 0;
+
+    const show = (i: number) => tasks.forEach((t, k) => (t.hidden = k !== i));
+
+    qs<HTMLButtonElement>("#go").addEventListener("click", () => {
+      const pick = qs<HTMLInputElement>("input[name=d]:checked").value;
+      diseno = pick === "a" || pick === "b" ? pick : Math.random() < 0.5 ? "a" : "b";
+      qs<HTMLElement>("#inicio").hidden = true;
+      qs<HTMLElement>("#tasks").hidden = false;
+      show(0);
+    });
+
+    tasks.forEach((li, i) => {
+      const time = qs<HTMLElement>(".task-time", li);
+      qs<HTMLButtonElement>("[data-open]", li).addEventListener("click", () => {
+        const url = new URL(li.dataset.start!, location.origin);
+        url.searchParams.set("diseno", diseno);
+        window.open(url, "_blank", "noopener");
+        started ??= Date.now();
+        clearInterval(timer);
+        timer = window.setInterval(() => (time.textContent = `${Math.round((Date.now() - started!) / 1000)} s`), 1000);
+      });
+      qs<HTMLButtonElement>("[data-done]", li).addEventListener("click", () => {
+        clearInterval(timer);
+        const ease = li.querySelector<HTMLInputElement>(`input[name=ease-${i}]:checked`);
+        results.push({
+          tarea: i + 1,
+          respuesta: qs<HTMLInputElement>("[data-answer]", li).value.trim(),
+          facilidad: ease ? Number(ease.value) : null,
+          segundos: started ? Math.round((Date.now() - started) / 1000) : null,
+        });
+        started = null;
+        if (i + 1 < tasks.length) show(i + 1);
+        else {
+          show(-1);
+          qs<HTMLElement>("#fin").hidden = false;
+          render();
+        }
+      });
+    });
+
+    const render = () => {
+      qs<HTMLTextAreaElement>("#summary").value = JSON.stringify(
+        {
+          quien: qs<HTMLInputElement>("#who").value.trim() || "anónimo",
+          diseno: diseno.toUpperCase(),
+          dispositivo: `${matchMedia("(pointer: coarse)").matches ? "táctil" : "mouse"} · ${innerWidth}px`,
+          fecha: new Date().toISOString().slice(0, 16),
+          resultados: results,
+          comentario: qs<HTMLTextAreaElement>("#comment").value.trim(),
+        },
+        null,
+        1,
+      );
+    };
+    qs<HTMLTextAreaElement>("#comment").addEventListener("input", render);
+    qs<HTMLButtonElement>("#copy").addEventListener("click", async () => {
+      render();
+      const box = qs<HTMLTextAreaElement>("#summary");
+      try {
+        await navigator.clipboard.writeText(box.value);
+        qs<HTMLButtonElement>("#copy").textContent = "Copiado ✓";
+      } catch {
+        box.select();
+      }
+    });
+  </script>
+</Base>
