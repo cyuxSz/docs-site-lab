@@ -5,6 +5,9 @@ import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
 import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_LABEL } from "../../lib/data";
 import { TYPE_LABEL } from "../../lib/labels";
+import { anteriorSiguiente, migas } from "../../lib/navegacion.ts";
+import { urlEditar, urlReportar } from "../../lib/acciones.ts";
+import { citasDe } from "../../../tools/citas.mjs";
 
 export async function getStaticPaths() {
   const ok = new Set(builtProjects().map((p) => p.id));
@@ -19,32 +22,71 @@ const { entry } = Astro.props;
 const p = load(entry.data.project);
 const { Content, headings } = await render(entry);
 const route = `/${p.id}/${Astro.params.slug}/`;
-const toc = headings.filter((h) => h.depth === 2);
+// Índice "En esta página": h2 y, sangrados, h3.
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
 const rosNodes = pkg && p.ros ? p.ros.nodes.filter((n) => n.category === "ros2_node" && n.package === pkg) : [];
 // Encabezado al estilo de vanttec.com: sección en mayúsculas espaciadas sobre el título de la página.
 const section = sections(p.pageList).find((s) => s.pages.some((x) => x.route === route))?.label;
 const hasMermaid = entry.body?.includes("```mermaid") ?? false;
+const crumbs = migas(p.pageList, route, { id: p.id, name: p.name });
+const { prev, next } = anteriorSiguiente(p.pageList, route);
+const editar = urlEditar(p.repo, p.branch, entry.data.path);
+const pageRef = { title: entry.data.title, route, path: entry.data.path };
+// Vista previa de las citas de esta página: solo las líneas ya extraídas en el build (tools/citas.mjs).
+const citas = p.repoUrl && p.sha ? citasDe(entry.body ?? "", p.repoUrl, p.sha).flatMap((c) => (p.citas?.[c.key] ? [{ ...c, ...p.citas[c.key] }] : [])) : [];
+const glosario = p.pageList.find((x) => x.path === "glosario.md");
 ---
 <Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={projectNav(p)} current="wiki">
   <div class="container">
     <div class="doc">
       <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido">
-        <article class="prose" data-pagefind-body>
+        <nav class="migas" aria-label="Migas" data-pagefind-ignore="all">
+          <ol>
+            {crumbs.map((c, i) => (
+              <li>{c.href ? <a href={c.href} data-astro-prefetch>{c.label}</a> : <span aria-current={i === crumbs.length - 1 ? "page" : undefined}>{c.label}</span>}</li>
+            ))}
+          </ol>
+        </nav>
+        <article class="prose" data-pagefind-body data-glosario={glosario && glosario.route !== route ? glosario.route : undefined}>
           <meta data-pagefind-filter="proyecto[content]" content={p.name} />
           <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />
           {pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
           <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}{section && ` · ${section}`}</p>
           <Content />
         </article>
+        {(prev || next) && (
+          <nav class="prevnext" aria-label="Anterior y siguiente" data-pagefind-ignore="all">
+            {prev ? <a class="prev" href={prev.route} rel="prev" data-astro-prefetch><span>← Anterior</span><strong>{prev.label}</strong></a> : <span />}
+            {next ? <a class="next" href={next.route} rel="next" data-astro-prefetch><span>Siguiente →</span><strong>{next.label}</strong></a> : <span />}
+          </nav>
+        )}
+        {citas.map((c) => (
+          <template data-cita={c.key} data-file={c.file} data-start={c.start} data-end={c.end} data-truncated={c.truncated ? "1" : undefined} data-pagefind-ignore="all">
+            <pre><code>{c.lines.join("\n")}</code></pre>
+          </template>
+        ))}
       </main>
       <aside class="meta" aria-label="Datos de la página" data-pagefind-ignore="all">
         <dl>
-          <div><dt>Actualizado</dt><dd>{fmtDate(entry.data.updated)}{entry.data.author && <span class="muted"> · {entry.data.author}</span>}</dd></div>
+          <div>
+            <dt>Actualizado</dt>
+            <dd>
+              {entry.data.updated ? <time datetime={entry.data.updated} data-hace>{fmtDate(entry.data.updated)}</time> : fmtDate(entry.data.updated)}
+              {entry.data.author && <span class="muted"> · {entry.data.author}</span>}
+            </dd>
+          </div>
           <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>
           {entry.data.owner && <div><dt>Responsable</dt><dd>{entry.data.owner}</dd></div>}
           <div><dt>Fuente</dt><dd><a href={entry.data.source}>Ver en GitHub</a></dd></div>
+          <div>
+            <dt>Mejorar esta página</dt>
+            <dd class="acciones">
+              <a href={editar}>Editar en GitHub</a>
+              <a href={urlReportar(p.repo, pageRef)} data-reportar data-repo={p.repo} data-title={pageRef.title} data-route={pageRef.route} data-path={pageRef.path}>Reportar un error</a>
+            </dd>
+          </div>
           {rosNodes.length > 0 && (
             <div>
               <dt>Nodos en el grafo</dt>
@@ -59,9 +101,12 @@ const hasMermaid = entry.body?.includes("```mermaid") ?? false;
           )}
         </dl>
         {toc.length > 1 && (
-          <ul class="toc" aria-label="En esta página">
-            {toc.map((h) => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}
-          </ul>
+          <nav class="toc-box" aria-labelledby="toc-title">
+            <p class="toc-title" id="toc-title">En esta página</p>
+            <ul class="toc">
+              {toc.map((h) => <li class={h.depth === 3 ? "toc-sub" : undefined}><a href={`#${h.slug}`}>{h.text}</a></li>)}
+            </ul>
+          </nav>
         )}
       </aside>
     </div>
@@ -72,4 +117,7 @@ const hasMermaid = entry.body?.includes("```mermaid") ?? false;
       renderMermaid();
     </script>
   )}
+  <script>
+    import "../../scripts/prose";
+  </script>
 </Base>
