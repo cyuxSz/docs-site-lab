@@ -16,8 +16,8 @@
 .rg-help strong { color: var(--text); }
 .rg-inline { display: inline-block; width: 9px; height: 9px; vertical-align: 0; }
 .rg-help .rg-colors { list-style: none; padding: 0; margin: 4px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px 16px; }
-.rg-flowdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 6px #16a34a; }
-@media (prefers-color-scheme: dark) { .rg-flowdot { background: #4ade80; box-shadow: 0 0 6px #4ade80; } }
+.rg-flowdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+:root[data-theme="light"] .rg-flowdot { background: #16a34a; box-shadow: 0 0 6px #16a34a; }
 
 /* Diseño A: recorrido guiado. */
 /* Va debajo del lienzo y se queda pegada al borde inferior de la pantalla mientras el grafo está a la vista. */
@@ -50,12 +50,10 @@
     radial-gradient(circle, var(--rg-grid) 1px, transparent 1.2px) 0 0 / 22px 22px,
     radial-gradient(ellipse at 50% 45%, var(--rg-glow), transparent 70%),
     var(--surface);
-  --rg-grid: rgba(15, 27, 42, .07);
-  --rg-glow: rgba(11, 122, 138, .07);
+  --rg-grid: rgba(228, 236, 244, .06);
+  --rg-glow: rgba(73, 193, 210, .1);
 }
-@media (prefers-color-scheme: dark) {
-  .rg-stage { --rg-grid: rgba(228, 236, 244, .06); --rg-glow: rgba(60, 195, 210, .1); }
-}
+:root[data-theme="light"] .rg-stage { --rg-grid: rgba(15, 27, 42, .07); --rg-glow: rgba(11, 122, 138, .07); }
 .rg-canvas { position: absolute; inset: 0; touch-action: none; }
 .rg-flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .rg-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); }
