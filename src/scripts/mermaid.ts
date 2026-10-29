@@ -12,7 +12,7 @@ export function renderMermaid() {
       // Colores del portal (tokens de global.css) en lugar del gris del tema por defecto.
       const css = getComputedStyle(document.documentElement);
       const token = (name: string) => css.getPropertyValue(name).trim();
-      const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+      const dark = document.documentElement.dataset.theme !== "light";
       mermaid.initialize({
         startOnLoad: false,
         theme: "base",
