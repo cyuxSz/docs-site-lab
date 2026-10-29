@@ -129,6 +129,8 @@ export default async function middleware(request) {
   const jar = cookies(request);
 
   if (process.env.VERCEL_ENV === "preview") {
+    // En Preview no hay login de GitHub, así que no se puede saber quién es: los proyectos restringidos nunca se sirven.
+    if (!canAccess(null, url.pathname)) return page(403, "Este proyecto es privado", "<p>Este proyecto es privado; revísalo en producción.</p><p>Pide acceso a quien administra el portal.</p>");
     if (process.env.PREVIEW_TRUST_VERCEL_AUTH === "1") return next({ headers: { "Cache-Control": "private, no-store" } });
     return page(403, "Preview sin login", "Los Preview se protegen con el login de Vercel. Activa Vercel Authentication y PREVIEW_TRUST_VERCEL_AUTH=1, o revisa el cambio en producción.");
   }
@@ -185,7 +187,7 @@ export default async function middleware(request) {
   }
   if (path === "/auth/me") return Response.json({ login: session.login }, noStore);
   if (!canAccess(session.login, url.pathname)) {
-    return page(403, "Este proyecto es privado", `<p>@${esc(session.login)} no tiene acceso a este proyecto.</p><p><a href="/">Volver al portal</a></p>`);
+    return page(403, "Este proyecto es privado", `<p>@${esc(session.login)} no tiene acceso a este proyecto.</p><p>Pide acceso a quien administra el portal.</p><p><a href="/">Volver al portal</a></p>`);
   }
   return next({ headers: { "Cache-Control": "private, no-store" } });
 }

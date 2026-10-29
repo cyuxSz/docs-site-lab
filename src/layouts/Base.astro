@@ -6,6 +6,7 @@ import "@fontsource-variable/raleway";
 import "@fontsource-variable/urbanist";
 import "../styles/global.css";
 import temaScript from "../scripts/tema-inline.js?raw";
+import { isRestricted } from "../../access.config.js";
 import { themeStyle, type ProjectTheme } from "../lib/data";
 
 interface Props {
@@ -28,7 +29,7 @@ const { title, description = "Documentación de los proyectos de software de Van
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script is:inline set:html={temaScript} />
   </head>
-  <body class:list={{ "has-proj": project?.theme }} style={themeStyle(project?.theme)}>
+  <body data-pagefind-ignore={project && isRestricted(project.id) ? "all" : undefined} class:list={{ "has-proj": project?.theme }} style={themeStyle(project?.theme)}>
     <a class="sr-only" href="#contenido">Saltar al contenido</a>
     <header class="topbar">
       <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span>VantTEC <span class="brand-light">Docs</span></span></a>

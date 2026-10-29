@@ -170,6 +170,12 @@ a.vcard:hover { border-color: var(--p-accent, var(--accent)); transform: transla
 .block h2 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
 .hint { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
 
+/* Aviso aparte de la descripción (p. ej. novedadesNota). */
+.notice { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0 16px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent, #49c1d2); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; }
+.notice-ico { flex: none; font-weight: 700; color: var(--accent, #49c1d2); }
+:root[data-theme="light"] .notice { border-left-color: #0b5c8a; }
+:root[data-theme="light"] .notice-ico { color: #0b5c8a; }
+
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
@@ -361,7 +367,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 }
 
 /* Tarjeta de un proyecto restringido: solo ilustración, nombre e insignia. */
-.badge-restricted { align-self: flex-start; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.badge-restricted { align-self: flex-start; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); font-size: 12px; font-weight: 600; }
 
 /* Botones de la barra: tema y pista de Ctrl K. */
 .tema-btn {

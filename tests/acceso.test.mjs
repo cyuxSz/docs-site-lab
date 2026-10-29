@@ -60,3 +60,21 @@ test("canAccess: una ruta con % mal formado no lanza error", async () => {
   assert.doesNotThrow(() => canAccess("otro", "/proyecto-x/%E0%A4%A/"));
   assert.equal(canAccess("otro", "/proyecto-x/%E0%A4%A/"), false);
 });
+
+test("canAccess/isRestricted: la clave de RESTRICTED también se normaliza (clave en mayúsculas)", async () => {
+  const { RESTRICTED, canAccess, isRestricted } = await acceso();
+  RESTRICTED["Secreto-Z"] = ["Ana"];
+  try {
+    assert.equal(canAccess("otro", "/secreto-z/"), false);
+    assert.equal(canAccess("ANA", "/SECRETO-Z/x"), true);
+    assert.equal(isRestricted("secreto-z"), true);
+  } finally {
+    delete RESTRICTED["Secreto-Z"];
+  }
+});
+
+test("Pagefind: Base.astro ignora explícitamente (data-pagefind-ignore=all) las páginas de proyectos restringidos", () => {
+  const src = readFileSync(new URL("../src/layouts/Base.astro", import.meta.url), "utf8");
+  assert.match(src, /<body[^>]*data-pagefind-ignore=\{project && isRestricted\(project\.id\) \? "all" : undefined\}/);
+  assert.match(readFileSync(new URL("../access.config.js", import.meta.url), "utf8"), /data-pagefind-ignore="all"/);
+});

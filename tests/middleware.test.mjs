@@ -103,3 +103,19 @@ test("membresía no confirmada: login y org pasan por esc() / encodeURIComponent
   assert.ok(!html.includes("<b>ana</b>"), "login sin escapar");
   assert.match(html, /github\.com\/orgs\/v%22%3E%3Cscript%3Ex%3C%2Fscript%3E\/people/);
 });
+
+test("preview con PREVIEW_TRUST_VERCEL_AUTH=1: proyecto restringido responde 403 y no pasa al sitio", async () => {
+  Object.assign(process.env, { VERCEL_ENV: "preview", PREVIEW_TRUST_VERCEL_AUTH: "1" });
+  for (const path of ["/proyecto-x/", "/proyecto-x/ros.json", "/PROYECTO-X/grafo/"]) {
+    const res = await get(path);
+    assert.equal(res.status, 403, path);
+    assert.ok(!passes(res), path);
+    assert.match(await res.text(), /revísalo en producción/);
+  }
+  assert.ok(passes(await get("/uuv/")), "el resto de Preview sigue pasando");
+});
+
+test("403 de proyecto privado ofrece un siguiente paso", async () => {
+  const res = await get("/proyecto-x/", session("otro"));
+  assert.match(await res.text(), /Pide acceso a quien administra el portal\./);
+});
