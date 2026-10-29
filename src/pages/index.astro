@@ -1,41 +1,67 @@
 ---
 import Base from "../layouts/Base.astro";
-import { portal, fmtDate } from "../lib/data";
+import VehicleArt from "../components/VehicleArt.astro";
+import { portal, fmtDate, themeStyle } from "../lib/data";
 
 const { builtAt, alerts, projects } = portal();
 const built = new Date(builtAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Monterrey" });
+const ok = projects.filter((p) => !p.error && !p.empty);
+const sum = (k: "pages" | "claims" | "rosNodes") => ok.reduce((n, p) => n + (p[k] ?? 0), 0);
+const counters = [
+  { label: "Proyectos", value: ok.length },
+  { label: "Páginas de wiki", value: sum("pages") },
+  { label: "Afirmaciones verificadas", value: sum("claims") },
+  { label: "Elementos ROS", value: sum("rosNodes") },
+];
+const first = ok[0];
 ---
 <Base title="VantTec · Documentación">
   <main class="container narrow" id="contenido">
-    <section class="hero">
-      <p class="eyebrow">Portal de documentación</p>
-      <h1>Cómo funciona cada proyecto</h1>
+    <section class="hero hero-home">
+      <p class="eyebrow">VantTEC · Documentación técnica</p>
+      <h1>Navegando el <span class="grad">código</span> de cada vehículo</h1>
       <p class="lead">Arquitectura, estado real del código, grafo de nodos ROS y wiki de cada repositorio. Todo se genera desde los propios repos: cada afirmación enlaza a la línea de código que la respalda.</p>
+      <div class="hero-cta">
+        {first && <a class="btn btn-primary btn-lg" href={`/${first.id}/`}>Explorar {first.name.split(" · ")[0]}</a>}
+        <button class="btn btn-lg" type="button" data-search-open>Buscar en la documentación</button>
+      </div>
     </section>
+
+    <dl class="stats counters">
+      {counters.map((c) => (
+        <div><dt>{c.label}</dt><dd data-count={c.value}>{c.value}</dd></div>
+      ))}
+    </dl>
 
     {alerts.map((a) => <p class={`alert alert-${a.level}`} role="status">{a.text}</p>)}
 
     <section class="block">
-      <div class="block-head"><h2>Proyectos</h2></div>
-      <div class="cards cards-wide">
+      <div class="block-head"><h2>Vehículos y proyectos</h2></div>
+      <div class="vcards">
         {projects.map((p) => {
-          const ok = !p.error && !p.empty;
-          const Tag = ok ? "a" : "div";
+          const live = !p.error && !p.empty;
+          const Tag = live ? "a" : "div";
           return (
-            <Tag class:list={["card", { "is-off": !ok, "is-error": p.error }]} href={ok ? `/${p.id}/` : undefined}>
-              <span class="card-title">{p.name}</span>
-              {p.note && <span class="card-note">{p.note}</span>}
-              <span class="card-desc">{p.summary}</span>
-              {ok ? (
-                <span class="card-meta">
-                  {p.pages} páginas · {p.claims} afirmaciones verificadas
-                  {p.rosNodes ? ` · ${p.rosNodes} elementos en el grafo ROS` : ""}
-                  {p.diagrams ? ` · ${p.diagrams} diagrama(s)` : ""} · actualizado {fmtDate(p.updated)}
-                </span>
-              ) : (
-                <span class="card-status">{p.message}</span>
-              )}
-              <span class="card-link">{ok ? "Abrir →" : p.error ? "No se pudo construir" : "Sin documentación aún"}</span>
+            <Tag class:list={["vcard", { "is-off": !live, "is-error": p.error }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
+              <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
+              <div class="vcard-body">
+                <span class="eyebrow">{p.tagline ?? "Proyecto"}</span>
+                <span class="card-title">{p.name}</span>
+                {p.note && <span class="card-note">{p.note}</span>}
+                <span class="card-desc">{p.summary}</span>
+                {live ? (
+                  <span class="vcard-chips">
+                    <span>{p.pages} páginas</span>
+                    <span>{p.claims} afirmaciones</span>
+                    {p.rosNodes ? <span>{p.rosNodes} elementos ROS</span> : null}
+                    {p.diagrams ? <span>{p.diagrams} diagrama(s)</span> : null}
+                  </span>
+                ) : (
+                  <span class="card-status">{p.message}</span>
+                )}
+                <span class="card-meta">{live ? `Actualizado ${fmtDate(p.updated)}` : ""}</span>
+                <span class="card-link">{live ? "Abrir →" : p.error ? "No se pudo construir" : "Sin documentación aún"}</span>
+              </div>
             </Tag>
           );
         })}
@@ -43,4 +69,23 @@ const built = new Date(builtAt).toLocaleString("es-MX", { dateStyle: "medium", t
     </section>
   </main>
   <p slot="footer">Portal construido el {built}.</p>
+  <script>
+    // Contadores que suben al entrar en pantalla, como los de vanttec.com. El número final ya está en el HTML.
+    const els = [...document.querySelectorAll<HTMLElement>("[data-count]")];
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        const t0 = performance.now();
+        const tick = (t: number) => {
+          const k = Math.min(1, (t - t0) / 1200);
+          const ease = 1 - (1 - k) ** 3;
+          els.forEach((el) => (el.textContent = String(Math.round(Number(el.dataset.count) * ease))));
+          if (k < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      els.forEach((el) => io.observe(el));
+    }
+  </script>
 </Base>
