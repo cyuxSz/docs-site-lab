@@ -28,6 +28,7 @@ const route = `/${p.id}/novedades/`;
           <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}</p>
           <h1>Novedades</h1>
           <p class="hint">Las {items.length} páginas de la wiki con cambios más recientes, según el historial de git del repo.</p>
+          {p.novedadesNota && <p class="hint">{p.novedadesNota}</p>}
           {items.length === 0 ? (
             <p>Todavía no hay fechas de cambio para esta wiki.</p>
           ) : (

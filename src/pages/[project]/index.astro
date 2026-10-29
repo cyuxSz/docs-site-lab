@@ -3,6 +3,7 @@ import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
 import VehicleArt from "../../components/VehicleArt.astro";
 import { builtProjects, project as load, fmtDate, projectNav, STATUS_LABEL } from "../../lib/data";
+import { isRestricted } from "../../../access.config.js";
 import { novedades } from "../../lib/novedades.ts";
 
 export function getStaticPaths() {
@@ -10,6 +11,8 @@ export function getStaticPaths() {
 }
 
 const p = load(Astro.params.project!);
+// Proyecto restringido: sin data-pagefind-body no entra al índice de búsqueda (access.config.js).
+const restricted = isRestricted(p.id);
 const packages = p.pageList.filter((x) => x.path.startsWith("packages/") && x.type !== "index");
 const highlight = ["quickstart.md", "onboarding.md", "operations/estado.md", "architecture/overview.md"]
   .map((path) => p.pageList.find((x) => x.path === path))
@@ -28,9 +31,9 @@ const statusOf = (pkg: string) => {
   <div class="container">
     <div class="doc doc-2">
       <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} hasDiagrams={p.diagramList.length > 0} />
-      <main id="contenido" data-pagefind-body>
-        <meta data-pagefind-filter="proyecto[content]" content={p.name} />
-        <meta data-pagefind-filter="tipo[content]" content="Resumen" />
+      <main id="contenido" data-pagefind-body={restricted ? undefined : ""}>
+        {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
+        {!restricted && <meta data-pagefind-filter="tipo[content]" content="Resumen" />}
         <section class="hero phero">
           <div>
             <p class="eyebrow">{p.tagline ?? "Proyecto"}</p>

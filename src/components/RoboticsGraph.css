@@ -9,13 +9,7 @@
 .rg-search input { width: 11rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
 .rg-tour-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
 
-/* Diseño B: ayuda plegable. */
-.rg-help { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 8px 14px; font-size: 14px; }
-.rg-help summary { cursor: pointer; font-weight: 600; }
-.rg-help ul { margin: 8px 0 4px; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); }
-.rg-help strong { color: var(--text); }
 .rg-inline { display: inline-block; width: 9px; height: 9px; vertical-align: 0; }
-.rg-help .rg-colors { list-style: none; padding: 0; margin: 4px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px 16px; }
 .rg-flowdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
 :root[data-theme="light"] .rg-flowdot { background: #16a34a; box-shadow: 0 0 6px #16a34a; }
 

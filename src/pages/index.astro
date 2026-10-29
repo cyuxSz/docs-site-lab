@@ -1,19 +1,22 @@
 ---
 import Base from "../layouts/Base.astro";
 import VehicleArt from "../components/VehicleArt.astro";
+import { isRestricted } from "../../access.config.js";
 import { portal, fmtDate, themeStyle } from "../lib/data";
 
 const { builtAt, alerts, projects } = portal();
 const built = new Date(builtAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Monterrey" });
 const ok = projects.filter((p) => !p.error && !p.empty);
-const sum = (k: "pages" | "claims" | "rosNodes") => ok.reduce((n, p) => n + (p[k] ?? 0), 0);
+// Los proyectos restringidos no suman a los contadores ni son el destino de "Explorar".
+const open = ok.filter((p) => !isRestricted(p.id));
+const sum = (k: "pages" | "claims" | "rosNodes") => open.reduce((n, p) => n + (p[k] ?? 0), 0);
 const counters = [
-  { label: "Proyectos", value: ok.length },
+  { label: "Proyectos", value: open.length },
   { label: "Páginas de wiki", value: sum("pages") },
   { label: "Afirmaciones verificadas", value: sum("claims") },
   { label: "Elementos ROS", value: sum("rosNodes") },
 ];
-const first = ok[0];
+const first = open[0];
 ---
 <Base title="VantTec · Documentación">
   <main class="container narrow" id="contenido">
@@ -41,6 +44,17 @@ const first = ok[0];
         {projects.map((p) => {
           const live = !p.error && !p.empty;
           const Tag = live ? "a" : "div";
+          if (isRestricted(p.id)) {
+            return (
+              <Tag class:list={["vcard", "vcard-min", { "is-off": !live }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
+                <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
+                <div class="vcard-body">
+                  <span class="card-title">{p.name}</span>
+                  <span class="badge-restricted">Acceso restringido</span>
+                </div>
+              </Tag>
+            );
+          }
           return (
             <Tag class:list={["vcard", { "is-off": !live, "is-error": p.error }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
               <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
