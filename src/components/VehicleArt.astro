@@ -1,0 +1,52 @@
+---
+// Ilustración del vehículo para la portada y el encabezado del proyecto. Con `image` (ruta en public/) usa la foto;
+// si no, dibuja un SVG con los colores del proyecto (--p-accent, --p-deep, --p-warm de themeStyle).
+interface Props {
+  kind?: string;
+  image?: string;
+  alt: string;
+}
+const { kind, image, alt } = Astro.props;
+---
+<div class="vart" data-kind={kind ?? "generico"}>
+  {image ? (
+    <img src={image} alt={alt} loading="lazy" decoding="async" />
+  ) : kind === "submarino" ? (
+    <svg viewBox="0 0 320 180" role="img" aria-label={alt}>
+      <defs>
+        <linearGradient id="vart-hull" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style="stop-color:var(--p-accent, #49c1d2)" />
+          <stop offset="1" style="stop-color:var(--p-deep, #0491ad)" />
+        </linearGradient>
+        <linearGradient id="vart-beam" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" style="stop-color:var(--p-warm, #f0900d);stop-opacity:.45" />
+          <stop offset="1" style="stop-color:var(--p-warm, #f0900d);stop-opacity:0" />
+        </linearGradient>
+      </defs>
+      <path class="vart-beam" d="M236 98 L318 70 L318 132 Z" fill="url(#vart-beam)" />
+      <rect x="70" y="72" width="170" height="54" rx="27" fill="url(#vart-hull)" />
+      <rect x="128" y="54" width="48" height="24" rx="8" style="fill:var(--p-deep, #0491ad)" />
+      <rect x="96" y="66" width="16" height="12" rx="3" style="fill:var(--p-warm, #f0900d)" />
+      <rect x="196" y="66" width="16" height="12" rx="3" style="fill:var(--p-warm, #f0900d)" />
+      <circle cx="226" cy="99" r="9" fill="#041820" style="stroke:var(--p-warm, #f0900d)" stroke-width="3" />
+      <path d="M70 99 L52 84 L52 114 Z" style="fill:var(--p-deep, #0491ad)" />
+      <g class="vart-prop" style="fill:var(--p-warm, #f0900d)">
+        <ellipse cx="46" cy="99" rx="4" ry="16" />
+      </g>
+      <g class="vart-bubbles" fill="none" style="stroke:var(--p-accent, #49c1d2)" stroke-opacity=".6" stroke-width="2">
+        <circle cx="34" cy="80" r="4" /><circle cx="24" cy="64" r="6" /><circle cx="38" cy="44" r="3" />
+      </g>
+    </svg>
+  ) : (
+    <svg viewBox="0 0 320 180" role="img" aria-label={alt}>
+      <g style="stroke:var(--p-accent, #49c1d2)" stroke-opacity=".5" stroke-width="2">
+        <line x1="90" y1="60" x2="160" y2="110" /><line x1="160" y1="110" x2="230" y2="56" /><line x1="160" y1="110" x2="200" y2="150" /><line x1="90" y1="60" x2="60" y2="130" />
+      </g>
+      <circle cx="160" cy="110" r="18" style="fill:var(--p-deep, #6366f1)" />
+      <circle cx="90" cy="60" r="12" style="fill:var(--p-accent, #49c1d2)" />
+      <circle cx="230" cy="56" r="12" style="fill:var(--p-accent, #49c1d2)" />
+      <circle cx="200" cy="150" r="9" style="fill:var(--p-warm, #f0900d)" />
+      <circle cx="60" cy="130" r="9" style="fill:var(--p-warm, #f0900d)" />
+    </svg>
+  )}
+</div>

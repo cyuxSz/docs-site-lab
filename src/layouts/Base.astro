@@ -6,12 +6,14 @@ import "@fontsource-variable/raleway";
 import "@fontsource-variable/urbanist";
 import "../styles/global.css";
 import disenoScript from "../scripts/diseno-inline.js?raw";
+import { themeStyle, type ProjectTheme } from "../lib/data";
 
 interface Props {
   title: string;
   description?: string;
-  project?: { id: string; name: string };
-  current?: "wiki" | "grafo";
+  // Con proyecto: pestañas Resumen / Wiki / Grafo / Diagramas y sus colores (projectNav en lib/data.ts).
+  project?: { id: string; name: string; theme?: ProjectTheme; wiki?: string; diagrams?: boolean; repoUrl?: string };
+  current?: "resumen" | "wiki" | "grafo";
 }
 const { title, description = "Documentación de los proyectos de software de VantTec.", project, current } = Astro.props;
 ---
@@ -26,14 +28,12 @@ const { title, description = "Documentación de los proyectos de software de Van
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script is:inline set:html={disenoScript} />
   </head>
-  <body>
+  <body class:list={{ "has-proj": project?.theme }} style={themeStyle(project?.theme)}>
     <a class="sr-only" href="#contenido">Saltar al contenido</a>
     <header class="topbar">
       <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span>VantTEC <span class="brand-light">Docs</span></span></a>
       {project && <a class="crumb" href={`/${project.id}/`}>{project.name}</a>}
       <nav class="topnav" aria-label="Principal">
-        {project && <a href={`/${project.id}/`} aria-current={current === "wiki" ? "page" : undefined} class="hide-sm">Wiki</a>}
-        {project && <a href={`/${project.id}/grafo/`} aria-current={current === "grafo" ? "page" : undefined}>Grafo</a>}
         <button class="search-btn" type="button" data-search-open aria-label="Buscar (tecla /)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
           <span>Buscar</span><kbd>/</kbd>
@@ -43,6 +43,16 @@ const { title, description = "Documentación de los proyectos de software de Van
         <a href="/auth/logout">Salir</a>
       </nav>
     </header>
+
+    {project && (
+      <nav class="ptabs" aria-label={`Secciones de ${project.name}`}>
+        <a href={`/${project.id}/`} aria-current={current === "resumen" ? "page" : undefined}>Resumen</a>
+        {project.wiki && <a href={project.wiki} aria-current={current === "wiki" ? "page" : undefined}>Wiki</a>}
+        <a href={`/${project.id}/grafo/`} aria-current={current === "grafo" ? "page" : undefined}>Grafo</a>
+        {project.diagrams && <a href={`/${project.id}/#diagramas`}>Diagramas</a>}
+        {project.repoUrl && <a href={project.repoUrl} class="ptab-ext">Código</a>}
+      </nav>
+    )}
 
     <slot />
 
@@ -113,7 +123,7 @@ const { title, description = "Documentación de los proyectos de software de Van
         true,
       );
       // En el texto se marcan desde el inicio: ícono ↗ (CSS) y aviso para lectores de pantalla.
-      document.querySelectorAll<HTMLAnchorElement>(".prose a[href], .meta a[href]").forEach((a) => {
+      document.querySelectorAll<HTMLAnchorElement>(".prose a[href], .meta a[href], .ptabs a[href]").forEach((a) => {
         if (!external(a)) return;
         a.target = "_blank";
         a.rel = "noopener noreferrer";

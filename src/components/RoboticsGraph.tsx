@@ -39,6 +39,8 @@ const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").match
 // Oscuro por defecto (como vanttec.com); <html data-theme="light"> pide el claro.
 const isDark = () => document.documentElement.dataset.theme !== "light";
 const isNarrow = (el: HTMLElement) => el.clientWidth < 600;
+// Colores del proyecto (Base.astro los pone en <body> como --accent y --p-warm); sin ellos, los del portal.
+const cssVar = (name: string, fallback: string) => getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
 
 const storage = {
   get: (k: string) => {
@@ -56,13 +58,13 @@ const storage = {
 };
 
 // Etiqueta del nodo resaltado con los colores del tema (la de Sigma es siempre un recuadro blanco).
-function drawHover(dark: boolean) {
+function drawHover(dark: boolean, accent: string) {
   return (ctx: CanvasRenderingContext2D, data: { x: number; y: number; size: number; label?: string | null }, settings: { labelSize: number; labelFont: string }) => {
     const size = settings.labelSize;
     ctx.font = `600 ${size}px ${settings.labelFont}`;
     const w = data.label ? ctx.measureText(data.label).width + 10 : 0;
     ctx.fillStyle = dark ? "#0a1646" : "#ffffff";
-    ctx.strokeStyle = dark ? "#49c1d2" : "#0b7a8a";
+    ctx.strokeStyle = accent;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(data.x, data.y, data.size + 2, 0, Math.PI * 2);
@@ -140,7 +142,11 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   // Diseño A en la vista ROS: flechas nodo → nodo y columnas.
   const capas = diseno === "a" && data?.view === "ros" && Boolean(data.flowEdges);
   const nodeById = useMemo(() => new Map((data?.nodes ?? []).map((n) => [n.id, n])), [data]);
-  const groupColor = useMemo(() => new Map((data?.groups ?? []).map((g) => [g.id, g.color])), [data]);
+  // El hardware toma el color cálido del vehículo (naranja en el UUV), como en su página de vanttec.com.
+  const groupColor = useMemo(
+    () => new Map((data?.groups ?? []).map((g) => [g.id, g.id === "hardware" ? cssVar("--p-warm", g.color) : g.color])),
+    [data],
+  );
   const tour = data?.tour ?? [];
   // Configuración donde se ven todos los nodos del recorrido (p. ej. el sub real).
   const tourConfig = useMemo(
@@ -200,7 +206,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     // Colores sólidos ya mezclados con el fondo: Sigma pinta las líneas sin respetar bien el alfa.
     const edgeColor = capas ? (dark ? "#344a86" : "#c3ccd7") : dark ? "#26397a" : "#d3dbe4";
     const edgeFaded = dark ? "#121d55" : "#eef2f6";
-    const edgeFocus = dark ? "#49c1d2" : "#0b7a8a";
+    const accent = cssVar("--accent", dark ? "#49c1d2" : "#0b7a8a");
+    const edgeFocus = accent;
     const flow = overlay.current;
     let cancelled = false;
     let renderer: Sigma | null = null;
@@ -278,7 +285,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         zIndex: true,
         // Margen para que la etiqueta del último nodo (a su derecha) no se corte en el borde.
         stagePadding: capas ? 70 : 30,
-        defaultDrawNodeHover: drawHover(dark),
+        defaultDrawNodeHover: drawHover(dark, accent),
         minCameraRatio: 0.08,
         maxCameraRatio: 4,
         nodeReducer: (id, attrs) => {
@@ -494,7 +501,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         <div className="rg-legend" aria-label="Capas">
           {data.groups.filter((gr) => !capas || !["topic", "service"].includes(gr.id)).map((gr) => (
             <button key={gr.id} className="rg-chip" aria-pressed={!hiddenGroups.has(gr.id)} title={gr.hint} onClick={() => toggleGroup(gr.id)}>
-              <span className="rg-dot" style={{ background: gr.color }} />
+              <span className="rg-dot" style={{ background: groupColor.get(gr.id) }} />
               {gr.label}
             </button>
           ))}
@@ -514,7 +521,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
                 Qué significa cada color:
                 <ul className="rg-colors">
                   {data.groups.filter((gr) => gr.hint).map((gr) => (
-                    <li key={gr.id}><span className="rg-dot rg-inline" style={{ background: gr.color }} /> <strong>{gr.label}</strong>: {gr.hint}</li>
+                    <li key={gr.id}><span className="rg-dot rg-inline" style={{ background: groupColor.get(gr.id) }} /> <strong>{gr.label}</strong>: {gr.hint}</li>
                   ))}
                 </ul>
               </li>
