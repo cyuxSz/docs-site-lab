@@ -2,6 +2,7 @@
 // Grafo del proyecto. El texto y la tabla salen en el HTML; Sigma y los datos llegan solo al hacer scroll al grafo.
 import Base from "../../layouts/Base.astro";
 import RoboticsGraph from "../../components/RoboticsGraph.tsx";
+import { isRestricted } from "../../../access.config.js";
 import { builtProjects, project as load, projectNav, STATUS_LABEL } from "../../lib/data";
 
 export function getStaticPaths() {
@@ -9,6 +10,8 @@ export function getStaticPaths() {
 }
 
 const p = load(Astro.params.project!);
+// Proyecto restringido: sin data-pagefind-body no entra al índice de búsqueda (access.config.js).
+const restricted = isRestricted(p.id);
 const views = [
   ...(p.ros ? [{ id: "ros", label: "Nodos ROS", url: `/${p.id}/ros.json` }] : []),
   { id: "paginas", label: "Páginas de la wiki", url: `/${p.id}/paginas.json` },
@@ -42,9 +45,9 @@ const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label
     <RoboticsGraph client:visible projectId={p.id} views={views} />
 
     {rows.length > 0 && (
-      <section class="block" data-pagefind-body>
-        <meta data-pagefind-filter="proyecto[content]" content={p.name} />
-        <meta data-pagefind-filter="tipo[content]" content="Grafo ROS" />
+      <section class="block" data-pagefind-body={restricted ? undefined : ""}>
+        {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
+        {!restricted && <meta data-pagefind-filter="tipo[content]" content="Grafo ROS" />}
         <div class="block-head"><h2>Los mismos datos en tabla</h2></div>
         <p class="hint">Cada nodo de ROS del repo con lo que publica o sirve y lo que recibe. Para verlo en el grafo, usa el enlace del nombre.</p>
         <div class="table-wrap">

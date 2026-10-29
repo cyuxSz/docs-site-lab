@@ -32,6 +32,11 @@ Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acces
 
 Los enlaces viejos `/<id>/#/p/<ruta>.md` se redirigen en el navegador; `/<id>/wiki/` y `/<id>/content/*` con `vercel.json`.
 
+## Proyectos restringidos
+`access.config.js` es la única fuente de verdad (`RESTRICTED`, `isRestricted`, `canAccess`); lo importan `middleware.js` y el build. Hoy `proyecto-x` solo lo ve `cyuxSz`: los demás miembros reciben un 403 "Este proyecto es privado". Su contenido no entra al índice de Pagefind, y su tarjeta en la portada solo muestra nombre e insignia.
+
+Limitación aceptada: el usuario autorizado pierde la búsqueda dentro de un proyecto restringido (el índice de Pagefind es público para todos los miembros). En Preview con `PREVIEW_TRUST_VERCEL_AUTH=1` no hay login de GitHub, así que quien pase Vercel Authentication ve el proyecto.
+
 ## Grafo
 Si el repo tiene `openwiki/.graph/ros.json` (lo genera `tools/ros_graph.py` en el repo de código), el grafo muestra nodos, topics, servicios y hardware. Sin él, muestra cómo se enlazan las páginas de la wiki. En los dos casos hay una tabla con los mismos datos para lectores de pantalla y para la búsqueda.
 

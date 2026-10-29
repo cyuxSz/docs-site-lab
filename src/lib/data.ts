@@ -55,6 +55,8 @@ export interface ProjectSummary {
   repo: string;
   branch: string;
   note?: string;
+  // Aviso opcional arriba de /<id>/novedades/.
+  novedadesNota?: string;
   // Portada y colores del proyecto (como cada vehículo en vanttec.com). image: ruta en public/; sin ella se dibuja
   // una ilustración según kind.
   tagline?: string;
@@ -114,6 +116,7 @@ const SECTIONS: [string, string][] = [
   ["architecture", "Arquitectura"],
   ["packages", "Paquetes"],
   ["operations", "Operación"],
+  ["discrepancias", "Discrepancias (a revisar)"],
 ];
 
 export function sections(pages: PageInfo[]) {
@@ -122,7 +125,7 @@ export function sections(pages: PageInfo[]) {
   for (const [dir, label] of SECTIONS) groups.set(dir, { label, pages: [] });
   for (const p of visible) {
     const dir = p.path.includes("/") ? p.path.split("/")[0] : "";
-    if (!groups.has(dir)) groups.set(dir, { label: dir, pages: [] });
+    if (!groups.has(dir)) groups.set(dir, { label: visible.find((x) => x.type === "index" && x.path.split("/")[0] === dir && x.path.includes("/"))?.title ?? dir, pages: [] });
     groups.get(dir)!.pages.push(p);
   }
   for (const g of groups.values()) g.pages.sort((a, b) => Number(b.type === "index") - Number(a.type === "index") || a.title.localeCompare(b.title, "es"));
