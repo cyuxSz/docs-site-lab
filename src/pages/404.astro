@@ -1,0 +1,28 @@
+---
+// Página que Vercel sirve en las rutas que no existen. Sin data-pagefind-body: no entra al buscador.
+import Base from "../layouts/Base.astro";
+import { builtProjects } from "../lib/data";
+
+const projects = builtProjects();
+---
+<Base title="Página no encontrada · VantTec Docs">
+  <main class="container narrow" id="contenido">
+    <section class="hero">
+      <p class="eyebrow">Error 404</p>
+      <h1>No encontramos esa página</h1>
+      <p class="lead">Puede que el enlace sea viejo o que la página haya cambiado de nombre. Prueba la búsqueda o entra por la portada.</p>
+      <div class="hero-cta">
+        <button class="btn btn-primary btn-lg" type="button" data-search-open>Buscar en la documentación</button>
+        <a class="btn btn-lg" href="/">Ir a la portada</a>
+      </div>
+    </section>
+    {projects.length > 0 && (
+      <section class="block">
+        <div class="block-head"><h2>Proyectos</h2></div>
+        <ul class="plain-list">
+          {projects.map((p) => <li><a href={`/${p.id}/`}>{p.name}</a></li>)}
+        </ul>
+      </section>
+    )}
+  </main>
+</Base>

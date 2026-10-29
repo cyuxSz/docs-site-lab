@@ -6,6 +6,9 @@
 // - Las conexiones son tenues y unos puntos verdes viajan por ellas en el sentido del dato (canvas encima de Sigma);
 //   con un nodo enfocado solo se animan y resaltan las suyas.
 // - En pantallas táctiles hay que tocar una vez para activarlo, así no atrapa el scroll de la página.
+// - Secciones (?seccion=<capa>): el grafo se reduce a los nodos de una capa, sus topics/servicios y, atenuado, el otro
+//   lado de cada conexión. Tiene su propio layout (calculado en el build) y su recorrido, en los diseños A y B.
+// - Pantalla completa, exportar PNG y copiar el enlace a un nodo.
 // Prueba A/B (<html data-diseno>, ver Base.astro):
 // - A "Mapa guiado": columnas en el sentido del dato (de arriba abajo en teléfono), topics como etiqueta de la flecha,
 //   abre en la configuración del recorrido guiado y lo muestra la primera vez.
@@ -34,6 +37,8 @@ const OWNERS = new Set(["node", "hardware", "page"]);
 const TOUR_SEEN = "recorrido-visto";
 
 const FLOW = { light: "#16a34a", dark: "#4ade80" };
+// Nodos de contexto de una sección: más chicos y en gris, para que el núcleo destaque.
+const CONTEXT = { light: "#a3aebf", dark: "#5b6b9a" };
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 // Oscuro por defecto (como vanttec.com); <html data-theme="light"> pide el claro.
@@ -84,20 +89,21 @@ function drawHover(dark: boolean, accent: string) {
 
 function readParams() {
   const q = new URLSearchParams(location.search);
-  return { view: q.get("vista"), config: q.get("config"), node: q.get("node") };
+  return { view: q.get("vista"), config: q.get("config"), node: q.get("node"), seccion: q.get("seccion") };
 }
 
-function writeParams(view: string, config: string, node: string | null) {
+function writeParams(view: string, config: string, node: string | null, seccion: string | null) {
   const q = new URLSearchParams(location.search);
   view === "ros" ? q.delete("vista") : q.set("vista", view);
   config === "all" ? q.delete("config") : q.set("config", config);
   node ? q.set("node", node) : q.delete("node");
+  seccion ? q.set("seccion", seccion) : q.delete("seccion");
   const s = q.toString();
   history.replaceState(null, "", `${location.pathname}${s ? `?${s}` : ""}`);
 }
 
 export default function RoboticsGraph({ projectId, views }: Props) {
-  const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null } : readParams()), []);
+  const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null, seccion: null } : readParams()), []);
   const [diseno, setDiseno] = useState<"a" | "b">("a");
   const [view, setView] = useState(views.find((v) => v.id === initial.view)?.id ?? views[0].id);
   const [data, setData] = useState<GraphData | null>(null);
@@ -113,12 +119,26 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [ready, setReady] = useState(0);
   const [stageHeight, setStageHeight] = useState<number | null>(null);
   const [query, setQuery] = useState("");
+  const [seccionId, setSeccionId] = useState<string | null>(initial.seccion);
+  const [secStep, setSecStep] = useState<number | null>(null);
+  const [tema, setTema] = useState(0);
+  const [fsOk, setFsOk] = useState(false);
+  const [fs, setFs] = useState(false);
+  const [aviso, setAviso] = useState("");
 
+  const root = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const sigma = useRef<Sigma | null>(null);
   const graph = useRef<Graph | null>(null);
-  const tourNode = tourStep !== null ? data?.tour?.[tourStep]?.node ?? null : null;
+  // Sección elegida (una ?seccion inválida se ignora) y recorrido que está activo: el de la sección o el global.
+  const sec = data?.view === "ros" ? data.sections?.find((s) => s.id === seccionId) : undefined;
+  const secVariant = sec ? (showOld ? sec.old : sec) : undefined;
+  const tour = data?.tour ?? [];
+  const steps = secStep !== null ? sec?.tour ?? [] : tour;
+  const stepIdx = secStep !== null ? secStep : tourStep;
+  const setStepIdx = secStep !== null ? setSecStep : setTourStep;
+  const tourNode = stepIdx !== null ? steps[stepIdx]?.node ?? null : null;
   const state = useRef({ selected, hovered, tourNode });
   state.current = { selected, hovered, tourNode };
 
@@ -127,6 +147,16 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     setTouch(coarse);
     setActive(!coarse);
     setDiseno(document.documentElement.dataset.diseno === "b" ? "b" : "a");
+    setFsOk(Boolean(document.fullscreenEnabled));
+    // El botón de tema de Base.astro cambia data-theme: el grafo se vuelve a pintar con los colores del tema.
+    const watcher = new MutationObserver(() => setTema((n) => n + 1));
+    watcher.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    const onFs = () => setFs(document.fullscreenElement === root.current);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => {
+      watcher.disconnect();
+      document.removeEventListener("fullscreenchange", onFs);
+    };
   }, []);
 
   // Datos de la vista elegida (JSON estático generado en el build).
@@ -147,7 +177,6 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     () => new Map((data?.groups ?? []).map((g) => [g.id, g.id === "hardware" ? cssVar("--p-warm", g.color) : g.color])),
     [data],
   );
-  const tour = data?.tour ?? [];
   // Configuración donde se ven todos los nodos del recorrido (p. ej. el sub real).
   const tourConfig = useMemo(
     () => data?.configs.find((c) => tour.every((s) => nodeById.get(s.node)?.configs.includes(c.id)))?.id ?? null,
@@ -156,7 +185,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
 
   // Diseño A: abre en la configuración del recorrido y lo muestra la primera vez.
   useEffect(() => {
-    if (!capas || !data) return;
+    if (!capas || !data || initial.seccion) return;
     if (!initial.config && config === "all" && (tourConfig || data.configs[0])) setConfig(tourConfig ?? data.configs[0].id);
     if (tour.length && tourConfig && !initial.node && !storage.get(TOUR_SEEN)) setTourStep(0);
   }, [capas, data]);
@@ -166,6 +195,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const visibleIds = useMemo(() => {
     const ids = new Set<string>();
     if (!data) return ids;
+    // Con sección: solo su núcleo, canales y contexto (la variante con legado si "mostrar legado" está activo).
+    if (secVariant) {
+      const inSec = new Set([...secVariant.core, ...secVariant.channels, ...secVariant.context]);
+      for (const n of data.nodes) if (inSec.has(n.id) && !hiddenGroups.has(n.group) && (!capas || OWNERS.has(n.kind))) ids.add(n.id);
+      return ids;
+    }
     const passes = (n: GraphNode) => {
       if (hiddenGroups.has(n.group)) return false;
       if (n.kind === "node" && !showOld && config === "all" && HIDDEN_BY_DEFAULT.has(n.status ?? "")) return false;
@@ -181,9 +216,11 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       }
     }
     return ids;
-  }, [data, config, hiddenGroups, showOld, capas]);
+  }, [data, config, hiddenGroups, showOld, capas, sec]);
   const visibleRef = useRef(visibleIds);
   visibleRef.current = visibleIds;
+  const contextRef = useRef(new Set<string>());
+  contextRef.current = new Set(secVariant?.context ?? []);
   const visible = (n: GraphNode | undefined) => Boolean(n && visibleRef.current.has(n.id));
 
   // Crea el renderer una vez por vista; los filtros solo cambian los reducers y hacen refresh().
@@ -291,11 +328,14 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         nodeReducer: (id, attrs) => {
           const n = nodeById.get(id);
           if (!visible(n)) return { ...attrs, hidden: true };
+          // Contexto de la sección: chico, gris y sin etiqueta salvo que esté enfocado o junto al nodo enfocado.
+          const ctx = contextRef.current.has(id);
+          const base = ctx ? { ...attrs, size: attrs.size * 0.7, color: dark ? CONTEXT.dark : CONTEXT.light, label: "" } : attrs;
           const focus = focusOf();
-          if (!focus || !g.hasNode(focus)) return attrs;
-          if (id === focus) return { ...attrs, highlighted: true, zIndex: 2, forceLabel: true };
-          if (g.areNeighbors(id, focus)) return { ...attrs, zIndex: 1, forceLabel: true };
-          return { ...attrs, color: faded, label: capas ? attrs.label : "", zIndex: 0 };
+          if (!focus || !g.hasNode(focus)) return base;
+          if (id === focus) return { ...base, label: attrs.label, highlighted: true, zIndex: 2, forceLabel: true };
+          if (g.areNeighbors(id, focus)) return { ...base, label: attrs.label, zIndex: 1, forceLabel: true };
+          return { ...base, color: faded, label: capas ? base.label : "", zIndex: 0 };
         },
         edgeReducer: (id, attrs) => {
           const [s, t] = g.extremities(id);
@@ -311,6 +351,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       renderer.on("leaveNode", () => setHovered(null));
       renderer.on("clickNode", ({ node }) => {
         setTourStep(null);
+        setSecStep(null);
         setSelected(node);
       });
       renderer.on("clickStage", () => setSelected(null));
@@ -332,7 +373,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       renderer?.kill();
       sigma.current = null;
     };
-  }, [data, capas]);
+  }, [data, capas, tema]);
 
   // Al cambiar el filtro: posiciones del layout de ese filtro (calculado en el build) y encuadre de lo visible.
   // En teléfono, el diseño A gira las columnas para que el dato baje de arriba abajo, y el alto del lienzo se ajusta
@@ -342,7 +383,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     const g = graph.current;
     const el = container.current;
     if (!r || !g || !data || !el) return;
-    const key = config !== "all" ? config : showOld ? "old" : "all";
+    const key = sec ? `seccion:${sec.id}${showOld ? ":old" : ""}` : config !== "all" ? config : showOld ? "old" : "all";
     const narrow = isNarrow(el);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const n of data.nodes) {
@@ -377,15 +418,15 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     r.resize();
     r.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
     r.refresh();
-  }, [stageHeight]);
+  }, [stageHeight, fs]);
 
   useEffect(() => {
     sigma.current?.refresh({ skipIndexation: true });
-  }, [selected, hovered, tourStep]);
+  }, [selected, hovered, tourStep, secStep]);
 
   useEffect(() => {
-    if (data) writeParams(view, config, selected);
-  }, [view, config, selected, data]);
+    if (data) writeParams(view, config, selected, sec?.id ?? null);
+  }, [view, config, selected, data, sec]);
 
   // Al elegir un nodo (también desde ?node=) la cámara lo centra. En el recorrido no se mueve: se ve todo el camino
   // y solo cambia lo resaltado.
@@ -414,13 +455,75 @@ export default function RoboticsGraph({ projectId, views }: Props) {
 
   const startTour = () => {
     setSelected(null);
+    setSecStep(null);
     if (tourConfig && config !== tourConfig) setConfig(tourConfig);
     setTourStep(0);
   };
   const endTour = () => {
-    storage.set(TOUR_SEEN, "1");
+    // Solo el recorrido global se marca como visto; el de una sección se puede repetir sin efectos.
+    if (secStep === null) storage.set(TOUR_SEEN, "1");
     setTourStep(null);
+    setSecStep(null);
     camera("reset");
+  };
+  // Elegir una sección vuelve a "todas" las configuraciones; elegir una configuración quita la sección.
+  const pickSection = (id: string) => {
+    setSelected(null);
+    setTourStep(null);
+    setSecStep(null);
+    setSeccionId(id || null);
+    if (id) setConfig("all");
+  };
+  const startSecTour = () => {
+    setSelected(null);
+    setTourStep(null);
+    setSecStep(0);
+  };
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void root.current?.requestFullscreen?.().catch(() => {});
+  };
+
+  // PNG: se redibuja y, en el mismo turno (antes de que el navegador limpie el búfer de WebGL), se combinan las capas
+  // de Sigma sobre el fondo del tema. Se descarga con un blob: local, sin red.
+  const exportPng = () => {
+    const r = sigma.current;
+    if (!r) return;
+    r.refresh({ skipIndexation: true });
+    const layers = Object.entries(r.getCanvases()).filter(([name]) => name !== "mouse");
+    const first = layers[0]?.[1];
+    if (!first) return;
+    const out = document.createElement("canvas");
+    out.width = first.width;
+    out.height = first.height;
+    const ctx = out.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = cssVar("--surface", isDark() ? "#0a1646" : "#ffffff");
+    ctx.fillRect(0, 0, out.width, out.height);
+    for (const [, canvas] of layers) ctx.drawImage(canvas, 0, 0, out.width, out.height);
+    out.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectId}-grafo${sec ? `-${sec.id}` : ""}.png`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, "image/png");
+  };
+
+  // Copia el enlace al nodo abierto (la URL ya lleva ?node= y, si hay, ?seccion=; la actualiza el efecto de writeParams).
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      setAviso("Enlace copiado");
+    } catch {
+      setAviso("No se pudo copiar el enlace");
+    }
+    setTimeout(() => setAviso(""), 2500);
   };
 
   // Buscador: nombres de los nodos que se ven ahora.
@@ -447,15 +550,16 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const codeUrl = (file?: string, line?: number | null) => (file && data ? `${data.repoUrl}/blob/${data.sha}/${file}${line ? `#L${line}` : ""}` : undefined);
   const verbs = node?.kind === "node" ? ["Publica / sirve", "Recibe de"] : node?.kind === "page" ? ["Enlaza a", "La enlazan"] : ["Lo usan", "Viene de"];
   const visibleCount = visibleIds.size;
-  const step = tourStep !== null ? tour[tourStep] : null;
+  const step = stepIdx !== null ? steps[stepIdx] : null;
+  const sinNucleo = Boolean(sec && !showOld && sec.core.length === 0);
 
   return (
-    <div className="rg" data-pagefind-ignore="all">
+    <div className="rg" ref={root} data-pagefind-ignore="all">
       <div className="rg-toolbar">
         {views.length > 1 && (
           <div className="rg-tabs" role="tablist" aria-label="Vista">
             {views.map((v) => (
-              <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => { setSelected(null); setTourStep(null); setConfig("all"); setHiddenGroups(new Set()); setView(v.id); }}>
+              <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => { setSelected(null); setTourStep(null); setSecStep(null); setSeccionId(null); setConfig("all"); setHiddenGroups(new Set()); setView(v.id); }}>
                 {v.label}
               </button>
             ))}
@@ -464,9 +568,18 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {data && data.configs.length > 0 && (
           <label className="rg-field">
             <span>Configuración</span>
-            <select value={config} onChange={(e) => { setSelected(null); setTourStep(null); setConfig(e.target.value); }}>
+            <select value={config} onChange={(e) => { setSelected(null); setTourStep(null); setSecStep(null); setSeccionId(null); setConfig(e.target.value); }}>
               <option value="all">Todo el repo</option>
               {data.configs.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </label>
+        )}
+        {data?.view === "ros" && data.sections && data.sections.length > 0 && (
+          <label className="rg-field">
+            <span>Sección</span>
+            <select value={sec?.id ?? ""} onChange={(e) => pickSection(e.target.value)}>
+              <option value="">Todo el sistema</option>
+              {data.sections.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
           </label>
         )}
@@ -491,8 +604,17 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             </datalist>
           </label>
         )}
-        {capas && tour.length > 0 && tourStep === null && (
+        {capas && !sec && tour.length > 0 && tourStep === null && (
           <button className="rg-tour-btn" onClick={startTour}>▶ Recorrido</button>
+        )}
+        {sec && sec.tour.length > 0 && secStep === null && (
+          <button className="rg-tour-btn" onClick={startSecTour}>▶ Recorrido de la sección</button>
+        )}
+        {data && fsOk && (
+          <button className="rg-tool" type="button" aria-pressed={fs} onClick={toggleFullscreen}>{fs ? "Salir de pantalla completa" : "Pantalla completa"}</button>
+        )}
+        {data && (
+          <button className="rg-tool" type="button" onClick={exportPng} disabled={ready === 0}>Exportar PNG</button>
         )}
         <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.filter((n) => !capas || OWNERS.has(n.kind)).length}` : ""}</span>
       </div>
@@ -506,8 +628,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             </button>
           ))}
           {data.view === "ros" && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: BROKEN }} />Roto</span>}
+          {sec && contextRef.current.size > 0 && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} />En gris: lo que conecta con la sección</span>}
         </div>
       )}
+      {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
 
       {diseno === "b" && data && (
         <details className="rg-help">
@@ -516,6 +640,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             <li>Cada <strong>círculo grande</strong> es un programa (nodo de ROS) o una pieza de hardware; los <strong>chicos</strong> son los mensajes que se pasan (topics y servicios).</li>
             <li>Los <span className="rg-flowdot" aria-hidden="true" /> <strong>puntos verdes</strong> viajan en la dirección en que va el dato.</li>
             <li>{touch ? "Toca" : "Pasa el cursor sobre"} un nodo para resaltar con quién habla; tócalo o haz clic para ver su detalle.</li>
+            {data.sections && data.sections.length > 0 && (
+              <li>Con <strong>Sección</strong> ves solo una capa (Control, Misión…) con sus topics; <span className="rg-dot rg-inline" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} /> <strong>en gris</strong> está lo que conecta con ella desde afuera.</li>
+            )}
             {data.groups.filter((gr) => gr.hint).length > 0 && (
               <li>
                 Qué significa cada color:
@@ -581,21 +708,23 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             <div className="rg-actions">
               {node.file && node.kind !== "page" && <a className="btn" href={codeUrl(node.file, node.line)} target="_blank" rel="noopener noreferrer">Ver código ↗</a>}
               {node.doc && <a className="btn btn-primary" href={node.doc}>Ver documentación completa</a>}
+              <button className="btn" type="button" onClick={copyLink}>Copiar enlace a este nodo</button>
             </div>
+            <p className="rg-copied" role="status" aria-live="polite">{aviso}</p>
           </aside>
         )}
       </div>
 
-      {step && tourStep !== null && (
-        <div className="rg-tour" role="dialog" aria-label="Recorrido guiado" aria-live="polite">
-          <p className="rg-tour-step">Paso {tourStep + 1} de {tour.length}</p>
+      {step && stepIdx !== null && (
+        <div className="rg-tour" role="dialog" aria-label={secStep !== null ? "Recorrido de la sección" : "Recorrido guiado"} aria-live="polite">
+          <p className="rg-tour-step">{secStep !== null && sec ? `${sec.label} · ` : ""}Paso {stepIdx + 1} de {steps.length}</p>
           <p>{step.text}</p>
           <div className="rg-tour-actions">
-            <button onClick={endTour}>Saltar</button>
+            <button onClick={endTour}>{secStep !== null ? "Cerrar" : "Saltar"}</button>
             <span />
-            {tourStep > 0 && <button onClick={() => setTourStep(tourStep - 1)}>Anterior</button>}
-            {tourStep < tour.length - 1
-              ? <button className="rg-primary" onClick={() => setTourStep(tourStep + 1)}>Siguiente</button>
+            {stepIdx > 0 && <button onClick={() => setStepIdx(stepIdx - 1)}>Anterior</button>}
+            {stepIdx < steps.length - 1
+              ? <button className="rg-primary" onClick={() => setStepIdx(stepIdx + 1)}>Siguiente</button>
               : <button className="rg-primary" onClick={endTour}>Terminar</button>}
           </div>
         </div>
