@@ -11,6 +11,8 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { citasDe, extraerLineas } from "./citas.mjs";
+import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, ".content");
@@ -90,10 +92,10 @@ function fetchRepo(project) {
 
 function lastChange(dir, path) {
   try {
-    const out = git(["-C", dir, "log", "-1", "--format=%cI|%an", "--", path]);
+    const out = git(["-C", dir, "log", "-1", "--format=%cI|%H|%an", "--", path]);
     if (!out) return {};
-    const [date, author] = out.split("|");
-    return { date, author };
+    const [date, commit, ...author] = out.split("|");
+    return { date, commit, author: author.join("|") };
   } catch {
     return {};
   }
@@ -149,6 +151,34 @@ export function statusBadges(body) {
   );
 }
 
+// Vista previa de citas: lee cada archivo citado una sola vez con `git show <sha>:<ruta>` (en el clon parcial baja el
+// blob bajo demanda) y guarda solo las líneas citadas. Un archivo que no se puede leer deja su cita sin vista previa.
+const MAX_BYTES = 512 * 1024;
+const MAX_CITAS = 500;
+function leerCitas(dir, sha, citas) {
+  const porArchivo = new Map();
+  const unicas = [...new Map(citas.map((c) => [c.key, c])).values()];
+  for (const c of unicas.slice(0, MAX_CITAS)) porArchivo.set(c.file, [...(porArchivo.get(c.file) ?? []), c]);
+  const out = {};
+  for (const [file, lista] of porArchivo) {
+    try {
+      const texto = execFileSync("git", ["-C", dir, "show", `${sha}:${file}`], {
+        encoding: "utf8",
+        maxBuffer: MAX_BYTES,
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      });
+      for (const c of lista) {
+        const r = extraerLineas(texto, c.start, c.end);
+        if (r) out[c.key] = r;
+      }
+    } catch {
+      // Archivo ausente, binario o más grande que el tope: la cita queda como enlace normal.
+    }
+  }
+  return out;
+}
+
 // Enlaces de la wiki: .md -> ruta del portal; código -> GitHub en el commit construido.
 function rewriteLinks(body, id, rel, repoUrl, sha, links) {
   return body.replace(/\]\((?!https?:|mailto:|#)([^)\s]+?)(#[^)\s]*)?\)/g, (all, target, anchor = "") => {
@@ -174,15 +204,21 @@ function buildProject(project) {
   const claimsByPage = {};
   for (const c of claims) claimsByPage[c.page] = (claimsByPage[c.page] || 0) + 1;
 
+  const glosarioFile = join(wikiRoot, "glosario.md");
+  const glosario = existsSync(glosarioFile) ? parseGlosario(splitFrontmatter(readFileSync(glosarioFile, "utf8")).body) : [];
   const pages = [];
   const edges = [];
+  const citas = [];
   for (const file of existsSync(wikiRoot) ? walk(wikiRoot) : []) {
     const rel = toPosix(relative(wikiRoot, file));
     if (rel.startsWith(".") || !rel.endsWith(".md")) continue;
     const { fields, body } = splitFrontmatter(readFileSync(file, "utf8"));
     const links = new Set();
-    const text = rewriteLinks(statusBadges(neutralizeHtml(body)), project.id, rel, repoUrl, sha, links);
-    const { date, author } = lastChange(dir, `openwiki/${rel}`);
+    const linked = rewriteLinks(statusBadges(neutralizeHtml(body)), project.id, rel, repoUrl, sha, links);
+    citas.push(...citasDe(linked, repoUrl, sha));
+    // Tooltips del glosario (después de neutralizeHtml: el <abbr> lo genera el portal). El glosario no se marca a sí mismo.
+    const text = rel === "glosario.md" ? linked : marcarGlosario(linked, glosario);
+    const { date, commit, author } = lastChange(dir, `openwiki/${rel}`);
     const title = fields.title || (body.match(/^#\s+(.+)$/m) || [])[1] || rel;
     const page = {
       path: rel,
@@ -194,6 +230,7 @@ function buildProject(project) {
       claims: claimsByPage[`openwiki/${rel}`] || 0,
       updated: date || null,
       author: author || null,
+      commit: commit || null,
     };
     pages.push(page);
     for (const to of links) if (to !== rel) edges.push({ source: rel, target: to });
@@ -245,7 +282,7 @@ function buildProject(project) {
   mkdirSync(join(OUT, "data"), { recursive: true });
   writeFileSync(
     join(OUT, "data", `${project.id}.json`),
-    JSON.stringify({ ...summary, lastUpdate, pageList: pages, diagramList: diagrams, links: edges.filter((e) => known.has(e.target)), ros }, null, 1),
+    JSON.stringify({ ...summary, lastUpdate, pageList: pages, diagramList: diagrams, links: edges.filter((e) => known.has(e.target)), ros, citas: leerCitas(dir, sha, citas) }, null, 1),
   );
   return summary;
 }

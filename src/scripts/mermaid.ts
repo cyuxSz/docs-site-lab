@@ -9,43 +9,57 @@ export function renderMermaid() {
       if (!entries.some((e) => e.isIntersecting)) return;
       observer.disconnect();
       const { default: mermaid } = await import("mermaid");
-      // Colores del portal (tokens de global.css) en lugar del gris del tema por defecto.
-      const css = getComputedStyle(document.documentElement);
-      const token = (name: string) => css.getPropertyValue(name).trim();
-      const dark = document.documentElement.dataset.theme !== "light";
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: "base",
-        securityLevel: "strict",
-        fontFamily: "inherit",
-        themeVariables: {
-          darkMode: dark,
-          background: token("--surface"),
-          primaryColor: token("--accent-soft"),
-          primaryBorderColor: token("--accent"),
-          primaryTextColor: token("--text"),
-          secondaryColor: token("--surface"),
-          tertiaryColor: token("--bg"),
-          lineColor: token("--muted"),
-          textColor: token("--text"),
-          edgeLabelBackground: token("--surface"),
-          clusterBkg: token("--bg"),
-          clusterBorder: token("--line"),
-        },
-      });
       const nodes = blocks.map((pre) => {
         const div = document.createElement("div");
         div.className = "mermaid";
         div.textContent = pre.textContent;
+        fuentes.set(div, pre.textContent ?? "");
         pre.replaceWith(div);
         return div;
       });
-      await mermaid.run({ nodes, suppressErrors: true });
-      nodes.forEach(addZoom);
+      await dibuja(mermaid, nodes);
+      // Con el botón de tema (data-theme en <html>) los diagramas se vuelven a dibujar con los colores nuevos.
+      new MutationObserver(() => void dibuja(mermaid, nodes)).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     },
     { rootMargin: "200px" },
   );
   blocks.forEach((b) => observer.observe(b));
+}
+
+// Código fuente de cada diagrama, para poder dibujarlo otra vez al cambiar de tema.
+const fuentes = new WeakMap<HTMLElement, string>();
+
+async function dibuja(mermaid: (typeof import("mermaid"))["default"], nodes: HTMLElement[]) {
+  // Colores del portal (tokens de global.css) en lugar del gris del tema por defecto.
+  const css = getComputedStyle(document.documentElement);
+  const token = (name: string) => css.getPropertyValue(name).trim();
+  const dark = document.documentElement.dataset.theme !== "light";
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    fontFamily: "inherit",
+    themeVariables: {
+      darkMode: dark,
+      background: token("--surface"),
+      primaryColor: token("--accent-soft"),
+      primaryBorderColor: token("--accent"),
+      primaryTextColor: token("--text"),
+      secondaryColor: token("--surface"),
+      tertiaryColor: token("--bg"),
+      lineColor: token("--muted"),
+      textColor: token("--text"),
+      edgeLabelBackground: token("--surface"),
+      clusterBkg: token("--bg"),
+      clusterBorder: token("--line"),
+    },
+  });
+  for (const n of nodes) {
+    n.textContent = fuentes.get(n) ?? "";
+    n.removeAttribute("data-processed");
+  }
+  await mermaid.run({ nodes, suppressErrors: true });
+  nodes.forEach(addZoom);
 }
 
 let dialog: HTMLDialogElement | null = null;
@@ -56,14 +70,22 @@ let rotated = false;
 function addZoom(box: HTMLElement) {
   const svg = box.querySelector("svg");
   if (!svg) return;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "zoom-open";
-  button.textContent = "⤢ Ampliar";
-  button.setAttribute("aria-label", "Ver el diagrama a pantalla completa");
-  box.append(button);
-  // Todo el recuadro abre el visor: en teléfono el botón es un blanco chico.
-  box.addEventListener("click", () => openZoom(svg));
+  if (!box.querySelector(".zoom-open")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "zoom-open";
+    button.textContent = "⤢ Ampliar";
+    button.setAttribute("aria-label", "Ver el diagrama a pantalla completa");
+    box.append(button);
+  }
+  // Todo el recuadro abre el visor: en teléfono el botón es un blanco chico. El oyente se pone una sola vez y toma
+  // el SVG vigente (al cambiar de tema se dibuja uno nuevo).
+  if (box.dataset.zoom) return;
+  box.dataset.zoom = "1";
+  box.addEventListener("click", () => {
+    const actual = box.querySelector("svg");
+    if (actual) openZoom(actual);
+  });
 }
 
 function openZoom(svg: SVGSVGElement) {

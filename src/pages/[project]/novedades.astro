@@ -1,0 +1,53 @@
+---
+// Qué cambió en la wiki: las páginas más recientes según git. Sin data-pagefind-body: no entra al buscador.
+import Base from "../../layouts/Base.astro";
+import SideNav from "../../components/SideNav.astro";
+import { builtProjects, project as load, fmtDate, projectNav } from "../../lib/data";
+import { novedades } from "../../lib/novedades.ts";
+
+export function getStaticPaths() {
+  return builtProjects().map((p) => ({ params: { project: p.id } }));
+}
+
+const p = load(Astro.params.project!);
+const items = novedades(p.pageList, p.repoUrl ?? "", 20);
+const route = `/${p.id}/novedades/`;
+---
+<Base title={`Novedades · ${p.name}`} description={`Páginas de la wiki de ${p.name} actualizadas más recientemente.`} project={projectNav(p)} current="wiki">
+  <div class="container">
+    <div class="doc">
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
+      <main id="contenido">
+        <nav class="migas" aria-label="Migas">
+          <ol>
+            <li><a href={`/${p.id}/`} data-astro-prefetch>{p.name}</a></li>
+            <li><span aria-current="page">Novedades</span></li>
+          </ol>
+        </nav>
+        <section class="prose">
+          <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}</p>
+          <h1>Novedades</h1>
+          <p class="hint">Las {items.length} páginas de la wiki con cambios más recientes, según el historial de git del repo.</p>
+          {items.length === 0 ? (
+            <p>Todavía no hay fechas de cambio para esta wiki.</p>
+          ) : (
+            <ol class="novedades">
+              {items.map((x) => (
+                <li>
+                  <a href={x.route} data-astro-prefetch>{x.title}</a>
+                  <span class="muted">
+                    <time datetime={x.updated} data-hace>{fmtDate(x.updated)}</time>{x.author && ` · ${x.author}`}
+                    {x.commitUrl && <> · <a href={x.commitUrl}><code>{x.commit?.slice(0, 7)}</code></a></>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </main>
+    </div>
+  </div>
+  <script>
+    import "../../scripts/prose";
+  </script>
+</Base>
