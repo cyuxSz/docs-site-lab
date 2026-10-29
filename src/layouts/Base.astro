@@ -1,5 +1,9 @@
 ---
 // Esqueleto común: barra superior, búsqueda (Pagefind) y pie. El login lo resuelve middleware.js antes de servir.
+// Fuentes de vanttec.com servidas desde el propio portal (la CSP no permite Google Fonts).
+import "@fontsource-variable/nunito";
+import "@fontsource-variable/raleway";
+import "@fontsource-variable/urbanist";
 import "../styles/global.css";
 import disenoScript from "../scripts/diseno-inline.js?raw";
 
@@ -25,7 +29,7 @@ const { title, description = "Documentación de los proyectos de software de Van
   <body>
     <a class="sr-only" href="#contenido">Saltar al contenido</a>
     <header class="topbar">
-      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span>VantTec Docs</span></a>
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span>VantTEC <span class="brand-light">Docs</span></span></a>
       {project && <a class="crumb" href={`/${project.id}/`}>{project.name}</a>}
       <nav class="topnav" aria-label="Principal">
         {project && <a href={`/${project.id}/`} aria-current={current === "wiki" ? "page" : undefined} class="hide-sm">Wiki</a>}
@@ -94,6 +98,29 @@ const { title, description = "Documentación de los proyectos de software de Van
           openSearch();
         }
       });
+      // Enlaces a otros sitios (GitHub, papers) en otra pestaña, para que el portal siga abierto. Se decide al hacer
+      // clic, así cubre también los enlaces que crean los componentes (panel del grafo, resultados de búsqueda).
+      const external = (a: HTMLAnchorElement) => /^https?:$/.test(a.protocol) && a.host !== location.host;
+      document.addEventListener(
+        "click",
+        (e) => {
+          const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+          if (a && external(a)) {
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+          }
+        },
+        true,
+      );
+      // En el texto se marcan desde el inicio: ícono ↗ (CSS) y aviso para lectores de pantalla.
+      document.querySelectorAll<HTMLAnchorElement>(".prose a[href], .meta a[href]").forEach((a) => {
+        if (!external(a)) return;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.classList.add("ext");
+        a.insertAdjacentHTML("beforeend", '<span class="sr-only"> (se abre en otra pestaña)</span>');
+      });
+
       // Chip A/B: muestra el diseño actual y cambia al otro recargando con ?diseno=.
       const chip = document.getElementById("diseno")!;
       const diseno = document.documentElement.dataset.diseno === "b" ? "b" : "a";

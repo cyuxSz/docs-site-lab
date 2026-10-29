@@ -85,7 +85,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 // title y message son HTML fijo del middleware; todo dato externo (login, org) pasa antes por esc().
 function page(status, title, message) {
   const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
-<style>body{font:16px/1.6 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0a1420;color:#e4ecf4}main{max-width:420px;padding:24px;text-align:center}a{color:#3cc3d2}</style>
+<style>body{font:16px/1.6 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:radial-gradient(120% 80% at 50% -10%,#01165c,#010c3d 45%,#01052a);color:#eef3fb}main{max-width:420px;padding:24px;text-align:center}a{color:#49c1d2}</style>
 <main><h1>${title}</h1><p>${message}</p></main></html>`;
   return new Response(html, {
     status,
