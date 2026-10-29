@@ -1,6 +1,38 @@
 :root {
+  /* Paleta de vanttec.com: azul marino con degradado radial, vidrio translúcido y acento azul → cian.
+     Oscuro por defecto como el sitio oficial; <html data-theme="light"> activa el tema claro. */
+  --bg: #020830;
+  --bg-image: radial-gradient(120% 80% at 50% -10%, #01165c 0%, #010c3d 45%, #01052a 100%);
+  --surface: #0a1646;
+  --glass: rgba(184, 205, 233, .08);
+  --glass-strong: rgba(184, 205, 233, .12);
+  --text: #eef3fb;
+  --muted: #a8b6d3;
+  --line: #22306a;
+  --accent: #49c1d2;
+  --accent-soft: rgba(73, 193, 210, .14);
+  --accent-strong: #7ddae6;
+  --brand: #2563eb;
+  --brand-grad: linear-gradient(90deg, #3b82f6, #6366f1, #06b6d4);
+  --deep: #01165c;
+  --warn: #efa232;
+  --danger: #ff8a80;
+  --ok: #5fd39a;
+  --radius: 18px;
+  --shadow: none;
+  --mono: ui-monospace, "Cascadia Code", Menlo, monospace;
+  --font-body: "Nunito Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-head: "Raleway Variable", system-ui, sans-serif;
+  --font-display: "Urbanist Variable", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
   --bg: #f6f8fa;
+  --bg-image: none;
   --surface: #ffffff;
+  --glass: rgba(255, 255, 255, .75);
+  --glass-strong: rgba(255, 255, 255, .9);
   --text: #0f1b2a;
   --muted: #5a6878;
   --line: #dde3ea;
@@ -11,68 +43,52 @@
   --warn: #9a5b00;
   --danger: #b42318;
   --ok: #067647;
-  --radius: 12px;
   --shadow: 0 1px 2px rgba(15, 27, 42, .06), 0 4px 16px rgba(15, 27, 42, .06);
-  --mono: ui-monospace, "Cascadia Code", Menlo, monospace;
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0a1420;
-    --surface: #101e2e;
-    --text: #e4ecf4;
-    --muted: #93a3b5;
-    --line: #213246;
-    --accent: #3cc3d2;
-    --accent-soft: #12303a;
-    --accent-strong: #5fd6e3;
-    --deep: #e4ecf4;
-    --warn: #f0b35a;
-    --danger: #ff8a80;
-    --ok: #5fd39a;
-    --shadow: none;
-    color-scheme: dark;
-  }
-}
-
 * { box-sizing: border-box; }
-html { scroll-padding-top: 72px; }
+html { scroll-padding-top: 96px; }
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--bg-image) fixed, var(--bg);
   color: var(--text);
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.65 var(--font-body);
   -webkit-text-size-adjust: 100%;
 }
+h1, h2, h3, h4, .card-title { font-family: var(--font-head); font-weight: 700; }
 a { color: var(--accent); }
 code { font: .9em var(--mono); overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Enlaces externos del texto (Base.astro les pone target="_blank"). */
+a.ext::after { content: "↗"; margin-left: 2px; font-size: .75em; opacity: .7; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--muted); }
 
-/* Barra superior */
+/* Barra superior: píldora flotante de vidrio, como la de vanttec.com. */
 .topbar {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: 12px; z-index: 20;
   display: flex; align-items: center; gap: 12px;
-  padding: 10px max(16px, calc((100vw - 1280px) / 2));
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
+  width: min(1280px, calc(100% - 24px)); margin: 12px auto 0; padding: 8px 10px 8px 18px;
+  border: 1px solid rgba(184, 205, 233, .18); border-radius: 30px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; white-space: nowrap; }
-.brand-mark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50% 50% 50% 8px; background: linear-gradient(135deg, var(--accent), var(--deep)); }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-head); font-weight: 700; color: var(--text); text-decoration: none; white-space: nowrap; }
+.brand-light { font-weight: 400; color: var(--muted); }
+.brand-mark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50% 50% 50% 8px; background: var(--brand-grad); }
 .crumb { color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .crumb::before { content: "/"; margin-right: 10px; color: var(--line); }
 .topnav { display: flex; gap: 16px; align-items: center; margin-left: auto; }
-.topnav a { color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; }
+.topnav a { color: var(--muted); text-decoration: none; font-size: 15px; white-space: nowrap; }
 .topnav a:hover, .topnav a[aria-current="page"] { color: var(--text); }
+.topnav a[aria-current="page"] { text-decoration: underline 2px var(--accent); text-underline-offset: 6px; }
 .topnav .user { color: var(--muted); font-size: 13px; }
 .search-btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(184, 205, 233, .18);
+  background: var(--glass); color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
 }
 .search-btn kbd { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 
@@ -80,15 +96,16 @@ code { font: .9em var(--mono); overflow-wrap: anywhere; }
 .narrow { max-width: 1120px; }
 
 .hero { padding: 48px 0 24px; }
-.eyebrow { margin: 0 0 8px; color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .02em; }
-.hero h1 { margin: 0; font-size: clamp(28px, 5vw, 44px); line-height: 1.1; letter-spacing: -.02em; max-width: 22ch; }
+/* Etiquetas en mayúsculas espaciadas y titulares en Urbanist, como "NAVIGATING THE FUTURE". */
+.eyebrow { margin: 0 0 10px; color: var(--accent); font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: .28em; text-transform: uppercase; }
+.hero h1 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 5.5vw, 52px); line-height: 1.05; letter-spacing: -.01em; max-width: 22ch; }
 .lead { color: var(--muted); font-size: 18px; max-width: 64ch; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 24px 0 0; }
-.stats div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
-.stats dt { color: var(--muted); font-size: 13px; }
-.stats dd { margin: 4px 0 0; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stats div { background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.stats dt { color: var(--muted); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+.stats dd { margin: 4px 0 0; font-family: var(--font-display); font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
-.block { padding: 36px 0; border-top: 1px solid var(--line); }
+.block { padding: 40px 0; border-top: 1px solid var(--line); }
 .block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; }
 .block h2 { margin: 0; font-size: 24px; letter-spacing: -.01em; }
 .hint { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
@@ -100,17 +117,19 @@ code { font: .9em var(--mono); overflow-wrap: anywhere; }
   text-decoration: none; cursor: pointer; white-space: nowrap;
 }
 .btn:hover { border-color: var(--accent); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-@media (prefers-color-scheme: dark) { .btn-primary { color: #04222a; } }
+.btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn-primary:hover { border-color: var(--accent); }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 16px; }
 .cards-wide { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
 .card {
   display: flex; flex-direction: column; gap: 6px; text-decoration: none;
-  padding: 16px; border-radius: var(--radius); border: 1px solid var(--line);
-  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  padding: 18px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--glass); color: var(--text); box-shadow: var(--shadow);
+  transition: transform .2s ease, border-color .2s ease, background-color .2s ease;
 }
-a.card:hover { border-color: var(--accent); }
+a.card:hover { border-color: var(--accent); background: var(--glass-strong); transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { a.card:hover { transform: none; } }
 .card-title { font-weight: 700; overflow-wrap: anywhere; }
 .card-title.mono { font-family: var(--mono); font-size: 15px; }
 .card-note { color: var(--warn); font-size: 13px; }
@@ -132,7 +151,7 @@ a.card:hover { border-color: var(--accent); }
 
 /* Página de la wiki: navegación | artículo | metadatos */
 .doc { display: grid; grid-template-columns: 240px minmax(0, 1fr) 220px; gap: 40px; align-items: start; padding-top: 28px; }
-.sidenav { position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
+.sidenav { position: sticky; top: 92px; max-height: calc(100vh - 108px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
 .sidenav-toggle { display: none; }
 .sidenav h2 { margin: 18px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sidenav ul { list-style: none; margin: 0; padding: 0; }
@@ -141,7 +160,7 @@ a.card:hover { border-color: var(--accent); }
 .sidenav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
 .sidenav .extra { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
 
-.meta { position: sticky; top: 72px; font-size: 13px; color: var(--muted); }
+.meta { position: sticky; top: 92px; font-size: 13px; color: var(--muted); }
 .meta dl { margin: 0; display: grid; gap: 10px; }
 .meta dt { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
 .meta dd { margin: 0; color: var(--text); }
@@ -164,11 +183,9 @@ a.card:hover { border-color: var(--accent); }
 .prose .mermaid { display: flex; justify-content: center; overflow-x: auto; margin: 16px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .prose pre:has(> code.language-mermaid) { white-space: pre; color: var(--muted); min-height: 120px; }
 
-/* Shiki con tema claro/oscuro */
+/* Shiki: colores de github-dark salvo con el tema claro (el HTML trae los de github-light en línea). */
 .astro-code { background-color: var(--surface) !important; }
-@media (prefers-color-scheme: dark) {
-  .astro-code, .astro-code span { color: var(--shiki-dark) !important; background-color: var(--surface) !important; }
-}
+:root:not([data-theme="light"]) :is(.astro-code, .astro-code span) { color: var(--shiki-dark) !important; background-color: var(--surface) !important; }
 
 /* Búsqueda (Pagefind UI) */
 .search-dialog {

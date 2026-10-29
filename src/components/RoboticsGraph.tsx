@@ -36,7 +36,8 @@ const TOUR_SEEN = "recorrido-visto";
 const FLOW = { light: "#16a34a", dark: "#4ade80" };
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+// Oscuro por defecto (como vanttec.com); <html data-theme="light"> pide el claro.
+const isDark = () => document.documentElement.dataset.theme !== "light";
 const isNarrow = (el: HTMLElement) => el.clientWidth < 600;
 
 const storage = {
@@ -60,8 +61,8 @@ function drawHover(dark: boolean) {
     const size = settings.labelSize;
     ctx.font = `600 ${size}px ${settings.labelFont}`;
     const w = data.label ? ctx.measureText(data.label).width + 10 : 0;
-    ctx.fillStyle = dark ? "#101e2e" : "#ffffff";
-    ctx.strokeStyle = dark ? "#3cc3d2" : "#0b7a8a";
+    ctx.fillStyle = dark ? "#0a1646" : "#ffffff";
+    ctx.strokeStyle = dark ? "#49c1d2" : "#0b7a8a";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(data.x, data.y, data.size + 2, 0, Math.PI * 2);
@@ -74,7 +75,7 @@ function drawHover(dark: boolean) {
     ctx.roundRect(x, y, w, size + 8, 4);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = dark ? "#e4ecf4" : "#0f1b2a";
+    ctx.fillStyle = dark ? "#eef3fb" : "#0f1b2a";
     ctx.fillText(data.label, x + 5, data.y + size / 3);
   };
 }
@@ -195,11 +196,11 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     const dark = isDark();
     const el = container.current;
     const narrow = isNarrow(el);
-    const faded = dark ? "#1f2d3d" : "#e3e8ee";
+    const faded = dark ? "#1b2a63" : "#e3e8ee";
     // Colores sólidos ya mezclados con el fondo: Sigma pinta las líneas sin respetar bien el alfa.
-    const edgeColor = capas ? (dark ? "#34485e" : "#c3ccd7") : dark ? "#26384a" : "#d3dbe4";
-    const edgeFaded = dark ? "#152230" : "#eef2f6";
-    const edgeFocus = dark ? "#3cc3d2" : "#0b7a8a";
+    const edgeColor = capas ? (dark ? "#344a86" : "#c3ccd7") : dark ? "#26397a" : "#d3dbe4";
+    const edgeFaded = dark ? "#121d55" : "#eef2f6";
+    const edgeFocus = dark ? "#49c1d2" : "#0b7a8a";
     const flow = overlay.current;
     let cancelled = false;
     let renderer: Sigma | null = null;
@@ -264,10 +265,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       renderer = new SigmaClass(g, el, {
         defaultEdgeType: capas ? "arrow" : "line",
         renderEdgeLabels: capas,
-        edgeLabelColor: { color: dark ? "#93a3b5" : "#5a6878" },
+        edgeLabelColor: { color: dark ? "#a8b6d3" : "#5a6878" },
         edgeLabelSize: 11,
         edgeLabelFont: "ui-monospace, monospace",
-        labelColor: { color: dark ? "#e4ecf4" : "#0f1b2a" },
+        labelColor: { color: dark ? "#eef3fb" : "#0f1b2a" },
         labelFont: "system-ui, sans-serif",
         labelSize: 12,
         // A tiene pocos nodos: todas las etiquetas. B en teléfono: solo las de los nodos grandes.
@@ -563,7 +564,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
                       <li key={i}>
                         <button className="rg-link" onClick={() => setSelected(n.id)}>{n.label}</button>
                         {e.label && <code className="rg-type">{e.label}</code>}
-                        {e.file && <a href={codeUrl(e.file, e.line)} aria-label="Ver la línea en GitHub">↗</a>}
+                        {e.file && <a href={codeUrl(e.file, e.line)} target="_blank" rel="noopener noreferrer" aria-label="Ver la línea en GitHub (se abre en otra pestaña)">↗</a>}
                       </li>
                     ))}
                   </ul>
@@ -571,7 +572,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
               ) : null,
             )}
             <div className="rg-actions">
-              {node.file && node.kind !== "page" && <a className="btn" href={codeUrl(node.file, node.line)}>Ver código</a>}
+              {node.file && node.kind !== "page" && <a className="btn" href={codeUrl(node.file, node.line)} target="_blank" rel="noopener noreferrer">Ver código ↗</a>}
               {node.doc && <a className="btn btn-primary" href={node.doc}>Ver documentación completa</a>}
             </div>
           </aside>
