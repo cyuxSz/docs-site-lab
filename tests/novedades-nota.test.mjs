@@ -17,3 +17,11 @@ test("novedades.astro muestra p.novedadesNota (solo si existe) antes de la lista
   assert.ok(src.indexOf("novedadesNota") < src.indexOf('class="novedades"'), "el aviso va arriba de la lista");
   assert.match(read("src/lib/data.ts"), /novedadesNota\?:\s*string/);
 });
+
+test("el aviso usa clase propia .notice con ícono decorativo y estilos en ambos temas", () => {
+  assert.match(read("src/pages/[project]/novedades.astro"), /class="notice"[^]*aria-hidden="true">ⓘ/);
+  const css = read("src/styles/global.css");
+  assert.match(css, /\.notice\s*\{[^}]*border-left/);
+  assert.match(css, /:root\[data-theme="light"\] \.notice/);
+  assert.match(css, /\.badge-restricted\s*\{[^}]*color: var\(--text\)/);
+});
