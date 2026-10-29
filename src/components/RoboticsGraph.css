@@ -94,3 +94,14 @@
   .rg-search input { width: 100%; }
   .rg-drawer { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 55%; }
 }
+
+/* Botones de la barra (pantalla completa, exportar PNG) y aviso de sección sin núcleo. */
+.rg-tool { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.rg-tool:hover:not(:disabled) { border-color: var(--accent); }
+.rg-tool:disabled { opacity: .5; cursor: default; }
+.rg-note { margin: 0; padding: 8px 14px; border: 1px solid var(--warn); border-radius: var(--radius); color: var(--warn); font-size: 14px; }
+.rg-copied { min-height: 1.4em; margin: 6px 0 0; color: var(--ok); font-size: 13px; }
+
+/* Pantalla completa: el contenedor entero (barra, grafo y paneles) llena la pantalla con el fondo del tema. */
+.rg:fullscreen { height: 100%; padding: 12px; overflow: auto; background: var(--bg-image) fixed, var(--bg); }
+.rg:fullscreen .rg-stage { flex: 1 1 auto; min-height: 0; height: auto !important; }

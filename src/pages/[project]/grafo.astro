@@ -34,7 +34,7 @@ const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label
       <h1>{p.ros ? "Nodos, topics y hardware" : "Mapa de la wiki"}</h1>
       <p class="lead">
         {p.ros
-          ? "Generado desde el código en cada build. Elige una configuración para ver solo lo que corre en ella; pasa el cursor o toca un nodo para resaltar sus conexiones."
+          ? "Generado desde el código en cada build. Elige una configuración para ver solo lo que corre en ella, o una sección (Control, Misión, Navegación…) para ver una capa con sus topics y lo que la rodea; pasa el cursor o toca un nodo para resaltar sus conexiones."
           : "Cómo se enlazan las páginas de la wiki entre sí."}
       </p>
     </section>

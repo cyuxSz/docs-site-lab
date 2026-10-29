@@ -14,6 +14,7 @@ export interface PageInfo {
   claims: number;
   updated: string | null;
   author: string | null;
+  commit?: string | null;
 }
 
 export interface RosNode {
@@ -62,6 +63,8 @@ export interface ProjectSummary {
   theme?: ProjectTheme;
   // Recorrido guiado del grafo (diseño A): ids de ros.json en orden, con una frase cada uno.
   tour?: { node: string; text: string }[];
+  // Recorrido propio por sección (id de capa): opcional, si falta se genera solo.
+  secciones?: Record<string, { tour?: { node: string; text: string }[] }>;
   repoUrl?: string;
   sha?: string;
   pages?: number;
@@ -76,6 +79,8 @@ export interface ProjectSummary {
 
 export interface ProjectData extends ProjectSummary {
   lastUpdate: { date?: string; commit?: string } | null;
+  // Vista previa de las citas al código: líneas ya extraídas en el build (tools/citas.mjs), por clave "archivo#La-Lb".
+  citas?: Record<string, { start: number; end: number; lines: string[]; truncated: boolean }>;
   pageList: PageInfo[];
   diagramList: { file: string; title: string; kb: number }[];
   links: { source: string; target: string }[];

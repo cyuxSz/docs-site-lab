@@ -20,14 +20,15 @@ const { projectId, projectName, pages, currentRoute, hasDiagrams } = Astro.props
         <h2>{s.label}</h2>
         <ul>
           {s.pages.map((p) => (
-            <li><a href={p.route} aria-current={p.route === currentRoute ? "page" : undefined}>{p.type === "index" ? `Resumen de ${s.label.toLowerCase()}` : p.title}</a></li>
+            <li><a href={p.route} data-astro-prefetch aria-current={p.route === currentRoute ? "page" : undefined}>{p.type === "index" ? `Resumen de ${s.label.toLowerCase()}` : p.title}</a></li>
           ))}
         </ul>
       </div>
     ))}
     <ul class="extra">
-      <li><a href={`/${projectId}/grafo/`}>Grafo de nodos ROS</a></li>
-      {hasDiagrams && <li><a href={`/${projectId}/#diagramas`}>Diagramas</a></li>}
+      <li><a href={`/${projectId}/novedades/`} data-astro-prefetch aria-current={currentRoute === `/${projectId}/novedades/` ? "page" : undefined}>Novedades</a></li>
+      <li><a href={`/${projectId}/grafo/`} data-astro-prefetch>Grafo de nodos ROS</a></li>
+      {hasDiagrams && <li><a href={`/${projectId}/#diagramas`} data-astro-prefetch>Diagramas</a></li>}
     </ul>
   </div>
 </nav>

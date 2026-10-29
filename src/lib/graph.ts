@@ -3,6 +3,7 @@
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import type { ProjectData } from "./data";
+import { recorridoSeccion, seccion, seccionesDe } from "./secciones.ts";
 
 export interface GraphCategory {
   id: string;
@@ -52,6 +53,21 @@ export interface GraphData {
   flowEdges?: GraphEdge[];
   // Recorrido guiado del diseño A (projects.json → tour).
   tour?: { node: string; text: string }[];
+  // Una sub-vista por capa ROS (con layout propio en pos["seccion:<id>"]) y su recorrido.
+  sections?: GraphSection[];
+}
+
+export interface GraphSection {
+  id: string;
+  label: string;
+  color: string;
+  hint?: string;
+  core: string[];
+  channels: string[];
+  context: string[];
+  tour: { node: string; text: string }[];
+  // Misma sección contando legado y sin uso (cuando "mostrar legado" está activo).
+  old: { core: string[]; channels: string[]; context: string[] };
 }
 
 // Paleta de la propuesta (azul ROS, verde visión, violeta IA, naranja hardware), ampliada a las capas del repo.
@@ -219,6 +235,23 @@ function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory
   for (const n of nodes) [n.x, n.y] = n.pos?.old ?? n.pos?.all ?? [0, 0];
 }
 
+// Layout propio de cada sección: ForceAtlas2 de núcleo + canales + contexto ("seccion:<id>") y columnas por capas con
+// solo los dueños ("capas:seccion:<id>"). La variante ":old" cuenta el legado. Lo que no toca la sección no recibe clave.
+function layoutSecciones(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory[], flow: GraphEdge[], id: string, ids: string[], old: boolean) {
+  const sufijo = old ? ":old" : "";
+  const set = new Set(ids);
+  const dentro = nodes.filter((n) => set.has(n.id));
+  const owners = new Set(["node", "hardware"]);
+  const asigna = (clave: string, pos: Map<string, [number, number]>) => {
+    for (const [nid, xy] of pos) {
+      const n = nodes.find((x) => x.id === nid)!;
+      n.pos = { ...n.pos, [clave]: xy };
+    }
+  };
+  asigna(`seccion:${id}${sufijo}`, layout(dentro, edges.filter((e) => set.has(e.source) && set.has(e.target)), groups));
+  asigna(`capas:seccion:${id}${sufijo}`, layered(dentro.filter((n) => owners.has(n.kind)), flow));
+}
+
 export function rosGraph(p: ProjectData): GraphData | null {
   if (!p.ros) return null;
   const docs = new Map(p.pageList.filter((x) => x.path.startsWith("packages/")).map((x) => [x.path.replace(/^packages\/|\.md$/g, ""), x.route]));
@@ -251,6 +284,24 @@ export function rosGraph(p: ProjectData): GraphData | null {
   const groups = LAYERS.filter((g) => used.has(g.id));
   const flow = flowEdges(nodes, edges);
   layoutAll(nodes, edges, groups, p.ros.configs.map((c) => c.id), flow);
+  const sections: GraphSection[] = seccionesDe(nodes, edges, LAYERS.map((l) => l.id)).map((id) => {
+    const layer = LAYERS.find((l) => l.id === id)!;
+    const s = seccion(nodes, edges, id);
+    const old = seccion(nodes, edges, id, { showOld: true });
+    layoutSecciones(nodes, edges, groups, flow, id, [...s.core, ...s.channels, ...s.context], false);
+    layoutSecciones(nodes, edges, groups, flow, id, [...old.core, ...old.channels, ...old.context], true);
+    return {
+      id,
+      label: layer.label,
+      color: layer.color,
+      hint: layer.hint,
+      core: s.core,
+      channels: s.channels,
+      context: s.context,
+      tour: recorridoSeccion(s, nodes, edges, layer, p.secciones?.[id]?.tour),
+      old: { core: old.core, channels: old.channels, context: old.context },
+    };
+  });
   return {
     view: "ros",
     title: "Nodos ROS",
@@ -262,6 +313,7 @@ export function rosGraph(p: ProjectData): GraphData | null {
     edges,
     flowEdges: flow,
     tour: (p.tour ?? []).filter((s) => nodes.some((n) => n.id === s.node)),
+    sections,
   };
 }
 
