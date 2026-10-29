@@ -54,6 +54,12 @@ export interface ProjectSummary {
   repo: string;
   branch: string;
   note?: string;
+  // Portada y colores del proyecto (como cada vehículo en vanttec.com). image: ruta en public/; sin ella se dibuja
+  // una ilustración según kind.
+  tagline?: string;
+  kind?: "submarino" | string;
+  image?: string;
+  theme?: ProjectTheme;
   // Recorrido guiado del grafo (diseño A): ids de ros.json en orden, con una frase cada uno.
   tour?: { node: string; text: string }[];
   repoUrl?: string;
@@ -74,6 +80,12 @@ export interface ProjectData extends ProjectSummary {
   diagramList: { file: string; title: string; kb: number }[];
   links: { source: string; target: string }[];
   ros: RosGraph | null;
+}
+
+export interface ProjectTheme {
+  accent: string;
+  deep: string;
+  warm: string;
 }
 
 const read = (p: string) => JSON.parse(readFileSync(join(CONTENT, p), "utf8"));
@@ -119,3 +131,12 @@ export const STATUS_LABEL: Record<string, string> = {
   roto: "Roto",
   externo: "Externo",
 };
+
+// Variables CSS con los colores de un proyecto (las usan Base.astro, las tarjetas de la portada y el grafo).
+export const themeStyle = (t?: ProjectTheme) => (t ? `--p-accent:${t.accent};--p-deep:${t.deep};--p-warm:${t.warm}` : undefined);
+
+// Lo que necesitan la barra de pestañas y los colores del proyecto en Base.astro.
+export function projectNav(p: ProjectData) {
+  const first = p.pageList.find((x) => x.path === "quickstart.md") ?? p.pageList.find((x) => x.type !== "index" && x.type !== "meta");
+  return { id: p.id, name: p.name, theme: p.theme, wiki: first?.route, diagrams: p.diagramList.length > 0, repoUrl: p.repoUrl };
+}

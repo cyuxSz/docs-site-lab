@@ -1,7 +1,8 @@
 ---
 import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
-import { builtProjects, project as load, fmtDate, STATUS_LABEL } from "../../lib/data";
+import VehicleArt from "../../components/VehicleArt.astro";
+import { builtProjects, project as load, fmtDate, projectNav, STATUS_LABEL } from "../../lib/data";
 
 export function getStaticPaths() {
   return builtProjects().map((p) => ({ params: { project: p.id } }));
@@ -21,16 +22,22 @@ const statusOf = (pkg: string) => {
     .filter(([, c]) => c);
 };
 ---
-<Base title={`${p.name} · VantTec Docs`} description={p.summary} project={{ id: p.id, name: p.name }} current="wiki">
+<Base title={`${p.name} · VantTec Docs`} description={p.summary} project={projectNav(p)} current="resumen">
   <div class="container">
     <div class="doc">
       <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido" data-pagefind-body>
         <meta data-pagefind-filter="proyecto[content]" content={p.name} />
-        <section class="hero" style="padding-top: 8px">
-          {p.note && <p class="eyebrow">{p.note}</p>}
-          <h1>{p.name}</h1>
-          <p class="lead">{p.summary}</p>
+        <section class="hero phero">
+          <div>
+            <p class="eyebrow">{p.tagline ?? "Proyecto"}</p>
+            <h1>{p.name}</h1>
+            <p class="lead">{p.summary}</p>
+            {p.note && <p class="card-note">{p.note}</p>}
+          </div>
+          <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
+        </section>
+        <section>
           <dl class="stats">
             <div><dt>Páginas</dt><dd>{p.pages}</dd></div>
             <div><dt>Afirmaciones verificadas</dt><dd>{p.claims}</dd></div>

@@ -3,7 +3,7 @@
 import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
-import { builtProjects, project as load, fmtDate, STATUS_LABEL } from "../../lib/data";
+import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_LABEL } from "../../lib/data";
 import { TYPE_LABEL } from "../../lib/labels";
 
 export async function getStaticPaths() {
@@ -22,9 +22,11 @@ const route = `/${p.id}/${Astro.params.slug}/`;
 const toc = headings.filter((h) => h.depth === 2);
 const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
 const rosNodes = pkg && p.ros ? p.ros.nodes.filter((n) => n.category === "ros2_node" && n.package === pkg) : [];
+// Encabezado al estilo de vanttec.com: sección en mayúsculas espaciadas sobre el título de la página.
+const section = sections(p.pageList).find((s) => s.pages.some((x) => x.route === route))?.label;
 const hasMermaid = entry.body?.includes("```mermaid") ?? false;
 ---
-<Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={{ id: p.id, name: p.name }} current="wiki">
+<Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={projectNav(p)} current="wiki">
   <div class="container">
     <div class="doc">
       <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
@@ -33,6 +35,7 @@ const hasMermaid = entry.body?.includes("```mermaid") ?? false;
           <meta data-pagefind-filter="proyecto[content]" content={p.name} />
           <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />
           {pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
+          <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}{section && ` · ${section}`}</p>
           <Content />
         </article>
       </main>

@@ -2,7 +2,7 @@
 // Grafo del proyecto. El texto y la tabla salen en el HTML; Sigma y los datos llegan solo al hacer scroll al grafo.
 import Base from "../../layouts/Base.astro";
 import RoboticsGraph from "../../components/RoboticsGraph.tsx";
-import { builtProjects, project as load, STATUS_LABEL } from "../../lib/data";
+import { builtProjects, project as load, projectNav, STATUS_LABEL } from "../../lib/data";
 
 export function getStaticPaths() {
   return builtProjects().map((p) => ({ params: { project: p.id } }));
@@ -27,7 +27,7 @@ const rows = (ros?.nodes ?? [])
   }));
 const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label ?? id;
 ---
-<Base title={`Grafo · ${p.name}`} description={`Nodos, topics y hardware de ${p.name}.`} project={{ id: p.id, name: p.name }} current="grafo">
+<Base title={`Grafo · ${p.name}`} description={`Nodos, topics y hardware de ${p.name}.`} project={projectNav(p)} current="grafo">
   <main class="container" id="contenido">
     <section class="hero" style="padding-bottom: 12px">
       <p class="eyebrow">Grafo</p>

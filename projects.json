@@ -6,6 +6,9 @@
     "repo": "cyuxSz/uuv-docs-lab",
     "branch": "main",
     "note": "Copia de prueba de vanttec/uuv_software",
+    "kind": "submarino",
+    "tagline": "Vehículo submarino autónomo",
+    "theme": { "accent": "#49C1D2", "deep": "#0491AD", "warm": "#F0900D" },
     "tour": [
       { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2: además de ver, calcula dónde está el sub." },
       { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },
@@ -18,6 +21,8 @@
     "id": "proyecto-x",
     "name": "Proyecto X",
     "summary": "Proyecto ficticio con el que se probaron las herramientas de documentación.",
+    "tagline": "Proyecto de prueba",
+    "theme": { "accent": "#8B9CF6", "deep": "#6366F1", "warm": "#F0900D" },
     "repo": "cyuxSz/docs-lab-proyecto-x",
     "branch": "main"
   }
