@@ -51,7 +51,7 @@
     radial-gradient(ellipse at 50% 45%, var(--rg-glow), transparent 70%),
     var(--surface);
   --rg-grid: rgba(228, 236, 244, .06);
-  --rg-glow: rgba(73, 193, 210, .1);
+  --rg-glow: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 :root[data-theme="light"] .rg-stage { --rg-grid: rgba(15, 27, 42, .07); --rg-glow: rgba(11, 122, 138, .07); }
 .rg-canvas { position: absolute; inset: 0; touch-action: none; }
