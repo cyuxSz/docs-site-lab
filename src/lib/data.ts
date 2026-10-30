@@ -1,5 +1,6 @@
 // Datos que deja tools/fetch.mjs en .content/ (solo en build).
 import { readFileSync } from "node:fs";
+import type { Ruta } from "./rutas";
 import { join } from "node:path";
 
 const CONTENT = join(process.cwd(), ".content");
@@ -87,6 +88,8 @@ export interface ProjectData extends ProjectSummary {
   diagramList: { file: string; title: string; kb: number }[];
   links: { source: string; target: string }[];
   ros: RosGraph | null;
+  // Rutas de lectura por rol (tools/rutas.mjs); solo está si openwiki/rutas.md trae pasos válidos.
+  rutas?: Ruta[];
 }
 
 export interface ProjectTheme {

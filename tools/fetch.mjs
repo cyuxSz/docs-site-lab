@@ -13,6 +13,7 @@ import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { citasDe, extraerLineas } from "./citas.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
+import { pageRoute, parseRutas } from "./rutas.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, ".content");
@@ -38,12 +39,6 @@ function walk(dir) {
     const p = join(dir, name);
     return statSync(p).isDirectory() ? walk(p) : [p];
   });
-}
-
-// Ruta de una página en el portal: openwiki/packages/index.md -> /<id>/packages/
-export function pageRoute(id, rel) {
-  const slug = rel.replace(/\.md$/, "").replace(/(^|\/)index$/, "");
-  return `/${id}/${slug ? `${slug}/` : ""}`;
 }
 
 // Traduce el error de git a algo que se pueda mostrar en la portada.
@@ -269,6 +264,12 @@ function buildProject(project) {
   const ros = existsSync(rosFile) ? JSON.parse(readFileSync(rosFile, "utf8")) : null;
   const lastUpdate = existsSync(join(wikiRoot, ".last-update.json")) ? JSON.parse(readFileSync(join(wikiRoot, ".last-update.json"), "utf8")) : null;
   const known = new Set(pages.map((p) => p.path));
+  // Rutas por rol: solo si la wiki trae rutas.md con pasos válidos; los pasos inválidos avisan y se ignoran.
+  const rutasFile = join(wikiRoot, "rutas.md");
+  const { rutas, avisos } = existsSync(rutasFile)
+    ? parseRutas(splitFrontmatter(readFileSync(rutasFile, "utf8")).body, { project: project.id, pages: pages.map((p) => p.path) })
+    : { rutas: [], avisos: [] };
+  for (const a of avisos) console.warn(`⚠ ${project.id}: ${a}`);
   const summary = {
     ...project,
     repoUrl,
@@ -282,7 +283,7 @@ function buildProject(project) {
   mkdirSync(join(OUT, "data"), { recursive: true });
   writeFileSync(
     join(OUT, "data", `${project.id}.json`),
-    JSON.stringify({ ...summary, lastUpdate, pageList: pages, diagramList: diagrams, links: edges.filter((e) => known.has(e.target)), ros, citas: leerCitas(dir, sha, citas) }, null, 1),
+    JSON.stringify({ ...summary, lastUpdate, pageList: pages, diagramList: diagrams, links: edges.filter((e) => known.has(e.target)), ros, citas: leerCitas(dir, sha, citas), ...(rutas.length ? { rutas } : {}) }, null, 1),
   );
   return summary;
 }
