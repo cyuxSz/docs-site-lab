@@ -1,6 +1,6 @@
 ---
-// Página /<id>/rutas/: la propia rutas.md de la wiki como checklist por rol. Sin JS se ven todos los paneles;
-// el script (src/scripts/rutas.ts) oculta los que no son del rol activo y guarda el avance en localStorage.
+// Página /<id>/rutas/: la propia rutas.md de la wiki como checklist por rol. Sin JS se ve el primer rol;
+// el script (src/scripts/rutas.ts) muestra el del rol guardado y oculta el resto y guarda el avance en localStorage.
 import type { Ruta } from "../lib/rutas";
 
 interface Props {
@@ -19,14 +19,14 @@ const { projectId, rutas } = Astro.props;
       </>
     ))}
   </fieldset>
-  {rutas.map((r) => (
-    <section class="rutas-panel" data-rol={r.id} aria-label={`Ruta ${r.nombre}`}>
+  {rutas.map((r, n) => (
+    <section class="rutas-panel" data-rol={r.id} hidden={n !== 0} aria-label={`Ruta ${r.nombre}`}>
       <h2>{r.nombre}</h2>
       <ol class="rutas-pasos">
         {r.pasos.map((s, i) => (
           <li>
             <span class="rutas-check">
-              <input type="checkbox" id={`paso-${r.id}-${i}`} data-i={i} />
+              <input type="checkbox" id={`paso-${r.id}-${i}`} data-i={i} aria-label={`Marcar como leído: ${s.title}`} />
               <label for={`paso-${r.id}-${i}`}>Leído</label>
             </span>
             <div class="rutas-texto">
