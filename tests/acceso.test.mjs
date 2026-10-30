@@ -78,3 +78,15 @@ test("Pagefind: Base.astro ignora explícitamente (data-pagefind-ignore=all) las
   assert.match(src, /<body[^>]*data-pagefind-ignore=\{project && isRestricted\(project\.id\) \? "all" : undefined\}/);
   assert.match(readFileSync(new URL("../access.config.js", import.meta.url), "utf8"), /data-pagefind-ignore="all"/);
 });
+
+test("canAccess: rutas con ., %2e, %2F, %5C o .. no esquivan la restricción", async () => {
+  const { canAccess } = await acceso();
+  const paths = ["/./proyecto-x/", "/%2e/proyecto-x/", "/proyecto-x%2Fros.json", "/%5Cproyecto-x/", "/a/../proyecto-x/"];
+  for (const path of paths) {
+    assert.equal(canAccess("otro", path), false, path);
+    assert.equal(canAccess(null, path), false, path);
+  }
+  assert.equal(canAccess("cyuxSz", "/./proyecto-x/"), true);
+  assert.equal(canAccess("otro", "/uuv/"), true);
+  assert.equal(canAccess(null, "/uuv/"), true);
+});
