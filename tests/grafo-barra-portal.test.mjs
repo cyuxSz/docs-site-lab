@@ -14,7 +14,9 @@ const CSS = read("src/components/RoboticsGraph.css");
 const reglas = (sel) => CSS.split("}").filter((r) => r.split("{")[0].includes(sel)).join("}\n");
 
 test("menús: botones 'Vista' y 'Más' con aria-haspopup=menu y aria-expanded, y role=menu", () => {
-  assert.match(TSX, />\s*Vista\s*▾?\s*</, "botón Vista");
+  assert.match(TSX, />\s*Mostrar\s*▾\s*</, "botón Mostrar");
+  assert.match(TSX, />\s*Guardadas\s*▾\s*</, "botón Guardadas");
+  assert.doesNotMatch(TSX, />\s*Vistas?\s*▾\s*</, "sin los nombres viejos Vista/Vistas");
   assert.match(TSX, />\s*Más\s*▾?\s*</, "botón Más");
   assert.ok((TSX.match(/aria-haspopup="menu"/g) ?? []).length >= 2, "al menos dos botones con aria-haspopup=menu");
   assert.match(TSX, /aria-expanded=\{/);
@@ -53,6 +55,13 @@ test("leyenda plegable: botón 'Leyenda' con aria-expanded y aria-controls hacia
   assert.match(TSX, />\s*Leyenda\s*</);
   assert.match(TSX, /aria-controls=\{?["`'][^"`']*leyenda/i);
   assert.match(TSX, /className="rg-legend"[^>]*id=|id=[^>]*className="rg-legend"/);
+});
+
+test("leyenda plegada por defecto en todas las pantallas (sin depender del ancho)", () => {
+  assert.match(TSX, /const \[leyendaOn, setLeyendaOn\] = useState\(false\)/);
+  assert.doesNotMatch(TSX, /setLeyendaOn\(\s*innerWidth/);
+  assert.match(TSX, /aria-expanded=\{leyendaOn\}/);
+  assert.match(TSX, /hidden=\{!leyendaOn \|\| Boolean\(comparar\)\}/);
 });
 
 test("chip Roto: misma estructura que los demás y sin solaparse (nowrap, sin posición absoluta en la leyenda)", () => {
