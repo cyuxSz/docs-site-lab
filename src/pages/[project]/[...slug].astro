@@ -53,9 +53,14 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
 ---
 <Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={projectNav(p)} current="wiki">
   <div class="container">
-    <div class="doc">
-      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
+    <div class="doc doc-wiki">
+      <SideNav id="barra-izq" projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido">
+        <div class="barras-control" data-barras-control data-pagefind-ignore="all">
+          <button type="button" data-barra="izq" aria-controls="barra-izq" aria-expanded="true">Navegación</button>
+          <button type="button" data-enfoque-btn aria-pressed="false">Modo enfoque</button>
+          <button type="button" data-barra="der" aria-controls="barra-der" aria-expanded="true">Índice</button>
+        </div>
         <nav class="migas" aria-label="Migas" data-pagefind-ignore="all">
           <ol>
             {crumbs.map((c, i) => (
@@ -122,7 +127,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
           </template>
         ))}
       </main>
-      <aside class="meta" aria-label="Datos de la página" data-pagefind-ignore="all">
+      <aside class="meta" id="barra-der" aria-label="Datos de la página" data-pagefind-ignore="all">
         <dl>
           <div>
             <dt>Actualizado</dt>
@@ -165,6 +170,8 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
       </aside>
     </div>
   </div>
+  <button type="button" class="salir-enfoque" data-salir-enfoque hidden data-pagefind-ignore="all">Salir del enfoque</button>
+  <div class="barras-velo" data-barras-velo hidden></div>
   {hasMermaid && (
     <script>
       import { renderMermaid } from "../../scripts/mermaid";
@@ -177,5 +184,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
     import "../../scripts/personal";
     import "../../scripts/lectura";
     import "../../scripts/comentarios";
+    import "../../scripts/barras";
   </script>
 </Base>
