@@ -7,6 +7,7 @@ import "@fontsource-variable/urbanist";
 import "../styles/global.css";
 import temaScript from "../scripts/tema-inline.js?raw";
 import { isRestricted } from "../../access.config.js";
+import { ATAJOS } from "../lib/atajos.ts";
 import { themeStyle, type ProjectTheme } from "../lib/data";
 
 interface Props {
@@ -79,7 +80,17 @@ const { title, description = "Documentación de los proyectos de software de Van
       <div id="pagefind" data-pagefind-ignore="all"></div>
     </dialog>
 
+    <dialog class="atajos-dialog" id="atajos" aria-labelledby="atajos-titulo" data-pagefind-ignore="all" data-wiki={project?.wiki ?? ""} data-grafo={project ? `/${project.id}/grafo/` : ""} data-novedades={project ? `/${project.id}/novedades/` : ""}>
+      <div class="atajos-bar"><h2 id="atajos-titulo">Atajos de teclado</h2><button type="button" data-atajos-cerrar>Cerrar</button></div>
+      <ul class="atajos-lista">
+        {ATAJOS.map((a) => (
+          <li><span class="atajos-teclas">{a.teclas.map((t) => <kbd>{t}</kbd>)}</span><span>{a.descripcion}</span></li>
+        ))}
+      </ul>
+    </dialog>
+
     <script>
+      import "../scripts/atajos";
       // Pagefind UI se descarga la primera vez que se abre la búsqueda, no en cada página.
       const dialog = document.getElementById("search") as HTMLDialogElement;
       let loaded = false;
