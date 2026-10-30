@@ -1,0 +1,61 @@
+---
+// Panel de comentarios abiertos del proyecto. No entra al buscador de Pagefind. Los datos los pide
+// panel-comentarios.ts a /api/comentarios/?proyecto= (con sesión y acceso por proyecto).
+import Base from "../../layouts/Base.astro";
+import SideNav from "../../components/SideNav.astro";
+import { builtProjects, project as load, projectNav } from "../../lib/data";
+
+export function getStaticPaths() {
+  return builtProjects().map((p) => ({ params: { project: p.id } }));
+}
+
+const p = load(Astro.params.project!);
+const route = `/${p.id}/comentarios/`;
+---
+<Base title={`Comentarios abiertos · ${p.name}`} description={`Hilos de comentarios abiertos en las páginas de la wiki de ${p.name}.`} project={projectNav(p)} current="wiki">
+  <div class="container">
+    <div class="doc">
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
+      <main id="contenido">
+        <nav class="migas" aria-label="Migas">
+          <ol>
+            <li><a href={`/${p.id}/`} data-astro-prefetch>{p.name}</a></li>
+            <li><span aria-current="page">Comentarios abiertos</span></li>
+          </ol>
+        </nav>
+        <section class="prose">
+          <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}</p>
+          <h1>Comentarios abiertos</h1>
+          <p class="hint">Hilos sin resolver de todas las páginas de la wiki.</p>
+          <div class="panel-comentarios" data-panel-comentarios data-proyecto={p.id}>
+            <div class="panel-filtros">
+              <div class="campo">
+                <label for="panel-tipo">Tipo</label>
+                <select id="panel-tipo">
+                  <option value="todos">Todos los tipos</option>
+                  <option value="duda">Duda</option>
+                  <option value="aclaracion">Aclaración</option>
+                  <option value="sugerencia">Sugerencia</option>
+                  <option value="bug">Bug</option>
+                </select>
+              </div>
+              <div class="campo">
+                <label for="panel-quien">Quién</label>
+                <select id="panel-quien">
+                  <option value="todos">Todos</option>
+                  <option value="mios">Solo míos</option>
+                  <option value="mencion">Me mencionan</option>
+                </select>
+              </div>
+            </div>
+            <p class="comentarios-estado" data-panel-estado aria-live="polite">Cargando comentarios…</p>
+            <div data-panel-lista></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script>
+    import "../../scripts/panel-comentarios";
+  </script>
+</Base>

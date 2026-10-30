@@ -7,6 +7,7 @@ import { portal, project as load, fmtDate, projectNav, STATUS_LABEL } from "../.
 import type { ProjectData } from "../../lib/data";
 import { isRestricted } from "../../../access.config.js";
 import { novedades } from "../../lib/novedades.ts";
+import { conteoNodos } from "../../lib/conteos.ts";
 
 export function getStaticPaths() {
   return portal().projects.map((p) => ({ params: { project: p.id } }));
@@ -25,7 +26,7 @@ const highlight = sinConstruir ? [] : ["quickstart.md", "onboarding.md", "operat
   .filter((x) => x !== undefined);
 const recientes = sinConstruir ? [] : novedades(p.pageList, p.repoUrl ?? "", 3);
 const rosNodes = sinConstruir ? [] : p.ros?.nodes.filter((n) => n.category === "ros2_node") ?? [];
-const byStatus = (s: string) => rosNodes.filter((n) => n.status === s).length;
+const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
 const statusOf = (pkg: string) => {
   const own = rosNodes.filter((n) => n.package === pkg);
   return Object.keys(STATUS_LABEL)
@@ -65,12 +66,12 @@ const statusOf = (pkg: string) => {
           <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
         </section>
         <section>
-          <dl class="stats">
+          <dl class="stats stats-proyecto">
             <div><dt>Páginas</dt><dd>{p.pages}</dd></div>
             <div><dt>Afirmaciones verificadas</dt><dd>{p.claims}</dd></div>
-            {p.ros && <div><dt>Nodos ROS en uso</dt><dd>{byStatus("en_uso")}<span class="muted" style="font-size:15px"> / {rosNodes.length}</span></dd></div>}
-            {p.ros && <div><dt>Nodos rotos</dt><dd style={byStatus("roto") ? "color: var(--danger)" : undefined}>{byStatus("roto")}</dd></div>}
-            <div><dt>Actualizado</dt><dd style="font-size:18px">{fmtDate(p.updated)}</dd></div>
+            {p.ros && <div><dt>Nodos ROS en uso</dt><dd>{conteo.enUso}<span class="muted stats-sub">de {conteo.total} nodos del repo</span></dd></div>}
+            {p.ros && <div><dt>Nodos rotos</dt><dd class={conteo.rotos ? "stats-danger" : undefined}>{conteo.rotos}</dd></div>}
+            <div><dt>Actualizado</dt><dd class="stats-fecha">{fmtDate(p.updated)}</dd></div>
           </dl>
         </section>
 
@@ -130,11 +131,11 @@ const statusOf = (pkg: string) => {
                     <span class="card-title mono">{x.title}</span>
                     <span class="card-desc">{x.description}</span>
                     {p.ros && statusOf(pkg).length > 0 && (
-                      <span class="card-meta">
+                      <span class="card-meta card-badges">
                         {statusOf(pkg).map(([s, c]) => <span class={`badge badge-${s}`}>{c} {STATUS_LABEL[s].toLowerCase()}</span>)}
                       </span>
                     )}
-                    <span class="card-meta">{x.claims} afirmaciones{x.owner ? ` · ${x.owner}` : ""}</span>
+                    {(x.claims > 0 || x.owner) && <span class="card-meta">{x.claims > 0 && <>{x.claims} afirmaciones{x.owner ? " · " : ""}</>}{x.owner}</span>}
                   </a>
                 );
               })}
