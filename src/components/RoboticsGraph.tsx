@@ -18,6 +18,8 @@ import type { GraphData, GraphNode } from "../lib/graph";
 import { almacenSeguro } from "../lib/rutas";
 import { encuadre, aMinimapa, aGrafo, rectVista, minimapaVisible, claveMinimapa, type Encuadre } from "../lib/minimapa";
 import { claveRecorrido, guardarPaso, pasoGuardado, borrarPaso, textoRetomar, accionTecla } from "../lib/recorrido";
+import { idsConPlan, planDisponible, claveLayout, etiquetaPlan, notaPlan, LEYENDA_PLAN } from "../lib/plan";
+import { AVISO_LEGADO, configDelRecorrido, configInicial, recorridoActivo } from "../lib/legado";
 import "./RoboticsGraph.css";
 
 interface View {
@@ -117,6 +119,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [present, setPresent] = useState(false);
   const [miniOn, setMiniOn] = useState(false);
   const [saved, setSaved] = useState<number | null>(null);
+  const [showPlan, setShowPlan] = useState(false);
   const mini = useRef<HTMLCanvasElement>(null);
   const miniT = useRef<Encuadre | null>(null);
   const miniDrag = useRef(false);
@@ -135,13 +138,25 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const sec = data?.view === "ros" ? data.sections?.find((s) => s.id === seccionId) : undefined;
   const secVariant = sec ? (showOld ? sec.old : sec) : undefined;
   const tour = data?.tour ?? [];
-  const steps = secStep !== null ? sec?.tour ?? [] : tour;
-  const stepIdx = secStep !== null ? secStep : tourStep;
+  const configObj = data?.configs.find((c) => c.id === config);
+  // Recorrido activo: sección > configuración con recorrido propio > global.
+  const activo = recorridoActivo({ global: tour, config: configObj, seccion: sec ?? null, enSeccion: secStep !== null });
+  const steps = activo.pasos;
+  const planFlow = data?.planFlowEdges ?? [];
+  const planOn = showPlan && planDisponible({ planFlow: planFlow.length, seccion: sec?.id ?? null, config: configObj });
+  const planRef = useRef(planOn);
+  planRef.current = planOn;
+  // Guard: nunca un índice fuera del recorrido activo (p. ej. al cambiar de configuración, sección o vista).
+  const rawIdx = secStep !== null ? secStep : tourStep;
+  const stepIdx = rawIdx !== null && steps.length ? Math.min(Math.max(rawIdx, 0), steps.length - 1) : null;
   const setStepIdx = secStep !== null ? setSecStep : setTourStep;
   const tourNode = stepIdx !== null ? steps[stepIdx]?.node ?? null : null;
+  useEffect(() => {
+    if (rawIdx !== null && !steps.length) { setTourStep(null); setSecStep(null); }
+  }, [rawIdx, steps.length]);
   const state = useRef({ selected, hovered, tourNode });
   state.current = { selected, hovered, tourNode };
-  const recKey = claveRecorrido(projectId, view, secStep !== null ? sec?.id ?? null : null);
+  const recKey = claveRecorrido(projectId, view, activo.claveSeccion);
   const nav = useRef({ present, stepIdx, total: steps.length, setStepIdx });
   nav.current = { present, stepIdx, total: steps.length, setStepIdx };
 
@@ -207,16 +222,14 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     [data],
   );
   // Configuración donde se ven todos los nodos del recorrido (p. ej. el sub real).
-  const tourConfig = useMemo(
-    () => data?.configs.find((c) => tour.every((s) => nodeById.get(s.node)?.configs.includes(c.id)))?.id ?? null,
-    [data],
-  );
+  const tourConfig = useMemo(() => (data ? configDelRecorrido(data.configs, tour, data.nodes) : null), [data]);
 
   // Abre en la configuración del recorrido y lo muestra la primera vez.
   useEffect(() => {
     if (!capas || !data || initial.seccion) return;
-    if (!initial.config && config === "all" && (tourConfig || data.configs[0])) setConfig(tourConfig ?? data.configs[0].id);
-    if (tour.length && tourConfig && !initial.node && !storage.get(TOUR_SEEN)) setTourStep(0);
+    if (!initial.config && config === "all") setConfig(configInicial(data.configs, tour, data.nodes));
+    const propio = data.configs.find((c) => c.id === initial.config)?.tour?.length;
+    if (tour.length && tourConfig && !propio && !initial.node && !storage.get(TOUR_SEEN)) setTourStep(0);
   }, [capas, data]);
 
   // Qué se ve con los filtros actuales. Un topic o servicio solo se muestra si algún nodo visible lo usa,
@@ -231,13 +244,13 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       return ids;
     }
     const passes = (n: GraphNode) => {
-      if (hiddenGroups.has(n.group)) return false;
+      if (hiddenGroups.has(n.group) || n.soloPlan) return false;
       if (n.kind === "node" && !showOld && config === "all" && HIDDEN_BY_DEFAULT.has(n.status ?? "")) return false;
       if (config !== "all" && !n.configs.includes(config)) return false;
       return true;
     };
     for (const n of data.nodes) if (OWNERS.has(n.kind) && passes(n)) ids.add(n.id);
-    if (capas) return ids;
+    if (capas) return planOn ? new Set([...idsConPlan(ids, planFlow, true)].filter((id) => !hiddenGroups.has(nodeById.get(id)?.group ?? ""))) : ids;
     for (const e of data.edges) {
       for (const [a, b] of [[e.source, e.target], [e.target, e.source]]) {
         const other = nodeById.get(b);
@@ -245,7 +258,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       }
     }
     return ids;
-  }, [data, config, hiddenGroups, showOld, capas, sec]);
+  }, [data, config, hiddenGroups, showOld, capas, sec, planOn]);
   const visibleRef = useRef(visibleIds);
   visibleRef.current = visibleIds;
   const contextRef = useRef(new Set<string>());
@@ -263,6 +276,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     edgeList.forEach((e, i) => {
       if (g.hasNode(e.source) && g.hasNode(e.target)) g.addEdgeWithKey(`e${i}`, e.source, e.target, { size: capas ? 1 : 0.8, label: e.label ?? undefined });
     });
+    // Aristas de la capa plan: están en el grafo, pero el reducer las oculta mientras el plan no esté activo.
+    if (capas) {
+      (data.planFlowEdges ?? []).forEach((e, i) => {
+        if (g.hasNode(e.source) && g.hasNode(e.target)) g.addEdgeWithKey(`p${i}`, e.source, e.target, { size: 1.6, label: e.label ?? undefined, plan: true });
+      });
+    }
     graph.current = g;
 
     const dark = isDark();
@@ -274,6 +293,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     const edgeFaded = dark ? "#121d55" : "#eef2f6";
     const accent = cssVar("--accent", dark ? "#49c1d2" : "#0b7a8a");
     const edgeFocus = accent;
+    const planColor = cssVar("--plan", dark ? "#b69cf0" : "#6d3fc0");
     const flow = overlay.current;
     let cancelled = false;
     let renderer: Sigma | null = null;
@@ -304,7 +324,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       ctx.fillStyle = color;
       ctx.shadowColor = color;
       const t = now / 1000;
-      g.forEachEdge((id, _attrs, s, tg) => {
+      g.forEachEdge((id, attrs, s, tg) => {
+        if (attrs.plan) return;
         if (!visible(nodeById.get(s)) || !visible(nodeById.get(tg))) return;
         const on = Boolean(focus && (s === focus || tg === focus));
         if (focus && !on) return;
@@ -354,9 +375,11 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         defaultDrawNodeHover: drawHover(dark, accent),
         minCameraRatio: 0.08,
         maxCameraRatio: 4,
-        nodeReducer: (id, attrs) => {
+        nodeReducer: (id, raw) => {
           const n = nodeById.get(id);
-          if (!visible(n)) return { ...attrs, hidden: true };
+          if (!visible(n)) return { ...raw, hidden: true };
+          // Nodo que solo existe en el plan: color de aviso y "(plan)" en la etiqueta, para no depender del color.
+          const attrs = n?.soloPlan ? { ...raw, color: planColor, label: `${raw.label} (plan)`, forceLabel: true } : raw;
           // Contexto de la sección: chico, gris y sin etiqueta salvo que esté enfocado o junto al nodo enfocado.
           const ctx = contextRef.current.has(id);
           const base = ctx ? { ...attrs, size: attrs.size * 0.7, color: dark ? CONTEXT.dark : CONTEXT.light, label: "" } : attrs;
@@ -369,6 +392,13 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         edgeReducer: (id, attrs) => {
           const [s, t] = g.extremities(id);
           if (!visible(nodeById.get(s)) || !visible(nodeById.get(t))) return { ...attrs, hidden: true };
+          if (attrs.plan) {
+            if (!planRef.current) return { ...attrs, hidden: true };
+            // Etiqueta solo al enfocar (como el resto de aristas); el "plan · " distingue por texto, no solo por color.
+            const f = focusOf();
+            const enfocada = Boolean(f && (s === f || t === f));
+            return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: enfocada ? etiquetaPlan(attrs.label) : undefined, zIndex: 1 };
+          }
           const focus = focusOf();
           // El nombre del topic solo aparece en las flechas del nodo enfocado, para no llenar el dibujo de texto.
           if (!focus) return { ...attrs, color: edgeColor, label: undefined };
@@ -412,7 +442,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     const g = graph.current;
     const el = container.current;
     if (!r || !g || !data || !el) return;
-    const key = sec ? `seccion:${sec.id}${showOld ? ":old" : ""}` : config !== "all" ? config : showOld ? "old" : "all";
+    const key = claveLayout({ seccion: sec?.id ?? null, showOld, config, plan: planOn });
     const narrow = isNarrow(el);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const n of data.nodes) {
@@ -426,7 +456,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
     if (Number.isFinite(x0)) {
-      r.setCustomBBox({ x: [x0, x1], y: [y0, y1] });
+      // Con el plan se abre el encuadre (más a la derecha, donde van las etiquetas, y arriba/abajo por la banda plan).
+      const mx = planOn ? (x1 - x0 || 1) * 0.02 : 0;
+      const my = planOn ? (y1 - y0 || 1) * 0.12 : 0;
+      r.setCustomBBox({ x: [x0 - mx * 0.5, x1 + mx * 1.5], y: [y0 - my, y1 + my] });
       if (narrow) {
         const aspect = (y1 - y0 || 1) / (x1 - x0 || 1);
         // Tope de 62 % del alto: deja lugar a la tarjeta del recorrido y a la barra del navegador.
@@ -438,7 +471,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     // Si el primer dibujo cae justo cuando Sigma termina de montarse se pierde: se repite en el siguiente cuadro.
     const frame = requestAnimationFrame(() => r.refresh());
     return () => cancelAnimationFrame(frame);
-  }, [visibleIds, ready]);
+  }, [visibleIds, ready, planOn]);
 
   // Sigma no se entera solo de que cambió el alto del contenedor.
   useEffect(() => {
@@ -451,7 +484,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
 
   useEffect(() => {
     sigma.current?.refresh({ skipIndexation: true });
-  }, [selected, hovered, tourStep, secStep]);
+  }, [selected, hovered, tourStep, secStep, planOn]);
 
   useEffect(() => {
     if (data) writeParams(view, config, selected, sec?.id ?? null);
@@ -473,9 +506,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
 
   // Paso a retomar del recorrido que ofrece la barra (global o de la sección); se lee tras hidratar.
   useEffect(() => {
-    const total = sec ? sec.tour.length : tour.length;
-    setSaved(total ? pasoGuardado(storage, claveRecorrido(projectId, view, sec?.id ?? null), total) : null);
-  }, [data, view, sec, tourStep, secStep]);
+    const total = activo.pasos.length;
+    setSaved(total ? pasoGuardado(storage, claveRecorrido(projectId, view, activo.claveSeccion), total) : null);
+  }, [data, view, sec, config, tourStep, secStep]);
 
   // Minimapa: canvas propio con las posiciones ya calculadas; un solo rAF pendiente.
   useEffect(() => {
@@ -552,7 +585,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     }
     if (stepIdx === null) {
       if (sec && sec.tour.length) startSecTour(saved ?? 0);
-      else if (capas && tour.length) startTour(saved ?? 0);
+      else if (capas && activo.pasos.length) startTour(saved ?? 0);
     }
   };
   const exitPresent = () => {
@@ -603,12 +636,13 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const startTour = (from = 0) => {
     setSelected(null);
     setSecStep(null);
-    if (tourConfig && config !== tourConfig) setConfig(tourConfig);
+    // El recorrido de una configuración no cambia la configuración; el global va a la que muestra todos sus nodos.
+    if (activo.tipo === "global" && tourConfig && config !== tourConfig) setConfig(tourConfig);
     setTourStep(from);
   };
   const endTour = () => {
     // Solo el recorrido global se marca como visto; el de una sección se puede repetir sin efectos.
-    if (secStep === null) storage.set(TOUR_SEEN, "1");
+    if (activo.tipo === "global") storage.set(TOUR_SEEN, "1");
     borrarPaso(storage, recKey);
     setTourStep(null);
     setSecStep(null);
@@ -691,10 +725,15 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const node = selected ? nodeById.get(selected) : undefined;
   const neighbors = useMemo(() => {
     if (!node || !data) return { out: [], in: [] };
-    const out = data.edges.filter((e) => e.source === node.id).map((e) => ({ e, n: nodeById.get(e.target)! }));
-    const inc = data.edges.filter((e) => e.target === node.id).map((e) => ({ e, n: nodeById.get(e.source)! }));
+    // Con el plan activo se suman las aristas plan, marcadas como tales.
+    const todas = [
+      ...data.edges.map((e) => ({ e, plan: false })),
+      ...(planOn ? (data.planEdges ?? []).map((e) => ({ e: { ...e, label: etiquetaPlan(e.label) }, plan: true })) : []),
+    ];
+    const out = todas.filter(({ e }) => e.source === node.id && nodeById.get(e.target)).map(({ e, plan }) => ({ e, plan, n: nodeById.get(e.target)! }));
+    const inc = todas.filter(({ e }) => e.target === node.id && nodeById.get(e.source)).map(({ e, plan }) => ({ e, plan, n: nodeById.get(e.source)! }));
     return { out, in: inc };
-  }, [node, data]);
+  }, [node, data, planOn]);
   const codeUrl = (file?: string, line?: number | null) => (file && data ? `${data.repoUrl}/blob/${data.sha}/${file}${line ? `#L${line}` : ""}` : undefined);
   const verbs = node?.kind === "node" ? ["Publica / sirve", "Recibe de"] : node?.kind === "page" ? ["Enlaza a", "La enlazan"] : ["Lo usan", "Viene de"];
   const visibleCount = visibleIds.size;
@@ -736,6 +775,11 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} /> Mostrar legado y sin uso
           </label>
         )}
+        {data?.view === "ros" && planDisponible({ planFlow: planFlow.length, seccion: sec?.id ?? null, config: configObj }) && (
+          <label className="rg-check rg-plan-check">
+            <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} /> Mostrar plan (arquitectura objetivo)
+          </label>
+        )}
         {data && (
           <label className="rg-field rg-search">
             <span className="sr-only">Ir a un nodo</span>
@@ -752,12 +796,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             </datalist>
           </label>
         )}
-        {capas && !sec && tour.length > 0 && tourStep === null && (
+        {capas && !sec && activo.pasos.length > 0 && tourStep === null && (
           <>
-            <button className="rg-tour-btn" onClick={() => startTour(0)}>▶ Recorrido</button>
+            <button className="rg-tour-btn" onClick={() => startTour(0)}>{activo.tipo === "config" ? (configObj?.legado ? "▶ Recorrido del sistema anterior" : "▶ Recorrido de la configuración") : "▶ Recorrido"}</button>
             {saved !== null && (
               <>
-                <button className="rg-tour-btn" onClick={() => startTour(saved)}>{textoRetomar(saved, tour.length)}</button>
+                <button className="rg-tour-btn" onClick={() => startTour(saved)}>{textoRetomar(saved, activo.pasos.length)}</button>
                 <button className="rg-tool" type="button" onClick={() => { borrarPaso(storage, recKey); startTour(0); }}>Empezar de nuevo</button>
               </>
             )}
@@ -798,8 +842,15 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             </button>
           ))}
           {data.view === "ros" && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: BROKEN }} />Roto</span>}
+          {planOn && <span className="rg-chip rg-static"><span className="rg-dot rg-dot-plan" />{LEYENDA_PLAN}</span>}
           {sec && contextRef.current.size > 0 && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} />En gris: lo que conecta con la sección</span>}
         </div>
+      )}
+      {configObj?.legado && (
+        <p className="rg-legado" role="note">
+          {AVISO_LEGADO}
+          {configObj.enlace && <a href={configObj.enlace}>Ver discrepancias</a>}
+        </p>
       )}
       {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
 
@@ -842,6 +893,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
               </div>
               <button onClick={() => setSelected(null)} aria-label="Cerrar">×</button>
             </header>
+            {notaPlan(node) && <p className="rg-row rg-plan-nota">{notaPlan(node)}</p>}
             {node.rosName && <p className="rg-row">Nombre en ROS: <code>{node.rosName}</code></p>}
             {node.types && node.types.length > 0 && <p className="rg-row">Tipo: {node.types.map((t) => <code key={t}>{t}</code>)}</p>}
             {node.configs.length > 0 && data && (
@@ -852,7 +904,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
                 <div key={title}>
                   <h4>{title}</h4>
                   <ul>
-                    {list.map(({ e, n }, i) => (
+                    {list.map(({ e, n, plan }, i) => (
                       <li key={i}>
                         <button className="rg-link" onClick={() => setSelected(n.id)}>{n.label}</button>
                         {e.label && <code className="rg-type">{e.label}</code>}
@@ -874,9 +926,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       </div>
 
       {step && stepIdx !== null && (
-        <div className="rg-tour" role="dialog" aria-label={secStep !== null ? "Recorrido de la sección" : "Recorrido guiado"} aria-live="polite">
+        <div className="rg-tour" role="dialog" aria-label={secStep !== null ? "Recorrido de la sección" : activo.tipo === "config" ? (configObj?.legado ? "Recorrido del sistema anterior" : "Recorrido de la configuración") : "Recorrido guiado"} aria-live="polite">
           <p className="rg-tour-step">{secStep !== null && sec ? `${sec.label} · ` : ""}Paso {stepIdx + 1} de {steps.length}</p>
           <p>{step.text}</p>
+          {activo.tipo === "config" && configObj?.legado && configObj.enlace && <p><a className="rg-tour-link" href={configObj.enlace}>Ver discrepancias</a></p>}
           <div className="rg-tour-actions">
             <button onClick={endTour}>{secStep !== null ? "Cerrar" : "Saltar"}</button>
             {present && stepIdx > 0 && <button onClick={() => setStepIdx(0)}>Desde el inicio</button>}

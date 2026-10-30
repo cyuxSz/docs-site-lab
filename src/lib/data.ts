@@ -32,6 +32,7 @@ export interface RosNode {
   types?: string[];
   configs: string[];
   launches?: string[];
+  plan?: boolean;
 }
 
 export interface RosEdge {
@@ -44,7 +45,7 @@ export interface RosEdge {
 }
 
 export interface RosGraph {
-  configs: { id: string; label: string; launch: string }[];
+  configs: { id: string; label: string; launch: string; legado?: boolean }[];
   launches: { path: string; config: string | null; nodes: string[]; broken: { node: string; line: number }[] }[];
   nodes: RosNode[];
   edges: RosEdge[];
@@ -69,6 +70,8 @@ export interface ProjectSummary {
   tour?: { node: string; text: string }[];
   // Recorrido propio por sección (id de capa): opcional, si falta se genera solo.
   secciones?: Record<string, { tour?: { node: string; text: string }[] }>;
+  // Por configuración (id): recorrido propio y enlace interno (p. ej. a las discrepancias del sistema anterior).
+  configs?: Record<string, { tour?: { node: string; text: string }[]; enlace?: string }>;
   repoUrl?: string;
   sha?: string;
   pages?: number;
