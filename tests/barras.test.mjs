@@ -71,11 +71,26 @@ test("enfoque: f lo alterna, cierra cualquier cajón y conserva lo plegado para 
   assert.deepEqual(barras(e1, { tipo: "enfoque" }), base({ izqPlegada: true }));
 });
 
-test("en enfoque, [ y ] no cambian nada (se sale con f, Esc o el botón)", () => {
+// Lote 9a: en enfoque, tocar el ícono de cualquier riel (o [ / ]) sale del enfoque y conserva lo plegado de antes.
+test("en enfoque, alternar cualquier lado sale del enfoque sin cambiar lo plegado ni abrir cajones", () => {
   const { barras } = B();
-  const e = base({ enfoque: true });
-  assert.deepEqual(barras(e, { tipo: "alternar", lado: "izq", movil: false }), e);
-  assert.deepEqual(barras(e, { tipo: "alternar", lado: "der", movil: true }), e);
+  const e = base({ enfoque: true, derPlegada: true });
+  assert.deepEqual(barras(e, { tipo: "alternar", lado: "izq", movil: false }), base({ derPlegada: true }));
+  assert.deepEqual(barras(e, { tipo: "alternar", lado: "der", movil: false }), base({ derPlegada: true }));
+  assert.deepEqual(barras(e, { tipo: "alternar", lado: "izq", movil: true }), base({ derPlegada: true }), "en móvil tampoco abre el cajón");
+});
+
+test("etiquetaBarra (lote 9a): 'Ocultar'/'Mostrar' + 'navegación'/'índice' según lo que se ve", () => {
+  const { etiquetaBarra } = B();
+  assert.equal(typeof etiquetaBarra, "function", "falta etiquetaBarra en src/lib/barras.ts");
+  assert.equal(etiquetaBarra(base(), "izq", false), "Ocultar navegación");
+  assert.equal(etiquetaBarra(base(), "der", false), "Ocultar índice");
+  assert.equal(etiquetaBarra(base({ izqPlegada: true }), "izq", false), "Mostrar navegación");
+  assert.equal(etiquetaBarra(base({ derPlegada: true }), "der", false), "Mostrar índice");
+  assert.equal(etiquetaBarra(base({ enfoque: true }), "izq", false), "Mostrar navegación", "en enfoque los dos son rieles");
+  assert.equal(etiquetaBarra(base({ enfoque: true }), "der", false), "Mostrar índice");
+  assert.equal(etiquetaBarra(base(), "izq", true), "Mostrar navegación", "en móvil el cajón arranca cerrado");
+  assert.equal(etiquetaBarra(base({ cajon: "der" }), "der", true), "Ocultar índice");
 });
 
 test("visible: qué barra se ve (para aria-expanded) en escritorio, móvil y enfoque", () => {
