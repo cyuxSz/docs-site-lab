@@ -1,5 +1,5 @@
 // Interfaz de comentarios: pide la lista al entrar en vista y pinta con nodos DOM (nunca HTML del usuario).
-import { acciones, armarHilos, contador, fechaRelativa, mensajeError, opcionesEscritura, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
+import { acciones, armarHilos, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
 
 const raiz = document.querySelector<HTMLElement>("section.comentarios[data-pagina]");
 if (raiz) iniciar(raiz);
@@ -14,6 +14,12 @@ function iniciar(root: HTMLElement) {
   const cont = form.querySelector<HTMLElement>("#comentario-contador")!;
   const errorForm = form.querySelector<HTMLElement>("[data-comentarios-error]")!;
   const enviar = form.querySelector<HTMLButtonElement>("button[type=submit]")!;
+  const toggle = root.querySelector<HTMLButtonElement>("[data-comentarios-toggle]")!;
+  const signo = root.querySelector<HTMLElement>("[data-comentarios-signo]")!;
+  const etiqueta = root.querySelector<HTMLElement>("[data-comentarios-etiqueta]")!;
+  const cuerpo = root.querySelector<HTMLElement>("#comentarios-cuerpo")!;
+  const agregar = root.querySelector<HTMLButtonElement>("[data-comentarios-agregar]")!;
+  const cancelar = form.querySelector<HTMLButtonElement>("[data-comentarios-cancelar]")!;
   const dlg = root.querySelector<HTMLDialogElement>("dialog#comentarios-borrar")!;
 
   let yo: string | null = null;
@@ -54,7 +60,16 @@ function iniciar(root: HTMLElement) {
     return { ok: false, mensaje: mensajeError(res.status, { retryAfter: res.headers.get("Retry-After"), servidor: data?.error }) };
   }
 
+  // El indicador de carga se quita al terminar, con o sin error.
   async function cargar() {
+    try {
+      await cargarLista();
+    } finally {
+      estado.removeAttribute("data-cargando");
+    }
+  }
+
+  async function cargarLista() {
     let res: Response;
     try {
       res = await fetch(urlComentarios(pagina), { cache: "no-store", credentials: "same-origin" });
@@ -87,6 +102,7 @@ function iniciar(root: HTMLElement) {
   function pintar() {
     const hilos = armarHilos(comentarios);
     lista.replaceChildren(...hilos.map((h) => pintarHilo(h)));
+    etiqueta.textContent = etiquetaComentarios(contarAbiertos(comentarios));
     estado.textContent = hilos.length ? "" : "Aún no hay comentarios. Sé el primero.";
     if (volverA) {
       const b = [...lista.querySelectorAll<HTMLElement>("button[data-accion]")].find((x) => x.dataset.id === volverA!.id && x.dataset.accion === volverA!.accion);
@@ -224,9 +240,8 @@ function iniciar(root: HTMLElement) {
       estado.textContent = r.mensaje ?? "";
       return;
     }
-    estado.focus?.();
     await cargar();
-    (form.querySelector("textarea") as HTMLElement | null)?.focus();
+    agregar.focus();
   });
 
   texto.addEventListener("input", () => (cont.textContent = contador(texto.value)));
@@ -247,19 +262,52 @@ function iniciar(root: HTMLElement) {
       errorForm.hidden = false;
       return;
     }
+    await cargar();
+    cerrarFormulario();
+    agregar.focus();
+  });
+
+  function cerrarFormulario() {
+    form.hidden = true;
+    agregar.setAttribute("aria-expanded", "false");
     texto.value = "";
     cont.textContent = contador("");
-    await cargar();
-    enviar.focus();
+    errorForm.textContent = "";
+    errorForm.hidden = true;
+  }
+
+  agregar.addEventListener("click", () => {
+    form.hidden = false;
+    agregar.setAttribute("aria-expanded", "true");
+    texto.focus();
+  });
+  cancelar.addEventListener("click", () => {
+    cerrarFormulario();
+    agregar.focus();
+  });
+
+  // Carga una sola vez, ya sea al entrar en vista o al desplegar antes.
+  let cargado = false;
+  function cargarUnaVez() {
+    if (cargado) return;
+    cargado = true;
+    void cargar();
+  }
+  toggle.addEventListener("click", () => {
+    const abrir = cuerpo.hidden;
+    cuerpo.hidden = !abrir;
+    toggle.setAttribute("aria-expanded", String(abrir));
+    signo.textContent = abrir ? "−" : "+";
+    if (abrir) cargarUnaVez();
   });
 
   // Carga perezosa: una sola petición cuando la sección entra en vista.
-  if (typeof IntersectionObserver === "undefined") void cargar();
+  if (typeof IntersectionObserver === "undefined") cargarUnaVez();
   else {
     const io = new IntersectionObserver((entradas) => {
       if (!entradas.some((x) => x.isIntersecting)) return;
       io.disconnect();
-      void cargar();
+      cargarUnaVez();
     });
     io.observe(root);
   }

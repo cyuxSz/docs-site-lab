@@ -11,10 +11,11 @@ interface Props {
   hasDiagrams: boolean;
   // Ruta de /<id>/rutas/ cuando el proyecto tiene rutas por rol.
   rutas?: string;
+  id?: string;
 }
-const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas } = Astro.props;
+const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas, id } = Astro.props;
 ---
-<nav class="sidenav" aria-label={`Páginas de ${projectName}`} data-pagefind-ignore="all">
+<nav class="sidenav" id={id} aria-label={`Páginas de ${projectName}`} data-pagefind-ignore="all">
   <button class="sidenav-toggle" type="button" aria-expanded="false" aria-controls="sidenav-list">Páginas de {projectName}</button>
   <div class="sidenav-list" id="sidenav-list">
     {sections(pages).map((s) => (
