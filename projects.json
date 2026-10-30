@@ -16,7 +16,18 @@
       { "node": "uuv_mission/instruction_handler", "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo." },
       { "node": "uuv_control/asmc", "text": "El control (ASMC) compara dónde está con dónde debe estar y calcula las fuerzas (/forces)." },
       { "node": "uuv_control/thrust_allocator", "text": "thrust_allocator reparte esas fuerzas entre los 6 motores. En este launch el paso al Arduino está comentado." }
-    ]
+    ],
+    "configs": {
+      "legado": {
+        "enlace": "/uuv/discrepancias/",
+        "tour": [
+          { "node": "uuv_mission/mission_handler", "text": "En el sistema anterior, mission_handler leía la misión y publicaba los waypoints y el objetivo de cada tarea." },
+          { "node": "uuv_navigation/path_generator", "text": "path_generator ofrecía el servicio /generate_path para trazar la ruta entre waypoints." },
+          { "node": "uuv_navigation/los", "text": "los (line of sight) pedía la ruta a /generate_path, atendía la acción /waypoints y publicaba /pose_objetivo." },
+          { "node": "uuv_control/asmc", "text": "asmc calculaba las fuerzas (/forces). En gazebo_launch.py el modelo dinámico (dynamic_model_uuv) que las recibía está comentado." }
+        ]
+      }
+    }
   },
   {
     "id": "proyecto-x",

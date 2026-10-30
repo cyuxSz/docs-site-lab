@@ -31,6 +31,13 @@
 }
 .rg-chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
 .rg-chip.rg-static { cursor: default; }
+.rg-dot-plan { background: transparent; border: 2px dashed var(--warn); }
+/* Aviso del sistema anterior: en su propia línea, con texto (no solo color). */
+.rg-legado { margin: 0; padding: 8px 14px; border: 1px solid var(--warn); border-left-width: 4px; border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.rg-legado a { margin-left: 8px; color: var(--accent-strong); font-weight: 600; white-space: nowrap; }
+.rg-tour-link { color: var(--accent-strong); font-size: 13px; font-weight: 600; }
+.rg-plan-check { flex: 1 1 100%; }
+@media (min-width: 640px) { .rg-plan-check { flex: 0 0 auto; } }
 .rg-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
 
 /* Fondo tipo OpenWiki: halo suave al centro y retícula de puntos tenue. */
@@ -110,6 +117,7 @@
 .rg-presenting .rg-drawer,
 .rg-presenting .rg-search,
 .rg-presenting .rg-note,
+.rg-presenting .rg-legado,
 .rg-presenting .rg-minimap { display: none; }
 .rg-presenting .rg-exit { display: block; }
 .rg-presenting .rg-stage { flex: 1 1 auto; min-height: 0; height: auto !important; }
