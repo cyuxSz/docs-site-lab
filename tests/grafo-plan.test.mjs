@@ -130,3 +130,12 @@ test("etiquetaPlan / notaPlan / leyenda: el plan se distingue con texto, no solo
   assert.equal(notaPlan({}), null);
   assert.equal(planNodes.length, 5);
 });
+
+test("ninguna arista plan lleva forceLabel y el reducer solo etiqueta las enfocadas", async () => {
+  const todas = [...(conPlan.planEdges ?? []), ...(conPlan.planFlowEdges ?? [])];
+  assert.ok(todas.length > 0);
+  assert.ok(todas.every((e) => !("forceLabel" in e)));
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/components/RoboticsGraph.tsx", import.meta.url), "utf8");
+  assert.match(src, /label: enfocada \? etiquetaPlan\(attrs\.label\) : undefined/);
+});
