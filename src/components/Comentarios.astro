@@ -4,27 +4,38 @@ interface Props { pagina: string }
 const { pagina } = Astro.props;
 ---
 <section class="comentarios" data-pagefind-ignore="all" aria-labelledby="comentarios-titulo" data-pagina={pagina}>
-  <h2 id="comentarios-titulo">Comentarios</h2>
-  <p class="comentarios-estado" data-comentarios-estado aria-live="polite">Cargando comentarios…</p>
-  <ol class="comentarios-lista" data-comentarios-lista></ol>
-  <form class="comentarios-form" data-comentarios-form>
-    <div class="campo">
-      <label for="comentario-tipo">Tipo</label>
-      <select id="comentario-tipo" name="tipo">
-        <option value="duda">Duda</option>
-        <option value="aclaracion">Aclaración</option>
-        <option value="sugerencia">Sugerencia</option>
-        <option value="bug">Bug</option>
-      </select>
-    </div>
-    <div class="campo">
-      <label for="comentario-texto">Escribe un comentario</label>
-      <textarea id="comentario-texto" name="texto" rows="4" maxlength="2000" aria-describedby="comentario-contador"></textarea>
-      <span class="comentarios-contador" id="comentario-contador">0/2000</span>
-    </div>
-    <p class="comentarios-error" data-comentarios-error role="alert" hidden></p>
-    <button type="submit" class="btn btn-primary">Enviar</button>
-  </form>
+  <h2 id="comentarios-titulo">
+    <button type="button" class="comentarios-toggle" data-comentarios-toggle aria-expanded="false" aria-controls="comentarios-cuerpo">
+      <span aria-hidden="true" data-comentarios-signo>+</span>
+      <span data-comentarios-etiqueta>Comentarios</span>
+    </button>
+  </h2>
+  <div id="comentarios-cuerpo" hidden>
+    <p class="comentarios-estado" data-comentarios-estado data-cargando aria-live="polite">Cargando comentarios…</p>
+    <ol class="comentarios-lista" data-comentarios-lista></ol>
+    <button type="button" class="btn" data-comentarios-agregar aria-expanded="false" aria-controls="comentarios-form">Agregar comentario</button>
+    <form class="comentarios-form" id="comentarios-form" data-comentarios-form hidden>
+      <div class="campo">
+        <label for="comentario-tipo">Tipo</label>
+        <select id="comentario-tipo" name="tipo">
+          <option value="duda">Duda</option>
+          <option value="aclaracion">Aclaración</option>
+          <option value="sugerencia">Sugerencia</option>
+          <option value="bug">Bug</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="comentario-texto">Escribe un comentario</label>
+        <textarea id="comentario-texto" name="texto" rows="4" maxlength="2000" aria-describedby="comentario-contador"></textarea>
+        <span class="comentarios-contador" id="comentario-contador">0/2000</span>
+      </div>
+      <p class="comentarios-error" data-comentarios-error role="alert" hidden></p>
+      <div class="comentario-acciones">
+        <button type="submit" class="btn btn-primary">Enviar</button>
+        <button type="button" class="btn" data-comentarios-cancelar>Cancelar</button>
+      </div>
+    </form>
+  </div>
   <dialog class="atajos-dialog" id="comentarios-borrar" aria-labelledby="comentarios-borrar-titulo">
     <div class="atajos-bar"><h2 id="comentarios-borrar-titulo">Borrar comentario</h2></div>
     <p class="atajos-nota">Esta acción no se puede deshacer.</p>
