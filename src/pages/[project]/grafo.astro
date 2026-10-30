@@ -3,6 +3,7 @@
 import Base from "../../layouts/Base.astro";
 import RoboticsGraph from "../../components/RoboticsGraph.tsx";
 import { isRestricted } from "../../../access.config.js";
+import { separarPlan } from "../../lib/plan";
 import { builtProjects, project as load, projectNav, STATUS_LABEL } from "../../lib/data";
 
 export function getStaticPaths() {
@@ -18,7 +19,9 @@ const views = [
 ];
 
 // Tabla alternativa: lo mismo que el grafo, en texto (lectores de pantalla y búsqueda).
-const ros = p.ros;
+// La tabla describe lo que corre hoy: sin aristas plan ni nodos solo-plan.
+const sep = p.ros ? separarPlan(p.ros.nodes, p.ros.edges) : null;
+const ros = p.ros && sep ? { ...p.ros, edges: sep.edges, nodes: p.ros.nodes.filter((n) => !sep.soloPlan.has(n.id)) } : null;
 const label = (id: string) => ros?.nodes.find((n) => n.id === id)?.label ?? id;
 const rows = (ros?.nodes ?? [])
   .filter((n) => n.category === "ros2_node" && n.status !== "externo")

@@ -3,6 +3,8 @@
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import type { ProjectData } from "./data";
+import { separarPlan } from "./plan.ts";
+import { enlaceInterno, recorridoConfig } from "./legado.ts";
 import { recorridoSeccion, seccion, seccionesDe } from "./secciones.ts";
 
 export interface GraphCategory {
@@ -29,6 +31,9 @@ export interface GraphNode {
   rosName?: string;
   types?: string[];
   doc?: string;
+  // Aparece en la arquitectura objetivo (ros.json); soloPlan: no existe hoy (todas sus aristas son plan).
+  plan?: true;
+  soloPlan?: true;
 }
 
 export interface GraphEdge {
@@ -40,17 +45,28 @@ export interface GraphEdge {
   line?: number | null;
 }
 
+export interface GraphConfig {
+  id: string;
+  label: string;
+  legado?: true;
+  enlace?: string;
+  tour?: { node: string; text: string }[];
+}
+
 export interface GraphData {
   view: "ros" | "paginas";
   title: string;
   repoUrl: string;
   sha: string;
-  configs: { id: string; label: string }[];
+  configs: GraphConfig[];
   groups: GraphCategory[];
   nodes: GraphNode[];
   edges: GraphEdge[];
   // Diseño A ("por capas"): flechas nodo → nodo con el topic o servicio como etiqueta, sin los topics como nodos.
   flowEdges?: GraphEdge[];
+  // Capa plan (arquitectura objetivo): aristas crudas y flechas dueño → dueño con kind "plan".
+  planEdges?: GraphEdge[];
+  planFlowEdges?: GraphEdge[];
   // Recorrido guiado del diseño A (projects.json → tour).
   tour?: { node: string; text: string }[];
   // Una sub-vista por capa ROS (con layout propio en pos["seccion:<id>"]) y su recorrido.
@@ -211,7 +227,7 @@ function layered(nodes: GraphNode[], edges: GraphEdge[]) {
 
 // Un layout por filtro: al elegir una configuración, sus ~20 nodos se reparten en todo el lienzo.
 // Con flow, además guarda "capas:<filtro>" para el diseño A.
-function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory[], configs: string[], flow?: GraphEdge[]) {
+function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory[], configs: string[], flow?: GraphEdge[], plan?: { flow: GraphEdge[]; nodes: GraphNode[]; sinPlan: Set<string> }) {
   const old = new Set(["legado", "sin_uso"]);
   const filters: Record<string, (n: GraphNode) => boolean> = {
     all: (n) => !(n.kind === "node" && old.has(n.status ?? "")),
@@ -230,6 +246,16 @@ function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory
     for (const [id, xy] of layered(kept, flow)) {
       const n = nodes.find((x) => x.id === id)!;
       n.pos = { ...n.pos, [`capas:${key}`]: xy };
+    }
+    // Con la capa plan: los dueños del filtro más los extremos de las flechas plan, ordenados con ambas flechas.
+    if (plan && plan.flow.length && !plan.sinPlan.has(key)) {
+      const ids = new Set(kept.map((n) => n.id));
+      for (const e of plan.flow) ids.add(e.source).add(e.target);
+      const todos = [...nodes, ...plan.nodes].filter((n) => ids.has(n.id) && owners.has(n.kind));
+      for (const [id, xy] of layered(todos, [...(flow ?? []), ...plan.flow])) {
+        const n = todos.find((x) => x.id === id)!;
+        n.pos = { ...n.pos, [`capas:plan:${key}`]: xy };
+      }
     }
   }
   for (const n of nodes) [n.x, n.y] = n.pos?.old ?? n.pos?.all ?? [0, 0];
@@ -257,8 +283,10 @@ export function rosGraph(p: ProjectData): GraphData | null {
   const docs = new Map(p.pageList.filter((x) => x.path.startsWith("packages/")).map((x) => [x.path.replace(/^packages\/|\.md$/g, ""), x.route]));
   const kindOf = { ros2_node: "node", ros2_topic: "topic", ros2_service: "service", ros2_action: "action", hardware: "hardware" } as const;
   const degree = new Map<string, number>();
-  for (const e of p.ros.edges) for (const id of [e.source, e.target]) degree.set(id, (degree.get(id) ?? 0) + 1);
-  const nodes: GraphNode[] = p.ros.nodes.map((n) => {
+  // La capa plan se aparta antes de calcular nada: lo que corre hoy no cambia con ella.
+  const sep = separarPlan(p.ros.nodes, p.ros.edges);
+  for (const e of sep.edges) for (const id of [e.source, e.target]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  const toNode = (n: (typeof p.ros.nodes)[number]): GraphNode => {
     const kind = kindOf[n.category];
     const group = kind === "node" ? n.layer ?? "externo" : kind === "action" ? "service" : kind;
     const base = kind === "node" ? 7 : kind === "hardware" ? 8 : 3;
@@ -277,13 +305,22 @@ export function rosGraph(p: ProjectData): GraphData | null {
       rosName: n.ros_name,
       types: n.types,
       doc: n.package ? docs.get(n.package) : undefined,
+      ...(n.plan ? { plan: true as const } : {}),
+      ...(sep.soloPlan.has(n.id) ? { soloPlan: true as const } : {}),
     };
-  });
-  const edges: GraphEdge[] = p.ros.edges.map((e) => ({ source: e.source, target: e.target, label: e.label, kind: e.kind, file: e.file, line: e.line }));
+  };
+  const nodes: GraphNode[] = p.ros.nodes.filter((n) => !sep.soloPlan.has(n.id)).map(toNode);
+  const soloPlanNodes: GraphNode[] = p.ros.nodes.filter((n) => sep.soloPlan.has(n.id)).map(toNode);
+  const toEdge = (e: (typeof p.ros.edges)[number]): GraphEdge => ({ source: e.source, target: e.target, label: e.label, kind: e.kind, file: e.file, line: e.line });
+  const edges: GraphEdge[] = sep.edges.map(toEdge);
+  const planEdges: GraphEdge[] = sep.planEdges.map(toEdge);
   const used = new Set(nodes.map((n) => n.group));
   const groups = LAYERS.filter((g) => used.has(g.id));
   const flow = flowEdges(nodes, edges);
-  layoutAll(nodes, edges, groups, p.ros.configs.map((c) => c.id), flow);
+  // Flechas plan dueño → dueño (con los nodos solo-plan como posibles extremos), sin tocar las de hoy.
+  const planFlow = planEdges.length ? flowEdges([...nodes, ...soloPlanNodes], planEdges).map((e) => ({ ...e, kind: "plan" })) : [];
+  const sinPlan = new Set(p.ros.configs.filter((c) => c.legado).map((c) => c.id));
+  layoutAll(nodes, edges, groups, p.ros.configs.map((c) => c.id), flow, { flow: planFlow, nodes: soloPlanNodes, sinPlan });
   const sections: GraphSection[] = seccionesDe(nodes, edges, LAYERS.map((l) => l.id)).map((id) => {
     const layer = LAYERS.find((l) => l.id === id)!;
     const s = seccion(nodes, edges, id);
@@ -307,11 +344,18 @@ export function rosGraph(p: ProjectData): GraphData | null {
     title: "Nodos ROS",
     repoUrl: p.repoUrl ?? "",
     sha: p.sha ?? "",
-    configs: p.ros.configs.map((c) => ({ id: c.id, label: c.label })),
+    configs: p.ros.configs.map((c) => {
+      const extra = p.configs?.[c.id];
+      const enlace = enlaceInterno(extra?.enlace);
+      const { pasos, descartados } = recorridoConfig(c.id, nodes, extra?.tour);
+      for (const d of descartados) console.warn(`[grafo] ${p.id}: el paso del recorrido de la configuración "${c.id}" sobre "${d}" se descarta (no existe o no está en esa configuración).`);
+      return { id: c.id, label: c.label, ...(c.legado ? { legado: true as const } : {}), ...(enlace ? { enlace } : {}), ...(pasos.length ? { tour: pasos } : {}) };
+    }),
     groups,
-    nodes,
+    nodes: [...nodes, ...soloPlanNodes],
     edges,
     flowEdges: flow,
+    ...(planFlow.length ? { planEdges, planFlowEdges: planFlow } : {}),
     tour: (p.tour ?? []).filter((s) => nodes.some((n) => n.id === s.node)),
     sections,
   };
