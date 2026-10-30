@@ -1,6 +1,7 @@
 // Datos que deja tools/fetch.mjs en .content/ (solo en build).
 import { readFileSync } from "node:fs";
 import type { Ruta } from "./rutas";
+import { sugerenciasBusqueda } from "./lectura.ts";
 import { join } from "node:path";
 
 const CONTENT = join(process.cwd(), ".content");
@@ -149,5 +150,5 @@ export const themeStyle = (t?: ProjectTheme) => (t ? `--p-accent:${t.accent};--p
 // Lo que necesitan la barra de pestañas y los colores del proyecto en Base.astro.
 export function projectNav(p: ProjectData) {
   const first = p.pageList.find((x) => x.path === "quickstart.md") ?? p.pageList.find((x) => x.type !== "index" && x.type !== "meta");
-  return { id: p.id, name: p.name, theme: p.theme, wiki: first?.route, diagrams: p.diagramList.length > 0, repoUrl: p.repoUrl };
+  return { id: p.id, name: p.name, theme: p.theme, wiki: first?.route, diagrams: p.diagramList.length > 0, repoUrl: p.repoUrl, sugerencias: sugerenciasBusqueda(p.pageList) };
 }
