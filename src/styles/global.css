@@ -487,3 +487,31 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .ruta-paso p { margin: 0; font-weight: 700; color: var(--text); }
 .ruta-paso label { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
 .ruta-paso a { color: var(--accent-strong); font-weight: 600; }
+
+/* --- QoL de navegación personal: estrella, aviso de cambios, continuar, favoritos y atajos --- */
+.favorito-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; min-width: 44px; padding: 0 14px; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.favorito-btn svg { fill: none; }
+.favorito-btn:hover { color: var(--text); border-color: var(--accent); }
+.favorito-btn[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--accent); }
+.favorito-btn[aria-pressed="true"] svg { fill: currentColor; }
+.aviso-cambio { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; padding: 4px 4px 4px 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; }
+.aviso-cambio[hidden] { display: none; }
+.aviso-cambio .aviso-cerrar { flex: none; min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+.aviso-cambio .aviso-cerrar:hover { color: var(--text); }
+.continuar { margin: 16px 0 0; border-color: var(--accent); background: var(--accent-soft); font-weight: 600; min-height: 44px; justify-content: center; overflow-wrap: anywhere; }
+.continuar[hidden] { display: none; }
+.favoritos[hidden] { display: none; }
+.favoritos ul { list-style: none; margin: 0; padding: 0; }
+.favoritos li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }
+.favoritos li a { flex: 1; min-width: 0; display: flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; }
+.favoritos .favorito-quitar { flex: none; min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.favoritos .favorito-quitar:hover { color: var(--danger); }
+.atajos-dialog { width: min(480px, calc(100vw - 24px)); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+.atajos-dialog::backdrop { background: var(--bg); opacity: .7; }
+.atajos-dialog .atajos-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.atajos-dialog h2 { margin: 0; font-size: 18px; }
+.atajos-dialog .atajos-bar button { min-height: 44px; min-width: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--text); font: inherit; cursor: pointer; }
+.atajos-dialog .atajos-lista { list-style: none; margin: 0; padding: 8px 14px 14px; }
+.atajos-dialog li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.atajos-dialog .atajos-teclas { display: inline-flex; gap: 4px; flex: none; }
+.atajos-dialog kbd { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; background: var(--glass); color: var(--text); }

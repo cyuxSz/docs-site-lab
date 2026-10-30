@@ -34,6 +34,10 @@ const statusOf = (pkg: string) => {
       <main id="contenido" data-pagefind-body={restricted ? undefined : ""}>
         {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
         {!restricted && <meta data-pagefind-filter="tipo[content]" content="Resumen" />}
+        <a class="card continuar" data-continuar-visita data-proyecto={p.id} hidden data-pagefind-ignore href={`/${p.id}/`}></a>
+        <section class="block favoritos" data-favoritos-lista data-proyecto={p.id} data-pagefind-ignore hidden>
+          <div class="block-head"><h2>Favoritos</h2></div>
+        </section>
         <section class="hero phero">
           <div>
             <p class="eyebrow">{p.tagline ?? "Proyecto"}</p>
@@ -159,6 +163,9 @@ const statusOf = (pkg: string) => {
       </main>
     </div>
   </div>
+  <script>
+    import "../../scripts/personal";
+  </script>
   <script>
     // Enlaces del portal anterior: /<id>/#/p/<ruta>.md -> /<id>/<ruta>/
     const m = location.hash.match(/^#\/p\/(.+)$/);

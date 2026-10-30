@@ -8,6 +8,7 @@ import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_L
 import { isRestricted } from "../../../access.config.js";
 import { TYPE_LABEL } from "../../lib/labels";
 import { anteriorSiguiente, migas } from "../../lib/navegacion.ts";
+import { firmaPagina } from "../../lib/personal.ts";
 import { urlEditar, urlReportar } from "../../lib/acciones.ts";
 import { citasDe } from "../../../tools/citas.mjs";
 
@@ -42,6 +43,7 @@ const citas = p.repoUrl && p.sha ? citasDe(entry.body ?? "", p.repoUrl, p.sha).f
 // Rutas por rol: rutas.md se vuelve checklist si el proyecto tiene rutas válidas; las demás páginas muestran su paso al pie.
 const esRutas = entry.data.path === "rutas.md" && Boolean(p.rutas?.length);
 const rutasDePagina = esRutas ? [] : (p.rutas ?? []).filter((r) => r.pasos.some((s) => s.page === entry.data.path));
+const firma = firmaPagina(entry.data.updated, p.pageList.find((x) => x.path === entry.data.path)?.commit);
 const glosario = p.pageList.find((x) => x.path === "glosario.md");
 ---
 <Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={projectNav(p)} current="wiki">
@@ -56,6 +58,16 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             ))}
           </ol>
         </nav>
+        <div data-pagina data-proyecto={p.id} data-route={route} data-title={entry.data.title} data-firma={firma} data-pagefind-ignore="all">
+          <div class="aviso-cambio" role="status" hidden>
+            <span>Esta página cambió desde tu última visita · <a href={`/${p.id}/novedades/`}>ver en Novedades</a></span>
+            <button type="button" class="aviso-cerrar" data-descartar aria-label="Descartar aviso">×</button>
+          </div>
+          <button type="button" class="favorito-btn" data-favorito aria-pressed="false" aria-label="Guardar en favoritos" hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"></path></svg>
+            <span class="favorito-txt">Guardar en favoritos</span>
+          </button>
+        </div>
         <article class="prose" data-pagefind-body={restricted ? undefined : ""} data-glosario={glosario && glosario.route !== route ? glosario.route : undefined}>
           {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
           {!restricted && <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />}
@@ -136,5 +148,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
   <script>
     import "../../scripts/prose";
     import "../../scripts/rutas";
+    import "../../scripts/personal";
   </script>
 </Base>

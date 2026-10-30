@@ -27,6 +27,9 @@ const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas } = Astr
         </ul>
       </div>
     ))}
+    <div class="favoritos" data-favoritos-lista data-proyecto={projectId} hidden>
+      <h2>Favoritos</h2>
+    </div>
     <ul class="extra">
       {rutas && <li><a href={rutas} data-astro-prefetch aria-current={currentRoute === rutas ? "page" : undefined}>Rutas por rol</a></li>}
       <li><a href={`/${projectId}/novedades/`} data-astro-prefetch aria-current={currentRoute === `/${projectId}/novedades/` ? "page" : undefined}>Novedades</a></li>
@@ -36,6 +39,7 @@ const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas } = Astr
   </div>
 </nav>
 <script>
+  import "../scripts/personal";
   document.querySelectorAll<HTMLButtonElement>(".sidenav-toggle").forEach((b) =>
     b.addEventListener("click", () => {
       const open = b.closest(".sidenav")!.classList.toggle("open");
