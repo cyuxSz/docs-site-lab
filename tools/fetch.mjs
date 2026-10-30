@@ -14,7 +14,9 @@ import { fileURLToPath } from "node:url";
 import { citasDe, extraerLineas } from "./citas.mjs";
 import { clasificarError, limpiarControl } from "./estado.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
+import { historial } from "./historial.mjs";
 import { pageRoute, parseRutas } from "./rutas.mjs";
+import { corregirH1, tituloPagina } from "./titulos.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, ".content");
@@ -195,12 +197,12 @@ function buildProject(project) {
     if (rel.startsWith(".") || !rel.endsWith(".md")) continue;
     const { fields, body } = splitFrontmatter(readFileSync(file, "utf8"));
     const links = new Set();
-    const linked = rewriteLinks(statusBadges(neutralizeHtml(body)), project.id, rel, repoUrl, sha, links);
+    const title = tituloPagina(fields, body, rel);
+    const linked = rewriteLinks(statusBadges(neutralizeHtml(corregirH1(body, title, rel))), project.id, rel, repoUrl, sha, links);
     citas.push(...citasDe(linked, repoUrl, sha));
     // Tooltips del glosario (después de neutralizeHtml: el <abbr> lo genera el portal). El glosario no se marca a sí mismo.
     const text = rel === "glosario.md" ? linked : marcarGlosario(linked, glosario);
     const { date, commit, author } = lastChange(dir, `openwiki/${rel}`);
-    const title = fields.title || (body.match(/^#\s+(.+)$/m) || [])[1] || rel;
     const page = {
       path: rel,
       route: pageRoute(project.id, rel),
@@ -212,6 +214,7 @@ function buildProject(project) {
       updated: date || null,
       author: author || null,
       commit: commit || null,
+      historial: historial(dir, `openwiki/${rel}`, { repoUrl }),
     };
     pages.push(page);
     for (const to of links) if (to !== rel) edges.push({ source: rel, target: to });
