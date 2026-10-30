@@ -211,3 +211,8 @@ html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
   .rg-field select { max-width: 9.5rem; text-overflow: ellipsis; }
   .rg-tabs button { padding: 5px 9px; }
 }
+
+/* Lote 8c: legado (reloj) y sin uso (gris) en la leyenda; insignias agrupadas del panel. */
+.rg-chip-legado .rg-reloj { color: var(--warn); font-weight: 700; line-height: 1; }
+.rg-chip-sin_uso .rg-dot { border: 1px solid var(--line); }
+.rg-sub .insignias { margin-left: 2px; }

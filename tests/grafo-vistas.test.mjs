@@ -16,7 +16,7 @@ const renombrarVista = fn("renombrarVista");
 const borrarVista = fn("borrarVista");
 const vistaAplicable = fn("vistaAplicable");
 
-const ESTADO = { vista: "ros", config: "sub_real", seccion: null, legado: false, plan: true, ocultos: ["visualizacion"], nodo: "ctl/asmc", camara: { x: 0.4, y: 0.6, ratio: 0.5 } };
+const ESTADO = { vista: "ros", config: "sub_real", seccion: null, legado: false, sinUso: false, plan: true, ocultos: ["visualizacion"], nodo: "ctl/asmc", camara: { x: 0.4, y: 0.6, ratio: 0.5 } };
 const v = (id, nombre, estado = ESTADO) => ({ id, nombre, creada: 1, estado });
 
 test("claveVistas: una clave por proyecto", () => {
