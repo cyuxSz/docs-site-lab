@@ -30,7 +30,7 @@ const statusOf = (pkg: string) => {
 <Base title={`${p.name} · VantTec Docs`} description={p.summary} project={projectNav(p)} current="resumen">
   <div class="container">
     <div class="doc doc-2">
-      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} hasDiagrams={p.diagramList.length > 0} />
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido" data-pagefind-body={restricted ? undefined : ""}>
         {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
         {!restricted && <meta data-pagefind-filter="tipo[content]" content="Resumen" />}
@@ -53,10 +53,17 @@ const statusOf = (pkg: string) => {
           </dl>
         </section>
 
-        {highlight.length > 0 && (
+        {(highlight.length > 0 || p.rutas?.length) && (
           <section class="block">
             <div class="block-head"><h2>Empieza aquí</h2></div>
             <div class="cards">
+              {p.rutas?.length ? (
+                <a class="card" href={`/${p.id}/rutas/`} data-astro-prefetch>
+                  <span class="card-title">Rutas por rol</span>
+                  <span class="card-desc">Qué leer, y en qué orden, según tu área: {p.rutas.map((r) => r.nombre).join(", ")}.</span>
+                  <span class="card-link">Elegir mi ruta →</span>
+                </a>
+              ) : null}
               {highlight.map((x) => (
                 <a class="card" href={x.route} data-astro-prefetch>
                   <span class="card-title">{x.title}</span>
