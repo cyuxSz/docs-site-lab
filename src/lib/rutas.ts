@@ -73,3 +73,33 @@ export function rolGuardado(alm: Almacen, p: string, rutas: Ruta[]): string | nu
   const id = alm.get(claveRol(p));
   return id && rutas.some((r) => r.id === id) ? id : null;
 }
+
+// --- Ruta activa (lote 9a): la barra de ruta al pie solo sale si el usuario la activó con "Empezar" ---
+export const claveRutaActiva = (p: string) => `rutas:${p}:activa`;
+
+export function activarRuta(alm: Almacen, p: string, rol: string) {
+  alm.set(claveRutaActiva(p), rol);
+}
+
+export function desactivarRuta(alm: Almacen, p: string) {
+  alm.remove(claveRutaActiva(p));
+}
+
+// Solo vale un id que sea una ruta del proyecto (lista blanca); cualquier otro valor guardado se ignora.
+export function rutaActiva(alm: Almacen, p: string, rutas: Ruta[]): string | null {
+  const id = alm.get(claveRutaActiva(p));
+  return id && rutas.some((r) => r.id === id) ? id : null;
+}
+
+export function pasoActivo(alm: Almacen, p: string, rutas: Ruta[], page: string): { ruta: Ruta; i: number } | null {
+  const id = rutaActiva(alm, p, rutas);
+  const ruta = rutas.find((r) => r.id === id);
+  if (!ruta) return null;
+  const i = pasoEnPagina(ruta, page, leidos(alm, p, ruta));
+  return i >= 0 ? { ruta, i } : null;
+}
+
+export function textoContinuar(pr: { hechos: number; siguiente: number | null }): { texto: string; deshabilitado: boolean } {
+  if (pr.siguiente === null) return { texto: "Ruta completa", deshabilitado: true };
+  return { texto: pr.hechos === 0 ? "Empezar" : "Continuar con el siguiente paso", deshabilitado: false };
+}
