@@ -150,3 +150,10 @@ test("global.css: barra de control y velo con tokens (sin colores fijos); se ocu
   const print = css.match(/@media print\s*\{[^]*?\n\}/)?.[0] ?? "";
   for (const sel of [".barras-control", ".barras-velo", ".salir-enfoque"]) assert.ok(print.includes(sel), `impresión oculta ${sel}`);
 });
+
+test("el cajón abierto se hace visible sin retraso para que focus() funcione", () => {
+  const css = read("src/styles/global.css");
+  const regla = css.match(/html\[data-cajon="izq"\] \.doc-wiki \.sidenav[^{]*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(regla, /visibility:\s*visible/);
+  assert.match(regla, /transition:[^;]*visibility 0s/, "al abrir, visibility no debe animarse (el foco fallaría)");
+});
