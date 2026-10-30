@@ -1,12 +1,13 @@
 .rg { display: flex; flex-direction: column; gap: 10px; }
-.rg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; font-size: 14px; }
+/* Una sola fila en escritorio (el buscador es compacto y lo demás vive en menús); en teléfono hace wrap ordenado. */
+.rg-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 14px; }
 .rg-tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--surface); }
 .rg-tabs button { border: 0; background: none; color: var(--muted); font: inherit; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
 .rg-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
 .rg-field { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .rg-field select { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; max-width: 60vw; }
 .rg-check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
-.rg-search input { width: 11rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
+.rg-search input { width: 10rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
 .rg-tour-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
 
 /* Diseño A: recorrido guiado. */
@@ -24,9 +25,10 @@
 
 .rg-count { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 
-.rg-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.rg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rg-legend[hidden] { display: none; }
 .rg-chip {
-  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; flex: 0 0 auto; line-height: 1.4;
   border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
 }
 .rg-chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
@@ -116,6 +118,9 @@
 .rg-presenting .rg-legend,
 .rg-presenting .rg-drawer,
 .rg-presenting .rg-search,
+.rg-presenting .rg-menu,
+.rg-presenting .rg-aviso,
+.rg-presenting .rg-panorama,
 .rg-presenting .rg-note,
 .rg-presenting .rg-legado,
 .rg-presenting .rg-minimap { display: none; }
@@ -143,4 +148,58 @@ html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
   .rg-panorama ol { flex-direction: column; }
   .rg-panorama li { flex-direction: column; align-items: stretch; }
   .rg-panorama-flecha { transform: rotate(90deg); align-self: center; }
+}
+
+/* Aviso del sistema (enlace copiado, etc.): visible aunque no haya panel abierto. */
+.rg-aviso { margin: 0; min-height: 0; }
+.rg-aviso:empty { display: none; }
+
+/* Menús desplegables de la barra ("Vista", "Vistas", "Más"). */
+.rg-menu { position: relative; display: inline-block; }
+.rg-menu-panel {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 15rem; max-width: min(24rem, calc(100vw - 24px));
+  padding: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.rg-menu-panel[hidden] { display: none; }
+.rg-menu-item {
+  display: block; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.rg-menu-item:hover, .rg-menu-item:focus-visible { background: var(--accent-soft); outline: none; }
+.rg-menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.rg-menu-item[aria-checked="true"]::before { content: "✓ "; color: var(--accent-strong); font-weight: 700; }
+.rg-menu-item[aria-checked="false"]::before { content: "\00a0\00a0\00a0"; }
+.rg-menu-item[aria-disabled="true"] { opacity: .5; cursor: default; }
+
+/* Vistas guardadas. */
+.rg-vistas-form { display: flex; gap: 6px; padding: 4px 6px; }
+.rg-vistas-form input, .rg-vistas-lista input {
+  flex: 1 1 auto; min-width: 0; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit;
+}
+.rg-vistas-aviso { margin: 0; padding: 0 12px; color: var(--muted); font-size: 13px; }
+.rg-vistas-aviso:empty { display: none; }
+.rg-vistas-vacio { margin: 0; padding: 4px 12px; color: var(--muted); font-size: 13px; }
+.rg-vistas-lista { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; max-height: 40vh; overflow-y: auto; }
+.rg-vistas-lista li { display: flex; align-items: center; gap: 2px; }
+.rg-vistas-nombre { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.rg-vistas-op { flex: 0 0 auto; width: auto; padding: 6px 8px; color: var(--muted); font-size: 13px; }
+
+/* Buscador (combobox). */
+.rg-combo { position: relative; }
+.rg-combo-lista {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 18rem; max-width: min(26rem, calc(100vw - 24px)); max-height: 50vh; overflow-y: auto;
+  margin: 0; padding: 4px; list-style: none; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.rg-combo-lista[hidden] { display: none; }
+.rg-combo-op { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.rg-combo-op[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-strong); box-shadow: inset 0 0 0 2px var(--accent); }
+.rg-combo-nombre { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.rg-combo-meta { color: var(--muted); font-size: 12px; }
+.rg-combo-vacio { padding: 8px 12px; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 760px) {
+  /* En teléfono los paneles se anclan a la barra y ocupan su ancho: nunca se salen de la pantalla. */
+  .rg-menu { position: static; }
+  .rg-menu-panel { left: 0; right: 0; min-width: 0; max-width: none; }
+  .rg-combo { flex: 1 1 100%; }
+  .rg-combo-lista { right: 0; min-width: 0; max-width: none; }
 }
