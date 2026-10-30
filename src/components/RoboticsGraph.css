@@ -31,7 +31,7 @@
 }
 .rg-chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
 .rg-chip.rg-static { cursor: default; }
-.rg-dot-plan { background: transparent; border: 2px dashed var(--warn); }
+.rg-dot-plan { background: transparent; border: 2px dashed var(--plan); }
 /* Aviso del sistema anterior: en su propia línea, con texto (no solo color). */
 .rg-legado { margin: 0; padding: 8px 14px; border: 1px solid var(--warn); border-left-width: 4px; border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
 .rg-legado a { margin-left: 8px; color: var(--accent-strong); font-weight: 600; white-space: nowrap; }

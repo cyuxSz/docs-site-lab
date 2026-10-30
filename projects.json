@@ -11,7 +11,7 @@
     "tagline": "Vehículo submarino autónomo",
     "theme": { "accent": "#49C1D2", "deep": "#0491AD", "warm": "#F0900D" },
     "tour": [
-      { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2: además de ver, calcula dónde está el sub." },
+      { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2i: además de ver, calcula dónde está el sub." },
       { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },
       { "node": "uuv_mission/instruction_handler", "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo." },
       { "node": "uuv_control/asmc", "text": "El control (ASMC) compara dónde está con dónde debe estar y calcula las fuerzas (/forces)." },
