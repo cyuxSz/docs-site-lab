@@ -390,7 +390,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           if (attrs.plan) {
             if (!planRef.current) return { ...attrs, hidden: true };
             // Etiqueta solo al enfocar (como el resto de aristas); el "plan · " distingue por texto, no solo por color.
-            return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: etiquetaPlan(attrs.label), zIndex: 1 };
+            const f = focusOf();
+            const enfocada = Boolean(f && (s === f || t === f));
+            return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: enfocada ? etiquetaPlan(attrs.label) : undefined, zIndex: 1 };
           }
           const focus = focusOf();
           // El nombre del topic solo aparece en las flechas del nodo enfocado, para no llenar el dibujo de texto.
@@ -449,7 +451,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
     if (Number.isFinite(x0)) {
-      r.setCustomBBox({ x: [x0, x1], y: [y0, y1] });
+      // Con el plan se abre el encuadre (más a la derecha, donde van las etiquetas, y arriba/abajo por la banda plan).
+      const mx = planOn ? (x1 - x0 || 1) * 0.12 : 0;
+      const my = planOn ? (y1 - y0 || 1) * 0.12 : 0;
+      r.setCustomBBox({ x: [x0 - mx * 0.5, x1 + mx * 1.5], y: [y0 - my, y1 + my] });
       if (narrow) {
         const aspect = (y1 - y0 || 1) / (x1 - x0 || 1);
         // Tope de 62 % del alto: deja lugar a la tarjeta del recorrido y a la barra del navegador.
@@ -461,7 +466,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     // Si el primer dibujo cae justo cuando Sigma termina de montarse se pierde: se repite en el siguiente cuadro.
     const frame = requestAnimationFrame(() => r.refresh());
     return () => cancelAnimationFrame(frame);
-  }, [visibleIds, ready]);
+  }, [visibleIds, ready, planOn]);
 
   // Sigma no se entera solo de que cambió el alto del contenedor.
   useEffect(() => {
