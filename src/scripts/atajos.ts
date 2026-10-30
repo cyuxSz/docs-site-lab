@@ -25,6 +25,6 @@ if (dialogo) {
     }
     const ruta = destino(r.accion, { wiki: dialogo.dataset.wiki, grafo: dialogo.dataset.grafo, novedades: dialogo.dataset.novedades });
     // Solo rutas internas del sitio.
-    if (ruta && ruta.startsWith("/") && !ruta.startsWith("//")) location.href = ruta;
+    if (ruta && ruta.startsWith("/") && !ruta.startsWith("//") && !/[\\\u0000-\u001f]/u.test(ruta)) location.href = ruta;
   });
 }
