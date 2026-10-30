@@ -7,7 +7,7 @@
 .rg-field { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .rg-field select { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; max-width: 60vw; }
 .rg-check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
-.rg-search input { width: 11rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
+.rg-search input { width: 9rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
 .rg-tour-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
 
 /* Diseño A: recorrido guiado. */
@@ -23,7 +23,7 @@
 .rg-tour-actions button { min-height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
 .rg-tour-actions .rg-primary { border-color: var(--accent); background: var(--accent); color: var(--bg); font-weight: 600; }
 
-.rg-count { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.rg-count { align-self: flex-end; min-height: 1em; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 .rg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rg-legend[hidden] { display: none; }
@@ -88,7 +88,7 @@
 
 @media (max-width: 760px) {
   .rg-stage { height: 68vh; }
-  .rg-count { margin-left: 0; }
+
   .rg-search { flex: 1 1 100%; }
   .rg-search input { width: 100%; }
   .rg-drawer { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 55%; }
@@ -118,6 +118,7 @@
 .rg-presenting .rg-legend,
 .rg-presenting .rg-drawer,
 .rg-presenting .rg-search,
+.rg-presenting .rg-count,
 .rg-presenting .rg-menu,
 .rg-presenting .rg-aviso,
 .rg-presenting .rg-panorama,
@@ -207,6 +208,6 @@ html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
 /* Escritorio: etiquetas de los selects solo para lectores de pantalla, para que la barra quepa en una fila. */
 @media (min-width: 761px) {
   .rg-field > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .rg-field select { max-width: 11rem; text-overflow: ellipsis; }
+  .rg-field select { max-width: 9.5rem; text-overflow: ellipsis; }
   .rg-tabs button { padding: 5px 9px; }
 }

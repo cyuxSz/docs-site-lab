@@ -1124,7 +1124,6 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {data && (
           <button type="button" className="rg-tool rg-leyenda-btn" aria-expanded={leyendaOn} aria-controls={`rg-leyenda-${projectId}`} onClick={() => setLeyendaOn((v) => !v)}>Leyenda</button>
         )}
-        <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.filter((n) => !capas || OWNERS.has(n.kind)).length}` : ""}</span>
       </div>
 
       <p className="rg-copied rg-aviso" role="status" aria-live="polite">{aviso}</p>
@@ -1142,6 +1141,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           {sec && contextRef.current.size > 0 && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} />En gris: lo que conecta con la sección</span>}
         </div>
       )}
+      <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.filter((n) => !capas || OWNERS.has(n.kind)).length}` : ""}</span>
       {configObj?.legado && (
         <p className="rg-legado" role="note">
           {AVISO_LEGADO}
