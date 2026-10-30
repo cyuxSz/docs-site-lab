@@ -1,5 +1,5 @@
 // Interfaz de comentarios: pide la lista al entrar en vista y pinta con nodos DOM (nunca HTML del usuario).
-import { acciones, armarHilos, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
+import { acciones, armarHilos, claveCacheNav, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, partirMenciones, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
 
 const raiz = document.querySelector<HTMLElement>("section.comentarios[data-pagina]");
 if (raiz) iniciar(raiz);
@@ -26,6 +26,8 @@ function iniciar(root: HTMLElement) {
   let comentarios: Comentario[] = [];
   let aBorrar: { id: string; volver: HTMLElement | null } | null = null;
   // Tras repintar, el botón que abrió una acción ya no existe: se recupera por id y acción.
+  // Enlace directo #comentario-<uuid>: se despliega la sección y, al pintar, se enfoca ese comentario.
+  let idHash: string | null = /^#comentario-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] ?? null;
   let volverA: { id: string; accion: string } | null = null;
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, clase?: string, txt?: string) => {
@@ -43,6 +45,22 @@ function iniciar(root: HTMLElement) {
     return b;
   };
 
+  // Tras una escritura correcta el contador de la SideNav debe recalcularse en la siguiente carga.
+  function invalidarCacheNav() {
+    try {
+      sessionStorage.removeItem(claveCacheNav(pagina.split("/")[1] ?? ""));
+    } catch {
+      /* sessionStorage no disponible */
+    }
+  }
+
+  // Texto crudo con las @menciones resaltadas: solo nodos de texto y span.mencion (textContent), nunca HTML.
+  function textoConMenciones(txt: string) {
+    const p = el("p", "comentario-texto");
+    for (const t of partirMenciones(txt)) p.append(t.mencion ? el("span", "mencion", t.texto) : document.createTextNode(t.texto));
+    return p;
+  }
+
   async function pedir(metodo: string, cuerpo: unknown): Promise<{ ok: boolean; data?: any; mensaje?: string }> {
     let res: Response;
     try {
@@ -56,7 +74,10 @@ function iniciar(root: HTMLElement) {
     } catch {
       /* sin cuerpo JSON */
     }
-    if (res.ok) return { ok: true, data };
+    if (res.ok) {
+      invalidarCacheNav();
+      return { ok: true, data };
+    }
     return { ok: false, mensaje: mensajeError(res.status, { retryAfter: res.headers.get("Retry-After"), servidor: data?.error }) };
   }
 
@@ -104,6 +125,17 @@ function iniciar(root: HTMLElement) {
     lista.replaceChildren(...hilos.map((h) => pintarHilo(h)));
     etiqueta.textContent = etiquetaComentarios(contarAbiertos(comentarios));
     estado.textContent = hilos.length ? "" : "Aún no hay comentarios. Sé el primero.";
+    if (idHash) {
+      const destino = document.getElementById(`comentario-${idHash}`);
+      idHash = null;
+      if (destino) {
+        destino.tabIndex = -1;
+        destino.scrollIntoView({ block: "center" });
+        destino.focus();
+        volverA = null;
+        return;
+      }
+    }
     if (volverA) {
       const b = [...lista.querySelectorAll<HTMLElement>("button[data-accion]")].find((x) => x.dataset.id === volverA!.id && x.dataset.accion === volverA!.accion);
       b?.focus();
@@ -138,7 +170,7 @@ function iniciar(root: HTMLElement) {
     cab.append(el("span", `chip ${t.clase}`, t.etiqueta), el("span", "comentario-autor", c.autor ?? ""), time);
     if (c.editado) cab.append(el("span", undefined, "(editado)"));
     if (c.resuelto && !c.padre) cab.append(el("span", undefined, c.resueltoPor ? `Resuelto por ${c.resueltoPor}` : "Resuelto"));
-    li.append(cab, el("p", "comentario-texto", c.texto));
+    li.append(cab, textoConMenciones(c.texto));
 
     const a = acciones(c, yo);
     const barra = el("div", "comentario-acciones");
@@ -300,6 +332,13 @@ function iniciar(root: HTMLElement) {
     signo.textContent = abrir ? "−" : "+";
     if (abrir) cargarUnaVez();
   });
+
+  if (idHash) {
+    cuerpo.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    signo.textContent = "−";
+    cargarUnaVez();
+  }
 
   // Carga perezosa: una sola petición cuando la sección entra en vista.
   if (typeof IntersectionObserver === "undefined") cargarUnaVez();

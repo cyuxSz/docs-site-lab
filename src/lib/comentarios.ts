@@ -109,3 +109,78 @@ export const opcionesEscritura = (metodo: string, cuerpo: unknown): RequestInit 
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(cuerpo),
 });
+
+// ---------- @menciones (fuente única en lib/menciones.mjs, compartida con la API) ----------
+export { extraerMenciones, partirMenciones, mencionaA } from "../../lib/menciones.mjs";
+
+// ---------- Panel de comentarios abiertos del proyecto y contador de la SideNav ----------
+export interface HiloPanel {
+  id: string;
+  tipo: string;
+  autor: string | null;
+  creado: string;
+  extracto: string;
+  menciones: string[];
+}
+export interface PaginaPanel {
+  pagina: string;
+  abiertos: number;
+  hilos: HiloPanel[];
+}
+export interface RespuestaPanel {
+  yo?: string;
+  proyecto?: string;
+  truncado?: boolean;
+  paginas: PaginaPanel[];
+}
+export interface FiltrosPanel {
+  tipo: string;
+  quien: string;
+}
+
+// Valores desconocidos de los filtros equivalen a "todos". No muta la entrada y descarta páginas sin hilos.
+export function filtrarPanel(paginas: PaginaPanel[] | null | undefined, filtros: FiltrosPanel, yo: string | null | undefined): PaginaPanel[] {
+  if (!Array.isArray(paginas)) return [];
+  const tipo = TIPOS_COMENTARIO.some((t) => t.id === filtros?.tipo) ? filtros.tipo : null;
+  const quien = filtros?.quien === "mios" || filtros?.quien === "mencion" ? filtros.quien : null;
+  const minuscula = typeof yo === "string" && yo ? yo.toLowerCase() : null;
+  const pasa = (h: HiloPanel) => {
+    if (tipo && h.tipo !== tipo) return false;
+    if (quien === "mios") return minuscula !== null && typeof h.autor === "string" && h.autor.toLowerCase() === minuscula;
+    if (quien === "mencion") return minuscula !== null && Array.isArray(h.menciones) && h.menciones.some((m) => typeof m === "string" && m.toLowerCase() === minuscula);
+    return true;
+  };
+  return paginas.map((p) => ({ ...p, hilos: (p.hilos ?? []).filter(pasa) })).filter((p) => p.hilos.length > 0);
+}
+
+export const urlProyecto = (id: string): string => `/api/comentarios/?proyecto=${encodeURIComponent(id)}`;
+export const enlaceHilo = (pagina: string, id: string): string => `${pagina}#comentario-${id}`;
+
+// { ruta: n } con solo enteros > 0 y rutas string.
+export function contadoresNav(resp: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  const paginas = (resp as RespuestaPanel | null)?.paginas;
+  if (!Array.isArray(paginas)) return out;
+  for (const p of paginas) {
+    if (p && typeof p.pagina === "string" && typeof p.abiertos === "number" && Number.isInteger(p.abiertos) && p.abiertos > 0) out[p.pagina] = p.abiertos;
+  }
+  return out;
+}
+
+export const etiquetaContador = (n: number): string => (n === 1 ? "1 comentario abierto" : `${n} comentarios abiertos`);
+
+const TTL_NAV = 60_000;
+export const claveCacheNav = (id: string): string => `comentarios:nav:${id}`;
+export const escribirCacheNav = (datos: Record<string, number>, ahora: number = Date.now()): string => JSON.stringify({ t: ahora, d: datos });
+export function leerCacheNav(raw: string | null | undefined, ahora: number = Date.now()): Record<string, number> | null {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== "object" || typeof o.t !== "number" || !o.d || typeof o.d !== "object" || Array.isArray(o.d)) return null;
+    const edad = ahora - o.t;
+    if (!(edad >= 0 && edad <= TTL_NAV)) return null;
+    return o.d as Record<string, number>;
+  } catch {
+    return null;
+  }
+}
