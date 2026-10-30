@@ -15,7 +15,7 @@ interface Props {
 }
 const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas, id } = Astro.props;
 ---
-<nav class="sidenav" id={id} aria-label={`Páginas de ${projectName}`} data-pagefind-ignore="all">
+<nav class="sidenav" id={id} data-proyecto={projectId} aria-label={`Páginas de ${projectName}`} data-pagefind-ignore="all">
   <button class="sidenav-toggle" type="button" aria-expanded="false" aria-controls="sidenav-list">Páginas de {projectName}</button>
   <div class="sidenav-list" id="sidenav-list">
     {sections(pages).map((s) => (
@@ -34,6 +34,7 @@ const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas, id } = 
     <ul class="extra">
       {rutas && <li><a href={rutas} data-astro-prefetch aria-current={currentRoute === rutas ? "page" : undefined}>Rutas por rol</a></li>}
       <li><a href={`/${projectId}/novedades/`} data-astro-prefetch aria-current={currentRoute === `/${projectId}/novedades/` ? "page" : undefined}>Novedades</a></li>
+      <li><a href={`/${projectId}/comentarios/`} data-astro-prefetch aria-current={currentRoute === `/${projectId}/comentarios/` ? "page" : undefined}>Comentarios abiertos</a></li>
       <li><a href={`/${projectId}/grafo/`} data-astro-prefetch>Grafo de nodos ROS</a></li>
       {hasDiagrams && <li><a href={`/${projectId}/#diagramas`} data-astro-prefetch>Diagramas</a></li>}
     </ul>
@@ -41,6 +42,7 @@ const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas, id } = 
 </nav>
 <script>
   import "../scripts/personal";
+  import "../scripts/contador-nav";
   document.querySelectorAll<HTMLButtonElement>(".sidenav-toggle").forEach((b) =>
     b.addEventListener("click", () => {
       const open = b.closest(".sidenav")!.classList.toggle("open");
