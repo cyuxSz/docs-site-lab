@@ -452,7 +452,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     }
     if (Number.isFinite(x0)) {
       // Con el plan se abre el encuadre (más a la derecha, donde van las etiquetas, y arriba/abajo por la banda plan).
-      const mx = planOn ? (x1 - x0 || 1) * 0.12 : 0;
+      const mx = planOn ? (x1 - x0 || 1) * 0.02 : 0;
       const my = planOn ? (y1 - y0 || 1) * 0.12 : 0;
       r.setCustomBBox({ x: [x0 - mx * 0.5, x1 + mx * 1.5], y: [y0 - my, y1 + my] });
       if (narrow) {

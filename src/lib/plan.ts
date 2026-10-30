@@ -52,7 +52,7 @@ export function notaPlan(n: { plan?: boolean; soloPlan?: boolean }): string | nu
 
 // Posiciones de la vista plan: los nodos solo-plan van a una banda propia arriba y, en cada fila, los nodos
 // consecutivos se separan según la longitud de su etiqueta para que no se encimen.
-const UNIDAD_POR_CHAR = 0.32;
+const UNIDAD_POR_CHAR = 0.5;
 const SEP_BASE = 10;
 const BANDA_PLAN = 6;
 const sepMin = (a: string, b: string) => Math.max(SEP_BASE, ((a.length + b.length) / 2) * UNIDAD_POR_CHAR + 2);
