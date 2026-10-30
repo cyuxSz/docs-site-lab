@@ -251,3 +251,10 @@ html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
   .rg-comparar-campo, .rg-camino-campo { flex: 1 1 100%; }
   .rg-comparar-campo select, .rg-camino-campo input { width: 100%; box-sizing: border-box; }
 }
+
+/* Escritorio: barra más compacta para que quepa en una fila con "Guardadas ▾". */
+@media (min-width: 761px) {
+  .rg-toolbar { column-gap: 4px; }
+  .rg-toolbar .rg-tool { padding-left: 10px; padding-right: 10px; }
+  .rg-search input { width: 8rem; }
+}
