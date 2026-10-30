@@ -76,7 +76,14 @@ export function acomodarPlan(pos: Map<string, [number, number]>, soloPlan: Set<s
   for (const ids of filas.values()) espaciarFila(ids, out, label);
   if (planes.length) {
     const top = Math.max(0, ...reales.map((id) => out.get(id)![1])) + BANDA_PLAN;
-    for (const id of planes) out.set(id, [out.get(id)![0], top]);
+    const xs = reales.map((id) => out.get(id)![0]);
+    const min = xs.length ? Math.min(...xs) : 0;
+    const max = xs.length ? Math.max(...xs) : 0;
+    const orden = [...planes].sort((a, b) => out.get(a)![0] - out.get(b)![0] || a.localeCompare(b));
+    orden.forEach((id, i) => {
+      const x = orden.length > 1 ? min + ((max - min) * i) / (orden.length - 1) : (min + max) / 2;
+      out.set(id, [Math.round(x * 100) / 100, top]);
+    });
     espaciarFila(planes, out, (id) => `${label(id)} (plan)`);
   }
   return out;

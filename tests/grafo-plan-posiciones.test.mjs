@@ -22,3 +22,13 @@ test("acomodarPlan separa filas y aparta los solo-plan", () => {
   const xs = [...solo].map((i) => [i, out.get(i)[0]]).sort((a, b) => a[1] - b[1]);
   for (let i = 1; i < xs.length; i++) assert.ok(xs[i][1] - xs[i - 1][1] >= 10);
 });
+
+test("acomodarPlan reparte los nodos plan a lo ancho de los reales", () => {
+  const pos = new Map([["a", [0, 0]], ["b", [100, 0]], ["vectornav", [0, 1]], ["ekf_node", [1, 1]]]);
+  const out = acomodarPlan(pos, new Set(["vectornav", "ekf_node"]), (id) => id);
+  const v = out.get("vectornav")[0];
+  const e = out.get("ekf_node")[0];
+  assert.ok(e - v >= Math.max(10, ((("vectornav (plan)").length + ("ekf_node (plan)").length) / 2) * 0.5 + 2));
+  assert.equal(v, 0);
+  assert.equal(e, 100);
+});
