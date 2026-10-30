@@ -26,7 +26,7 @@ test("menús: botones 'Vista' y 'Más' con aria-haspopup=menu y aria-expanded, y
 
 test("menú Vista: legado, plan y minimapa como menuitemcheckbox con aria-checked (ya no checkboxes sueltos)", () => {
   assert.ok((TSX.match(/role="menuitemcheckbox"/g) ?? []).length >= 1, "usa menuitemcheckbox");
-  assert.match(TSX, /aria-checked=\{showOld\}/);
+  assert.match(TSX, /aria-checked=\{filtros\.legado\}/, "lote 8c: legado y sin uso son dos toggles");
   assert.match(TSX, /aria-checked=\{showPlan\}/);
   assert.match(TSX, /aria-checked=\{miniOn\}/);
   assert.doesNotMatch(TSX, /type="checkbox"/, "los toggles viven en el menú, no como <input type=checkbox> en la barra");
