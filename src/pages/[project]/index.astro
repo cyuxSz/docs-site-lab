@@ -69,7 +69,7 @@ const statusOf = (pkg: string) => {
           <dl class="stats stats-proyecto">
             <div><dt>Páginas</dt><dd>{p.pages}</dd></div>
             <div><dt>Afirmaciones verificadas</dt><dd>{p.claims}</dd></div>
-            {p.ros && <div><dt>Nodos ROS en uso</dt><dd>{conteo.enUso}<span class="muted stats-sub"> de {conteo.total} nodos del repo</span></dd></div>}
+            {p.ros && <div><dt>Nodos ROS en uso</dt><dd>{conteo.enUso}<span class="muted stats-sub">de {conteo.total} nodos del repo</span></dd></div>}
             {p.ros && <div><dt>Nodos rotos</dt><dd class={conteo.rotos ? "stats-danger" : undefined}>{conteo.rotos}</dd></div>}
             <div><dt>Actualizado</dt><dd class="stats-fecha">{fmtDate(p.updated)}</dd></div>
           </dl>
