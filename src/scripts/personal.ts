@@ -26,9 +26,9 @@ const pintarEstrella = () => {
   if (!pagina || !estrella) return;
   const fav = esFavorito(alm, pagina.dataset.proyecto!, pagina.dataset.route!);
   estrella.setAttribute("aria-pressed", String(fav));
-  const txt = estrella.querySelector<HTMLElement>(".favorito-txt");
-  if (txt) txt.textContent = fav ? "Quitar de favoritos" : "Guardar en favoritos";
-  estrella.setAttribute("aria-label", fav ? "Quitar de favoritos" : "Guardar en favoritos");
+  const etiqueta = fav ? "Quitar de favoritos" : "Guardar en favoritos";
+  estrella.setAttribute("aria-label", etiqueta);
+  estrella.setAttribute("title", etiqueta);
 };
 
 // --- Listas de favoritos (SideNav y portada) ---
@@ -70,6 +70,14 @@ if (pagina && estrella) {
   const route = pagina.dataset.route!;
   const title = pagina.dataset.title ?? "";
   estrella.hidden = false;
+  // La estrella va junto al H1 de la página: un contenedor en fila con el título y el botón.
+  const h1 = document.querySelector<HTMLElement>(".prose h1");
+  if (h1) {
+    const fila = document.createElement("div");
+    fila.className = "titulo-pagina";
+    h1.before(fila);
+    fila.append(h1, estrella);
+  }
   pintarEstrella();
   estrella.addEventListener("click", () => {
     alternarFavorito(alm, p, { route, title });

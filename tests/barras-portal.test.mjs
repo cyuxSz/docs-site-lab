@@ -33,31 +33,11 @@ test("SideNav.astro: acepta un id opcional y lo pone en el <nav>", () => {
   assert.match(src, /<nav class="sidenav"[^>]*\bid=\{id\}/);
 });
 
-test("[...slug].astro: barra de control fuera de Pagefind con botones reales, aria-controls y aria-expanded", () => {
-  const src = read(SLUG);
-  const barra = tag(src, "data-barras-control");
-  assert.ok(barra, "falta el contenedor data-barras-control");
-  assert.match(barra, /data-pagefind-ignore="all"/);
-  const izq = tag(src, 'data-barra="izq"');
-  const der = tag(src, 'data-barra="der"');
-  for (const [b, id] of [[izq, "barra-izq"], [der, "barra-der"]]) {
-    assert.match(b, /^<button[^>]*type="button"/, id);
-    assert.match(b, new RegExp(`aria-controls="${id}"`), id);
-    assert.match(b, /aria-expanded="(true|false)"/, id);
-  }
-  const enf = tag(src, "data-enfoque-btn");
-  assert.match(enf, /^<button[^>]*type="button"/);
-  assert.match(enf, /aria-pressed="false"/);
-  assert.match(src, /Modo enfoque/);
-});
+// Lote 9a: la fila .barras-control ("Navegación · Modo enfoque · Índice") se quitó; los botones de riel y de
+// móvil se prueban en tests/pagina-limpia.test.mjs.
 
-test("[...slug].astro: botón 'Salir del enfoque' oculto de inicio y velo para clic fuera de los cajones", () => {
+test("[...slug].astro: velo para clic fuera de los cajones (el botón 'Salir del enfoque' se quitó en el lote 9a)", () => {
   const src = read(SLUG);
-  const salir = tag(src, "data-salir-enfoque");
-  assert.match(salir, /^<button[^>]*type="button"/);
-  assert.match(salir, /\bhidden\b/);
-  assert.match(salir, /data-pagefind-ignore="all"/);
-  assert.match(src, /data-salir-enfoque[^>]*>\s*Salir del enfoque\s*</);
   const velo = tag(src, "data-barras-velo");
   assert.ok(velo, "falta el velo data-barras-velo");
   assert.match(velo, /\bhidden\b/);
@@ -89,10 +69,10 @@ test("barras.ts: escucha los atajos (wiki:barras), Esc, clic en el velo y el cam
   assert.match(s, /matchMedia\(/);
 });
 
-test("barras.ts: sincroniza aria-expanded / aria-pressed, gestiona el foco y no persiste el enfoque", () => {
+test("barras.ts: sincroniza aria-expanded y aria-label, gestiona el foco y no persiste el enfoque", () => {
   const s = leer(SCRIPT);
   assert.match(s, /setAttribute\(\s*["']aria-expanded["']/);
-  assert.match(s, /setAttribute\(\s*["']aria-pressed["']/);
+  assert.match(s, /setAttribute\(\s*["']aria-label["']/);
   assert.ok((s.match(/\.focus\(/g) ?? []).length >= 2, "foco al abrir el cajón y de vuelta al botón al cerrar");
   assert.match(s, /dataset\.enfoque|data-enfoque/);
   assert.match(s, /dataset\.barraIzq|data-barra-izq/);
@@ -122,12 +102,11 @@ test("tema-inline.js: aplica las barras plegadas antes de pintar (lista blanca) 
 });
 
 // ---------- 4. Estilos ----------
-test("global.css: plegado por data-* en <html> acotado a .doc-wiki, enfoque y salida del enfoque", () => {
+test("global.css: plegado por data-* en <html> acotado a .doc-wiki y enfoque", () => {
   const css = read("src/styles/global.css");
   assert.match(css, /\[data-barra-izq="plegada"\][^{]*\.doc-wiki/);
   assert.match(css, /\[data-barra-der="plegada"\][^{]*\.doc-wiki/);
   assert.match(css, /\[data-enfoque\][^{]*\.doc-wiki/);
-  assert.match(css, /\.salir-enfoque[^{]*\{[^}]*position:\s*fixed/);
 });
 
 test("global.css: cajones por debajo de 900 px (fixed, con velo) y animación desactivada con reduced-motion", () => {
@@ -139,16 +118,16 @@ test("global.css: cajones por debajo de 900 px (fixed, con velo) y animación de
   assert.match(css, /prefers-reduced-motion: reduce\)\s*\{[^}]*\.doc-wiki/);
 });
 
-test("global.css: barra de control y velo con tokens (sin colores fijos); se ocultan al imprimir", () => {
+test("global.css: velo con tokens (sin colores fijos); se oculta al imprimir", () => {
   const css = read("src/styles/global.css");
   const reglas = css
     .replace(/@media print\s*\{[^]*?\n\}/, "")
     .split("\n")
-    .filter((l) => /\.barras-control|\.barras-velo|\.salir-enfoque/.test(l));
-  assert.ok(reglas.length > 0, "faltan reglas .barras-control");
+    .filter((l) => /\.barras-velo/.test(l));
+  assert.ok(reglas.length > 0, "faltan reglas .barras-velo");
   for (const l of reglas) assert.doesNotMatch(l, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `usa tokens: ${l.trim()}`);
   const print = css.match(/@media print\s*\{[^]*?\n\}/)?.[0] ?? "";
-  for (const sel of [".barras-control", ".barras-velo", ".salir-enfoque"]) assert.ok(print.includes(sel), `impresión oculta ${sel}`);
+  for (const sel of [".barras-velo"]) assert.ok(print.includes(sel), `impresión oculta ${sel}`);
 });
 
 test("el cajón abierto se hace visible sin retraso para que focus() funcione", () => {

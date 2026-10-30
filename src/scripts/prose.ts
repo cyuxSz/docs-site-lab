@@ -4,7 +4,6 @@
 import { urlReportar } from "../lib/acciones.ts";
 import { haceDias } from "../lib/novedades.ts";
 import { decodificarAncla } from "../lib/lectura.ts";
-import { citaMarkdown } from "../../tools/citas.mjs";
 
 const prose = document.querySelector<HTMLElement>(".prose");
 
@@ -210,40 +209,6 @@ prose?.querySelectorAll<HTMLAnchorElement>("a[href*='/blob/']").forEach((a) => {
   a.addEventListener("mouseleave", () => hide(120));
   a.addEventListener("focus", () => a.matches(":focus-visible") && showCita(a, t));
   a.addEventListener("blur", () => hide());
-});
-
-// --- Copiar como cita Markdown: botón junto a cada enlace con vista previa ---
-prose?.querySelectorAll<HTMLAnchorElement>("a[href*='/blob/']").forEach((a) => {
-  const key = citaKey(a);
-  const t = key ? templates.get(key) : undefined;
-  const rango = key?.match(/^(.*)#L(\d+)-L(\d+)$/);
-  if (!key || !t || !rango) return;
-  const [, file, ini, fin] = rango;
-  const etiqueta = `${file}:L${ini}-L${fin}`;
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "cita-copiar";
-  btn.setAttribute("data-pagefind-ignore", "");
-  btn.textContent = "Copiar cita";
-  btn.setAttribute("aria-label", `Copiar como cita Markdown: ${etiqueta}`);
-  btn.title = `Copiar como cita Markdown: ${etiqueta}`;
-  let reset = 0;
-  btn.addEventListener("click", async () => {
-    const md = citaMarkdown({
-      file,
-      start: Number(ini),
-      end: Number(fin),
-      lines: (t.content.querySelector("code")?.textContent ?? "").split("\n"),
-      truncated: Boolean(t.dataset.truncated),
-      href: a.href,
-    });
-    const ok = md ? await copy(md) : false;
-    btn.textContent = ok ? "Copiado" : "No se pudo";
-    say(ok ? "Cita copiada en Markdown" : "No se pudo copiar la cita");
-    clearTimeout(reset);
-    reset = window.setTimeout(() => (btn.textContent = "Copiar cita"), 2000);
-  });
-  a.after(btn);
 });
 
 // --- Glosario: <abbr class="glosa" data-def> con la definición en un tooltip ---
