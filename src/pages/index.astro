@@ -1,6 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import VehicleArt from "../components/VehicleArt.astro";
+import EstadoProyecto from "../components/EstadoProyecto.astro";
 import { isRestricted } from "../../access.config.js";
 import { portal, fmtDate, themeStyle } from "../lib/data";
 
@@ -71,10 +72,10 @@ const first = open[0];
                     {p.diagrams ? <span>{p.diagrams} diagrama(s)</span> : null}
                   </span>
                 ) : (
-                  <span class="card-status">{p.message}</span>
+                  <EstadoProyecto p={p} builtAt={builtAt} compacto />
                 )}
                 <span class="card-meta">{live ? `Actualizado ${fmtDate(p.updated)}` : ""}</span>
-                <span class="card-link">{live ? "Abrir →" : p.error ? "No se pudo construir" : "Sin documentación aún"}</span>
+                {live ? <span class="card-link">Abrir →</span> : <a class="card-link" href={`/${p.id}/`}>Ver qué pasó →</a>}
               </div>
             </Tag>
           );

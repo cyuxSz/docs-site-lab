@@ -15,6 +15,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Graph from "graphology";
 import type Sigma from "sigma";
 import type { GraphData, GraphNode } from "../lib/graph";
+import { almacenSeguro } from "../lib/rutas";
+import { encuadre, aMinimapa, aGrafo, rectVista, minimapaVisible, claveMinimapa, type Encuadre } from "../lib/minimapa";
+import { claveRecorrido, guardarPaso, pasoGuardado, borrarPaso, textoRetomar, accionTecla } from "../lib/recorrido";
 import "./RoboticsGraph.css";
 
 interface View {
@@ -45,20 +48,9 @@ const isNarrow = (el: HTMLElement) => el.clientWidth < 600;
 // Colores del proyecto (Base.astro los pone en <body> como --accent y --p-warm); sin ellos, los del portal.
 const cssVar = (name: string, fallback: string) => getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
 
-const storage = {
-  get: (k: string) => {
-    try {
-      return localStorage.getItem(k);
-    } catch {
-      return null;
-    }
-  },
-  set: (k: string, v: string) => {
-    try {
-      localStorage.setItem(k, v);
-    } catch {}
-  },
-};
+const storage = almacenSeguro(() => localStorage);
+const MINI_W = 160;
+const MINI_H = 110;
 
 // Etiqueta del nodo resaltado con los colores del tema (la de Sigma es siempre un recuadro blanco).
 function drawHover(dark: boolean, accent: string) {
@@ -122,6 +114,17 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [fsOk, setFsOk] = useState(false);
   const [fs, setFs] = useState(false);
   const [aviso, setAviso] = useState("");
+  const [present, setPresent] = useState(false);
+  const [miniOn, setMiniOn] = useState(false);
+  const [saved, setSaved] = useState<number | null>(null);
+  const mini = useRef<HTMLCanvasElement>(null);
+  const miniT = useRef<Encuadre | null>(null);
+  const miniDrag = useRef(false);
+  const presBtn = useRef<HTMLButtonElement>(null);
+  const presFs = useRef(false);
+  const wasPresent = useRef(false);
+  const togglePresentRef = useRef<() => void>(() => {});
+  const exitPresentRef = useRef<() => void>(() => {});
 
   const root = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -138,6 +141,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const tourNode = stepIdx !== null ? steps[stepIdx]?.node ?? null : null;
   const state = useRef({ selected, hovered, tourNode });
   state.current = { selected, hovered, tourNode };
+  const recKey = claveRecorrido(projectId, view, secStep !== null ? sec?.id ?? null : null);
+  const nav = useRef({ present, stepIdx, total: steps.length, setStepIdx });
+  nav.current = { present, stepIdx, total: steps.length, setStepIdx };
 
   useEffect(() => {
     const coarse = matchMedia("(pointer: coarse)").matches;
@@ -147,9 +153,36 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     // El botón de tema de Base.astro cambia data-theme: el grafo se vuelve a pintar con los colores del tema.
     const watcher = new MutationObserver(() => setTema((n) => n + 1));
     watcher.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    const onFs = () => setFs(document.fullscreenElement === root.current);
+    const onFs = () => {
+      const on = document.fullscreenElement === root.current;
+      setFs(on);
+      // Salir de la pantalla completa nativa (p. ej. con Esc del navegador) también quita el modo presentación.
+      if (!on && presFs.current) {
+        presFs.current = false;
+        setPresent(false);
+      }
+    };
     document.addEventListener("fullscreenchange", onFs);
+    setMiniOn(minimapaVisible(storage.get(claveMinimapa), innerWidth));
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const escribiendo = Boolean(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)));
+      const a = accionTecla({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, escribiendo }, nav.current.present);
+      if (!a) return;
+      // Con el foco en un botón o enlace, espacio conserva su función normal.
+      if (e.key === " " && t && /^(BUTTON|A)$/.test(t.tagName)) return;
+      e.preventDefault();
+      const n = nav.current;
+      if (a === "alternar") togglePresentRef.current();
+      else if (a === "salir") exitPresentRef.current();
+      else if (n.stepIdx !== null) {
+        if (a === "siguiente" && n.stepIdx < n.total - 1) n.setStepIdx(n.stepIdx + 1);
+        if (a === "anterior" && n.stepIdx > 0) n.setStepIdx(n.stepIdx - 1);
+      }
+    };
+    document.addEventListener("keydown", onKey);
     return () => {
+      document.removeEventListener("keydown", onKey);
       watcher.disconnect();
       document.removeEventListener("fullscreenchange", onFs);
     };
@@ -300,9 +333,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       if (!raf && !reducedMotion()) raf = requestAnimationFrame(tick);
     };
     // Sigma usa WebGL al importarse: se carga solo en el navegador.
-    import("sigma").then(({ default: SigmaClass }) => {
+    import("sigma").then(({ default: Sigma }) => {
       if (cancelled) return;
-      renderer = new SigmaClass(g, el, {
+      renderer = new Sigma(g, el, {
         defaultEdgeType: capas ? "arrow" : "line",
         renderEdgeLabels: capas,
         edgeLabelColor: { color: dark ? "#a8b6d3" : "#5a6878" },
@@ -414,7 +447,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     r.resize();
     r.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
     r.refresh();
-  }, [stageHeight, fs]);
+  }, [stageHeight, fs, present]);
 
   useEffect(() => {
     sigma.current?.refresh({ skipIndexation: true });
@@ -433,6 +466,124 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (pos) r.getCamera().animate({ x: pos.x, y: pos.y }, { duration: reducedMotion() ? 0 : 400 });
   }, [selected, ready]);
 
+  // Guarda el paso en cada cambio; así se puede retomar tras recargar.
+  useEffect(() => {
+    if (stepIdx !== null && steps.length) guardarPaso(storage, recKey, stepIdx, steps.length);
+  }, [stepIdx, steps.length, recKey]);
+
+  // Paso a retomar del recorrido que ofrece la barra (global o de la sección); se lee tras hidratar.
+  useEffect(() => {
+    const total = sec ? sec.tour.length : tour.length;
+    setSaved(total ? pasoGuardado(storage, claveRecorrido(projectId, view, sec?.id ?? null), total) : null);
+  }, [data, view, sec, tourStep, secStep]);
+
+  // Minimapa: canvas propio con las posiciones ya calculadas; un solo rAF pendiente.
+  useEffect(() => {
+    const r = sigma.current;
+    const g = graph.current;
+    const cv = mini.current;
+    const el = container.current;
+    if (!r || !g || !cv || !el || !miniOn) return;
+    const pts: { x: number; y: number; color: string }[] = [];
+    g.forEachNode((id, a) => {
+      if (visibleIds.has(id)) pts.push({ x: a.x, y: a.y, color: a.color });
+    });
+    const t = encuadre(pts, MINI_W, MINI_H, 8);
+    miniT.current = t;
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    cv.width = MINI_W * dpr;
+    cv.height = MINI_H * dpr;
+    let frame = 0;
+    const draw = () => {
+      frame = 0;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, MINI_W, MINI_H);
+      for (const p of pts) {
+        const [px, py] = aMinimapa(t, p.x, p.y);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(px, py, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const a = r.viewportToGraph({ x: 0, y: 0 });
+      const b = r.viewportToGraph({ x: el.clientWidth, y: el.clientHeight });
+      const v = rectVista(t, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, MINI_W, MINI_H);
+      ctx.strokeStyle = cssVar("--accent", "#49c1d2");
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillRect(v.x, v.y, v.w, v.h);
+      ctx.globalAlpha = 1;
+      ctx.strokeRect(v.x + 0.75, v.y + 0.75, Math.max(0, v.w - 1.5), Math.max(0, v.h - 1.5));
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(draw);
+    };
+    r.getCamera().on("updated", schedule);
+    schedule();
+    return () => {
+      r.getCamera().off("updated", schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [ready, miniOn, tema, visibleIds, present]);
+
+  const miniGo = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const r = sigma.current;
+    const t = miniT.current;
+    if (!r || !t) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const [gx, gy] = aGrafo(t, ((e.clientX - box.left) * MINI_W) / (box.width || MINI_W), ((e.clientY - box.top) * MINI_H) / (box.height || MINI_H));
+    const f = r.viewportToFramedGraph(r.graphToViewport({ x: gx, y: gy }));
+    r.getCamera().setState({ x: f.x, y: f.y });
+  };
+  const toggleMini = () => {
+    storage.set(claveMinimapa, miniOn ? "0" : "1");
+    setMiniOn(!miniOn);
+  };
+
+  const enterPresent = () => {
+    setPresent(true);
+    setSelected(null);
+    if (fsOk && root.current?.requestFullscreen) {
+      presFs.current = true;
+      void root.current.requestFullscreen().catch(() => { presFs.current = false; });
+    }
+    if (stepIdx === null) {
+      if (sec && sec.tour.length) startSecTour(saved ?? 0);
+      else if (capas && tour.length) startTour(saved ?? 0);
+    }
+  };
+  const exitPresent = () => {
+    presFs.current = false;
+    setPresent(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  };
+  togglePresentRef.current = () => (nav.current.present ? exitPresent() : enterPresent());
+  exitPresentRef.current = exitPresent;
+  useEffect(() => {
+    // El foco vuelve al botón al salir y pasa a "Salir" al entrar.
+    if (wasPresent.current && !present) presBtn.current?.focus();
+    if (present) root.current?.querySelector<HTMLElement>(".rg-exit")?.focus();
+    wasPresent.current = present;
+  }, [present]);
+
+  // Sin scroll de la página de fondo mientras se presenta; también se limpia al desmontar.
+  useEffect(() => {
+    if (!present) return;
+    document.documentElement.classList.add("rg-no-scroll");
+    return () => document.documentElement.classList.remove("rg-no-scroll");
+  }, [present]);
+
+  // Etiquetas más grandes en presentación.
+  useEffect(() => {
+    const r = sigma.current;
+    if (!r) return;
+    r.setSetting("labelSize", present ? 18 : 12);
+    r.refresh();
+  }, [present, ready]);
+
   const camera = (action: "in" | "out" | "reset") => {
     const c = sigma.current?.getCamera();
     if (!c) return;
@@ -449,15 +600,16 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       return next;
     });
 
-  const startTour = () => {
+  const startTour = (from = 0) => {
     setSelected(null);
     setSecStep(null);
     if (tourConfig && config !== tourConfig) setConfig(tourConfig);
-    setTourStep(0);
+    setTourStep(from);
   };
   const endTour = () => {
     // Solo el recorrido global se marca como visto; el de una sección se puede repetir sin efectos.
     if (secStep === null) storage.set(TOUR_SEEN, "1");
+    borrarPaso(storage, recKey);
     setTourStep(null);
     setSecStep(null);
     camera("reset");
@@ -470,10 +622,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     setSeccionId(id || null);
     if (id) setConfig("all");
   };
-  const startSecTour = () => {
+  const startSecTour = (from = 0) => {
     setSelected(null);
     setTourStep(null);
-    setSecStep(0);
+    setSecStep(from);
   };
 
   const toggleFullscreen = () => {
@@ -550,7 +702,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const sinNucleo = Boolean(sec && !showOld && sec.core.length === 0);
 
   return (
-    <div className="rg" ref={root} data-pagefind-ignore="all">
+    <div className={present ? "rg rg-presenting" : "rg"} ref={root} data-pagefind-ignore="all">
       <div className="rg-toolbar">
         {views.length > 1 && (
           <div className="rg-tabs" role="tablist" aria-label="Vista">
@@ -601,10 +753,32 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </label>
         )}
         {capas && !sec && tour.length > 0 && tourStep === null && (
-          <button className="rg-tour-btn" onClick={startTour}>▶ Recorrido</button>
+          <>
+            <button className="rg-tour-btn" onClick={() => startTour(0)}>▶ Recorrido</button>
+            {saved !== null && (
+              <>
+                <button className="rg-tour-btn" onClick={() => startTour(saved)}>{textoRetomar(saved, tour.length)}</button>
+                <button className="rg-tool" type="button" onClick={() => { borrarPaso(storage, recKey); startTour(0); }}>Empezar de nuevo</button>
+              </>
+            )}
+          </>
         )}
         {sec && sec.tour.length > 0 && secStep === null && (
-          <button className="rg-tour-btn" onClick={startSecTour}>▶ Recorrido de la sección</button>
+          <>
+            <button className="rg-tour-btn" onClick={() => startSecTour(0)}>▶ Recorrido de la sección</button>
+            {saved !== null && (
+              <>
+                <button className="rg-tour-btn" onClick={() => startSecTour(saved)}>{textoRetomar(saved, sec.tour.length)}</button>
+                <button className="rg-tool" type="button" onClick={() => startSecTour(0)}>Empezar de nuevo</button>
+              </>
+            )}
+          </>
+        )}
+        {data && (
+          <button ref={presBtn} className="rg-tool" type="button" aria-pressed={present} aria-keyshortcuts="P" title="Modo presentación (P)" onClick={() => (present ? exitPresent() : enterPresent())}>Modo presentación</button>
+        )}
+        {data && (
+          <button className="rg-tool" type="button" aria-pressed={miniOn} onClick={toggleMini}>{miniOn ? "Ocultar minimapa" : "Mostrar minimapa"}</button>
         )}
         {data && fsOk && (
           <button className="rg-tool" type="button" aria-pressed={fs} onClick={toggleFullscreen}>{fs ? "Salir de pantalla completa" : "Pantalla completa"}</button>
@@ -637,6 +811,18 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {touch && !active && data && !step && (
           <button className="rg-shield" onClick={() => setActive(true)}>Tocar para explorar el grafo</button>
         )}
+        {miniOn && data && (
+          <canvas
+            ref={mini}
+            className="rg-minimap"
+            aria-hidden="true"
+            onPointerDown={(e) => { miniDrag.current = true; e.currentTarget.setPointerCapture(e.pointerId); miniGo(e); }}
+            onPointerMove={(e) => { if (miniDrag.current) miniGo(e); }}
+            onPointerUp={(e) => { miniDrag.current = false; e.currentTarget.releasePointerCapture?.(e.pointerId); }}
+            onPointerCancel={() => { miniDrag.current = false; }}
+          />
+        )}
+        {present && <button className="rg-exit" type="button" onClick={exitPresent}>Salir (Esc)</button>}
         <div className="rg-zoom" hidden={!active || Boolean(step)}>
           {touch && active && <button onClick={() => { setActive(false); setSelected(null); }} aria-label="Soltar el grafo y volver a desplazar la página">Listo</button>}
           <button onClick={() => camera("in")} aria-label="Acercar">+</button>
@@ -693,6 +879,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           <p>{step.text}</p>
           <div className="rg-tour-actions">
             <button onClick={endTour}>{secStep !== null ? "Cerrar" : "Saltar"}</button>
+            {present && stepIdx > 0 && <button onClick={() => setStepIdx(0)}>Desde el inicio</button>}
+            {present ? <small className="rg-keys">← → para avanzar</small> : null}
             <span />
             {stepIdx > 0 && <button onClick={() => setStepIdx(stepIdx - 1)}>Anterior</button>}
             {stepIdx < steps.length - 1

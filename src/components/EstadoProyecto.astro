@@ -1,0 +1,25 @@
+---
+// Tarjeta de estado de un proyecto que no se construyó o no tiene documentación. Solo pinta frases fijas de
+// tools/estado.mjs (nunca texto crudo de git) y queda fuera de Pagefind.
+import { tarjetaEstado } from "../../tools/estado.mjs";
+import type { ProjectSummary } from "../lib/data";
+
+interface Props {
+  p: ProjectSummary;
+  builtAt: string;
+  compacto?: boolean;
+}
+const { p, builtAt, compacto = false } = Astro.props;
+const t = tarjetaEstado(p, builtAt);
+---
+<section class="estado-proyecto" data-estado={t.estado} data-compacto={compacto ? "" : undefined} data-pagefind-ignore="all">
+  {compacto ? <span class="estado-titulo">{t.titulo}</span> : <h2>{t.titulo}</h2>}
+  <h3>Qué pasó</h3>
+  <p>{t.que}</p>
+  <h3>Cuándo</h3>
+  <p><time datetime={builtAt}>{t.cuando}</time></p>
+  <h3 id="estado-hacer">Qué hacer</h3>
+  <ol aria-labelledby="estado-hacer">
+    {t.hacer.map((h) => <li>{h}</li>)}
+  </ol>
+</section>
