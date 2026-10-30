@@ -859,7 +859,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
 
       {panoramaOn && data?.view === "ros" && data.panorama?.length ? (
-        <nav className="rg-panorama" aria-label="Panorama del sistema">
+        <nav className="rg-panorama" aria-label="Panorama del sistema" onKeyDown={(e) => { if (e.key === "Escape") setPanoramaOn(false); }}>
           <ol>
             {data.panorama.map((c, i) => (
               <li key={c.seccion}>
