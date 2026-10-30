@@ -288,7 +288,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     const edgeFaded = dark ? "#121d55" : "#eef2f6";
     const accent = cssVar("--accent", dark ? "#49c1d2" : "#0b7a8a");
     const edgeFocus = accent;
-    const warn = cssVar("--warn", dark ? "#efa232" : "#9a5b00");
+    const planColor = cssVar("--plan", dark ? "#b69cf0" : "#6d3fc0");
     const flow = overlay.current;
     let cancelled = false;
     let renderer: Sigma | null = null;
@@ -374,7 +374,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           const n = nodeById.get(id);
           if (!visible(n)) return { ...raw, hidden: true };
           // Nodo que solo existe en el plan: color de aviso y "(plan)" en la etiqueta, para no depender del color.
-          const attrs = n?.soloPlan ? { ...raw, color: warn, label: `${raw.label} (plan)` } : raw;
+          const attrs = n?.soloPlan ? { ...raw, color: planColor, label: `${raw.label} (plan)`, forceLabel: true } : raw;
           // Contexto de la sección: chico, gris y sin etiqueta salvo que esté enfocado o junto al nodo enfocado.
           const ctx = contextRef.current.has(id);
           const base = ctx ? { ...attrs, size: attrs.size * 0.7, color: dark ? CONTEXT.dark : CONTEXT.light, label: "" } : attrs;
@@ -390,7 +390,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           if (attrs.plan) {
             if (!planRef.current) return { ...attrs, hidden: true };
             // Etiqueta siempre visible: el plan se distingue por texto, no solo por color.
-            return { ...attrs, type: "arrow", color: warn, size: 1.6, label: etiquetaPlan(attrs.label), forceLabel: true, zIndex: 1 };
+            return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: etiquetaPlan(attrs.label), forceLabel: true, zIndex: 1 };
           }
           const focus = focusOf();
           // El nombre del topic solo aparece en las flechas del nodo enfocado, para no llenar el dibujo de texto.

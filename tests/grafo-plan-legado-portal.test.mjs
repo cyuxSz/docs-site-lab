@@ -26,8 +26,8 @@ test("plan: toggle accesible, apagado por defecto y lógica de src/lib/plan", ()
 });
 
 test("plan: color desde un token del tema, leyenda con muestra punteada y sin colores fijos nuevos", () => {
-  assert.match(TSX, /cssVar\("--warn"/);
-  assert.match(CSS, /\.rg-dot-plan\s*\{[^}]*dashed[^}]*var\(--warn\)/);
+  assert.match(TSX, /cssVar\("--plan"/);
+  assert.match(CSS, /\.rg-dot-plan\s*\{[^}]*dashed[^}]*var\(--plan\)/);
   const reglas = CSS.split("}").filter((r) => /rg-(dot-plan|plan|legado)/.test(r));
   assert.ok(reglas.length >= 2, "faltan reglas .rg-dot-plan / .rg-legado");
   for (const r of reglas) assert.doesNotMatch(r, /#[0-9a-f]{3,8}\b/i, `color fijo en: ${r.trim().slice(0, 60)}`);
