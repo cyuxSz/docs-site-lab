@@ -70,3 +70,41 @@ test("ATAJOS: la lista del diálogo de ayuda incluye todos, también Ctrl K y / 
   assert.match(texto, /[Bb]uscar/);
   for (const a of ATAJOS) assert.ok(a.descripcion.length > 0);
 });
+
+// ---------- Lote 8a: barras laterales y modo enfoque ----------
+test("[ y ] pliegan la barra izquierda y la derecha; f alterna el modo enfoque (también con Bloq Mayús)", () => {
+  assert.equal(atajo(null, t("[")).accion, "izquierda");
+  assert.equal(atajo(null, t("]")).accion, "derecha");
+  assert.equal(atajo(null, t("f")).accion, "enfoque");
+  assert.equal(atajo(null, t("F")).accion, "enfoque");
+  assert.equal(atajo(null, t("f")).pendiente, null);
+});
+
+test("[ y ] con AltGr (teclado español: Windows reporta Ctrl+Alt) sí cuentan; con Ctrl o Alt solos, no", () => {
+  assert.equal(atajo(null, t("[", { ctrlKey: true, altKey: true, altGraph: true })).accion, "izquierda");
+  assert.equal(atajo(null, t("]", { ctrlKey: true, altKey: true, altGraph: true })).accion, "derecha");
+  assert.equal(atajo(null, t("[", { ctrlKey: true })).accion, null);
+  assert.equal(atajo(null, t("]", { altKey: true })).accion, null);
+  assert.equal(atajo(null, t("f", { ctrlKey: true })).accion, null, "Ctrl F sigue siendo buscar del navegador");
+  assert.equal(atajo(null, t("f", { metaKey: true })).accion, null);
+});
+
+test("[ ] f se ignoran al escribir o con un diálogo abierto", () => {
+  for (const k of ["[", "]", "f"]) {
+    assert.equal(atajo(null, t(k, { escribiendo: true })).accion, null, `${k} escribiendo`);
+    assert.equal(atajo(null, t(k, { dialogoAbierto: true })).accion, null, `${k} con diálogo`);
+  }
+});
+
+test("destino: las acciones de barras no navegan", () => {
+  const rutas = { wiki: "/uuv/quickstart/", grafo: "/uuv/grafo/", novedades: "/uuv/novedades/" };
+  for (const a of ["izquierda", "derecha", "enfoque"]) assert.equal(destino(a, rutas), null, a);
+});
+
+test("ATAJOS: la ayuda lista [ ] y f", () => {
+  for (const k of ["[", "]", "f"]) assert.ok(ATAJOS.some((a) => a.teclas.join(" ") === k), `falta ${k}`);
+  const texto = ATAJOS.map((a) => a.descripcion).join("\n");
+  assert.match(texto, /[Nn]avegación/);
+  assert.match(texto, /[Íí]ndice/);
+  assert.match(texto, /[Ee]nfoque/);
+});
