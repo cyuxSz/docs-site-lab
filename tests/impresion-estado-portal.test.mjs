@@ -213,3 +213,8 @@ test("Sin scripts en línea nuevos: Base conserva un solo is:inline y los compon
   assert.equal((read("src/layouts/Base.astro").match(/is:inline/g) ?? []).length, 1);
   if (exists("src/components/EstadoProyecto.astro")) assert.doesNotMatch(read("src/components/EstadoProyecto.astro"), /<script/);
 });
+
+test("impresión: las citas de código no imprimen su URL", () => {
+  const css = readFileSync(new URL("../src/styles/global.css", import.meta.url), "utf8");
+  assert.match(css, /a\[href\^="http"\]:not\(\[href\*="\/blob\/"\]\[href\*="#L"\]\)::after/);
+});

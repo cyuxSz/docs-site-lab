@@ -579,7 +579,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
   html, body { background: #fff; color: #000; box-shadow: none; background-image: none; }
   .doc, .doc.doc-2 { display: block; padding-top: 0; }
   .doc, main, .prose { max-width: none; width: auto; margin: 0; }
-  .prose a[href^="http"]::after { content: " (" attr(href) ")"; overflow-wrap: anywhere; font-size: .85em; }
+  .prose a[href^="http"]:not([href*="/blob/"][href*="#L"])::after { content: " (" attr(href) ")"; overflow-wrap: anywhere; font-size: .85em; }
   .prose a.anchor::after { content: none; }
   pre, .code-wrap, .mermaid, svg, figure, tr, img { break-inside: avoid; }
   pre { white-space: pre-wrap; overflow: visible; }
