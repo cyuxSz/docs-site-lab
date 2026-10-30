@@ -2,23 +2,29 @@
 import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
 import VehicleArt from "../../components/VehicleArt.astro";
-import { builtProjects, project as load, fmtDate, projectNav, STATUS_LABEL } from "../../lib/data";
+import EstadoProyecto from "../../components/EstadoProyecto.astro";
+import { portal, project as load, fmtDate, projectNav, STATUS_LABEL } from "../../lib/data";
+import type { ProjectData } from "../../lib/data";
 import { isRestricted } from "../../../access.config.js";
 import { novedades } from "../../lib/novedades.ts";
 
 export function getStaticPaths() {
-  return builtProjects().map((p) => ({ params: { project: p.id } }));
+  return portal().projects.map((p) => ({ params: { project: p.id } }));
 }
 
-const p = load(Astro.params.project!);
+const { builtAt, projects } = portal();
+const resumen = projects.find((x) => x.id === Astro.params.project)!;
+// Un proyecto con error o vacío no tiene data/<id>.json (y no se llama a load()): solo se muestra su estado.
+const sinConstruir = Boolean(resumen.error || resumen.empty);
+const p = (sinConstruir ? resumen : load(resumen.id)) as ProjectData;
 // Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
 const restricted = isRestricted(p.id);
-const packages = p.pageList.filter((x) => x.path.startsWith("packages/") && x.type !== "index");
-const highlight = ["quickstart.md", "onboarding.md", "operations/estado.md", "architecture/overview.md"]
+const packages = sinConstruir ? [] : p.pageList.filter((x) => x.path.startsWith("packages/") && x.type !== "index");
+const highlight = sinConstruir ? [] : ["quickstart.md", "onboarding.md", "operations/estado.md", "architecture/overview.md"]
   .map((path) => p.pageList.find((x) => x.path === path))
   .filter((x) => x !== undefined);
-const recientes = novedades(p.pageList, p.repoUrl ?? "", 3);
-const rosNodes = p.ros?.nodes.filter((n) => n.category === "ros2_node") ?? [];
+const recientes = sinConstruir ? [] : novedades(p.pageList, p.repoUrl ?? "", 3);
+const rosNodes = sinConstruir ? [] : p.ros?.nodes.filter((n) => n.category === "ros2_node") ?? [];
 const byStatus = (s: string) => rosNodes.filter((n) => n.status === s).length;
 const statusOf = (pkg: string) => {
   const own = rosNodes.filter((n) => n.package === pkg);
@@ -27,6 +33,17 @@ const statusOf = (pkg: string) => {
     .filter(([, c]) => c);
 };
 ---
+{sinConstruir ? (
+  <Base title={`${p.name} · VantTec Docs`} description={p.summary}>
+    <div class="container">
+      <main id="contenido" class="estado-pagina" data-pagefind-ignore="all">
+        <h1>{p.name}</h1>
+        <EstadoProyecto p={resumen} builtAt={builtAt} />
+        <p><a href="/">← Volver al inicio</a></p>
+      </main>
+    </div>
+  </Base>
+) : (
 <Base title={`${p.name} · VantTec Docs`} description={p.summary} project={projectNav(p)} current="resumen">
   <div class="container">
     <div class="doc doc-2">
@@ -34,6 +51,10 @@ const statusOf = (pkg: string) => {
       <main id="contenido" data-pagefind-body={restricted ? undefined : ""}>
         {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
         {!restricted && <meta data-pagefind-filter="tipo[content]" content="Resumen" />}
+        <a class="card continuar" data-continuar-visita data-proyecto={p.id} hidden data-pagefind-ignore href={`/${p.id}/`}></a>
+        <section class="block favoritos" data-favoritos-lista data-proyecto={p.id} data-pagefind-ignore hidden>
+          <div class="block-head"><h2>Favoritos</h2></div>
+        </section>
         <section class="hero phero">
           <div>
             <p class="eyebrow">{p.tagline ?? "Proyecto"}</p>
@@ -160,6 +181,9 @@ const statusOf = (pkg: string) => {
     </div>
   </div>
   <script>
+    import "../../scripts/personal";
+  </script>
+  <script>
     // Enlaces del portal anterior: /<id>/#/p/<ruta>.md -> /<id>/<ruta>/
     const m = location.hash.match(/^#\/p\/(.+)$/);
     if (m) {
@@ -170,3 +194,4 @@ const statusOf = (pkg: string) => {
     }
   </script>
 </Base>
+)}

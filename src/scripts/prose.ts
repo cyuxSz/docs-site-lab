@@ -3,6 +3,8 @@
 // Todo sale del HTML que ya trae la página: no hay peticiones a GitHub ni innerHTML con texto del repo.
 import { urlReportar } from "../lib/acciones.ts";
 import { haceDias } from "../lib/novedades.ts";
+import { decodificarAncla } from "../lib/lectura.ts";
+import { citaMarkdown } from "../../tools/citas.mjs";
 
 const prose = document.querySelector<HTMLElement>(".prose");
 
@@ -10,19 +12,36 @@ const prose = document.querySelector<HTMLElement>(".prose");
 const live = document.createElement("div");
 live.className = "sr-only";
 live.setAttribute("role", "status");
+live.setAttribute("aria-live", "polite");
 document.body.append(live);
 const say = (text: string) => {
   live.textContent = text;
   setTimeout(() => (live.textContent = ""), 2500);
 };
 
+// Copia al portapapeles; si la API no existe o falla (sin HTTPS, permisos), prueba con un textarea y execCommand.
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    return false;
+    // sigue con el respaldo
   }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.readOnly = true;
+  ta.setAttribute("aria-hidden", "true");
+  ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
 }
 
 if (prose) {
@@ -71,7 +90,7 @@ if (prose) {
 // --- Índice "En esta página": resalta la sección visible ---
 const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>(".toc a[href^='#']")];
 if (tocLinks.length && "IntersectionObserver" in window) {
-  const heads = tocLinks.map((a) => document.getElementById(decodeURIComponent(a.hash.slice(1)))).filter((h): h is HTMLElement => Boolean(h));
+  const heads = tocLinks.map((a) => document.getElementById(decodificarAncla(a.hash))).filter((h): h is HTMLElement => Boolean(h));
   const visible = new Set<Element>();
   const mark = (current: Element | undefined) => {
     for (const a of tocLinks) {
@@ -191,6 +210,40 @@ prose?.querySelectorAll<HTMLAnchorElement>("a[href*='/blob/']").forEach((a) => {
   a.addEventListener("mouseleave", () => hide(120));
   a.addEventListener("focus", () => a.matches(":focus-visible") && showCita(a, t));
   a.addEventListener("blur", () => hide());
+});
+
+// --- Copiar como cita Markdown: botón junto a cada enlace con vista previa ---
+prose?.querySelectorAll<HTMLAnchorElement>("a[href*='/blob/']").forEach((a) => {
+  const key = citaKey(a);
+  const t = key ? templates.get(key) : undefined;
+  const rango = key?.match(/^(.*)#L(\d+)-L(\d+)$/);
+  if (!key || !t || !rango) return;
+  const [, file, ini, fin] = rango;
+  const etiqueta = `${file}:L${ini}-L${fin}`;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "cita-copiar";
+  btn.setAttribute("data-pagefind-ignore", "");
+  btn.textContent = "Copiar cita";
+  btn.setAttribute("aria-label", `Copiar como cita Markdown: ${etiqueta}`);
+  btn.title = `Copiar como cita Markdown: ${etiqueta}`;
+  let reset = 0;
+  btn.addEventListener("click", async () => {
+    const md = citaMarkdown({
+      file,
+      start: Number(ini),
+      end: Number(fin),
+      lines: (t.content.querySelector("code")?.textContent ?? "").split("\n"),
+      truncated: Boolean(t.dataset.truncated),
+      href: a.href,
+    });
+    const ok = md ? await copy(md) : false;
+    btn.textContent = ok ? "Copiado" : "No se pudo";
+    say(ok ? "Cita copiada en Markdown" : "No se pudo copiar la cita");
+    clearTimeout(reset);
+    reset = window.setTimeout(() => (btn.textContent = "Copiar cita"), 2000);
+  });
+  a.after(btn);
 });
 
 // --- Glosario: <abbr class="glosa" data-def> con la definición en un tooltip ---

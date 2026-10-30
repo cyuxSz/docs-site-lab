@@ -54,6 +54,23 @@ if (root) {
     }),
   );
 
+  const dlg = root.querySelector<HTMLDialogElement>("dialog#rutas-reiniciar");
+  const txt = dlg?.querySelector<HTMLElement>("#rutas-reiniciar-texto");
+  let pendiente: (() => void) | null = null;
+  let origen: HTMLElement | null = null;
+  dlg?.querySelector("[data-reiniciar-ok]")?.addEventListener("click", () => {
+    const f = pendiente;
+    pendiente = null;
+    dlg.close();
+    f?.();
+  });
+  dlg?.querySelector("[data-reiniciar-cancelar]")?.addEventListener("click", () => dlg.close());
+  // Esc y cualquier otro cierre devuelven el foco al botón que abrió el diálogo.
+  dlg?.addEventListener("close", () => {
+    pendiente = null;
+    origen?.focus();
+  });
+
   for (const panel of panels) {
     const ruta = rutas.find((x) => x.id === panel.dataset.rol);
     if (!ruta) continue;
@@ -67,10 +84,16 @@ if (root) {
       const { siguiente } = progreso(leidos(alm, proyecto, ruta));
       if (siguiente !== null) location.href = ruta.pasos[siguiente].route;
     });
-    panel.querySelector("[data-reiniciar]")?.addEventListener("click", () => {
-      if (!confirm(`¿Reiniciar la ruta ${ruta.nombre}? Se borrará lo que marcaste como leído.`)) return;
-      reiniciar(alm, proyecto, ruta);
-      pintar(ruta, panel);
+    const btnReiniciar = panel.querySelector<HTMLButtonElement>("[data-reiniciar]");
+    btnReiniciar?.addEventListener("click", () => {
+      if (!dlg) return;
+      if (txt) txt.textContent = `¿Reiniciar la ruta ${ruta.nombre}? Se borrará lo que marcaste como leído.`;
+      pendiente = () => {
+        reiniciar(alm, proyecto, ruta);
+        pintar(ruta, panel);
+      };
+      origen = btnReiniciar;
+      dlg.showModal();
     });
   }
 }

@@ -2,6 +2,12 @@
 // oscuro (el de vanttec.com). Va en línea; astro.config.mjs agrega su hash a la CSP. El botón de Base.astro lo cambia.
 (function () {
   try {
-    if (localStorage.getItem("tema") === "light") document.documentElement.dataset.theme = "light";
+    var d = document.documentElement.dataset;
+    if (localStorage.getItem("tema") === "light") d.theme = "light";
+    // Letra y ancho de lectura (lote 4b-1), con lista blanca; el valor por defecto no pone atributo.
+    var letra = localStorage.getItem("lectura:letra");
+    if (letra === "s" || letra === "l") d.letra = letra;
+    var ancho = localStorage.getItem("lectura:ancho");
+    if (ancho === "estrecho" || ancho === "ancho") d.ancho = ancho;
   } catch (e) {}
 })();
