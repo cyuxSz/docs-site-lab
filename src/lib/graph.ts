@@ -5,6 +5,7 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import type { ProjectData } from "./data";
 import { separarPlan, acomodarPlan } from "./plan.ts";
 import { enlaceInterno, recorridoConfig } from "./legado.ts";
+import { panoramaCajas, type PanoramaCaja } from "./panorama.ts";
 import { recorridoSeccion, seccion, seccionesDe } from "./secciones.ts";
 
 export interface GraphCategory {
@@ -71,6 +72,8 @@ export interface GraphData {
   tour?: { node: string; text: string }[];
   // Una sub-vista por capa ROS (con layout propio en pos["seccion:<id>"]) y su recorrido.
   sections?: GraphSection[];
+  // Panorama (nivel 0): cajas que abren una sección (projects.json → panorama), ya filtradas a secciones existentes.
+  panorama?: PanoramaCaja[];
 }
 
 export interface GraphSection {
@@ -342,6 +345,7 @@ export function rosGraph(p: ProjectData): GraphData | null {
       old: { core: old.core, channels: old.channels, context: old.context },
     };
   });
+  const panorama = panoramaCajas(p.panorama, sections.map((s) => s.id));
   return {
     view: "ros",
     title: "Nodos ROS",
@@ -361,6 +365,7 @@ export function rosGraph(p: ProjectData): GraphData | null {
     ...(planFlow.length ? { planEdges, planFlowEdges: planFlow } : {}),
     tour: (p.tour ?? []).filter((s) => nodes.some((n) => n.id === s.node)),
     sections,
+    ...(panorama.length ? { panorama } : {}),
   };
 }
 

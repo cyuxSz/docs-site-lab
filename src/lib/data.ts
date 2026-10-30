@@ -1,5 +1,6 @@
 // Datos que deja tools/fetch.mjs en .content/ (solo en build).
 import { readFileSync } from "node:fs";
+import type { PanoramaCaja } from "./panorama";
 import type { Ruta } from "./rutas";
 import { sugerenciasBusqueda } from "./lectura.ts";
 import { join } from "node:path";
@@ -69,6 +70,7 @@ export interface ProjectSummary {
   // Recorrido guiado del grafo (diseño A): ids de ros.json en orden, con una frase cada uno.
   tour?: { node: string; text: string }[];
   // Recorrido propio por sección (id de capa): opcional, si falta se genera solo.
+  panorama?: PanoramaCaja[];
   secciones?: Record<string, { tour?: { node: string; text: string }[] }>;
   // Por configuración (id): recorrido propio y enlace interno (p. ej. a las discrepancias del sistema anterior).
   configs?: Record<string, { tour?: { node: string; text: string }[]; enlace?: string }>;

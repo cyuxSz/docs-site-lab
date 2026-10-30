@@ -9,22 +9,97 @@
     "novedadesNota": "Por ahora este repo es una copia de prueba del original, así que todos los cambios aparecen con el mismo autor.",
     "kind": "submarino",
     "tagline": "Vehículo submarino autónomo",
-    "theme": { "accent": "#49C1D2", "deep": "#0491AD", "warm": "#F0900D" },
+    "theme": {
+      "accent": "#49C1D2",
+      "deep": "#0491AD",
+      "warm": "#F0900D"
+    },
     "tour": [
-      { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2i: además de ver, calcula dónde está el sub." },
-      { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },
-      { "node": "uuv_mission/instruction_handler", "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo." },
-      { "node": "uuv_control/asmc", "text": "El control (ASMC) compara dónde está con dónde debe estar y calcula las fuerzas (/forces)." },
-      { "node": "uuv_control/thrust_allocator", "text": "thrust_allocator reparte esas fuerzas entre los 6 motores. En este launch el paso al Arduino está comentado." }
+      {
+        "node": "hw:zed",
+        "text": "Todo empieza en la cámara ZED 2i: además de ver, calcula dónde está el sub."
+      },
+      {
+        "node": "uuv_navigation/camera_opener",
+        "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose."
+      },
+      {
+        "node": "uuv_mission/instruction_handler",
+        "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo."
+      },
+      {
+        "node": "uuv_control/asmc",
+        "text": "El control (ASMC) compara dónde está con dónde debe estar y calcula las fuerzas (/forces)."
+      },
+      {
+        "node": "uuv_control/thrust_allocator",
+        "text": "thrust_allocator reparte esas fuerzas entre los 6 motores. En este launch el paso al Arduino está comentado."
+      }
     ],
     "configs": {
       "legado": {
         "enlace": "/uuv/discrepancias/",
         "tour": [
-          { "node": "uuv_mission/mission_handler", "text": "En el sistema anterior, mission_handler leía la misión y publicaba los waypoints y el objetivo de cada tarea." },
-          { "node": "uuv_navigation/path_generator", "text": "path_generator ofrecía el servicio /generate_path para trazar la ruta entre waypoints." },
-          { "node": "uuv_navigation/los", "text": "los (line of sight) pedía la ruta a /generate_path, atendía la acción /waypoints y publicaba /pose_objetivo." },
-          { "node": "uuv_control/asmc", "text": "asmc calculaba las fuerzas (/forces). En gazebo_launch.py el modelo dinámico (dynamic_model_uuv) que las recibía está comentado." }
+          {
+            "node": "uuv_mission/mission_handler",
+            "text": "En el sistema anterior, mission_handler leía la misión y publicaba los waypoints y el objetivo de cada tarea."
+          },
+          {
+            "node": "uuv_navigation/path_generator",
+            "text": "path_generator ofrecía el servicio /generate_path para trazar la ruta entre waypoints."
+          },
+          {
+            "node": "uuv_navigation/los",
+            "text": "los (line of sight) pedía la ruta a /generate_path, atendía la acción /waypoints y publicaba /pose_objetivo."
+          },
+          {
+            "node": "uuv_control/asmc",
+            "text": "asmc calculaba las fuerzas (/forces). En gazebo_launch.py el modelo dinámico (dynamic_model_uuv) que las recibía está comentado."
+          }
+        ]
+      }
+    },
+    "panorama": [
+      {
+        "seccion": "mision",
+        "titulo": "Misión",
+        "texto": "Decide a dónde ir y qué hacer"
+      },
+      {
+        "seccion": "navegacion",
+        "titulo": "Navegación",
+        "texto": "Sabe dónde está el sub"
+      },
+      {
+        "seccion": "control",
+        "titulo": "Control",
+        "texto": "Calcula las fuerzas para mover el sub"
+      },
+      {
+        "seccion": "hardware",
+        "titulo": "Thrusters",
+        "texto": "Arduino y los 6 motores que empujan el sub"
+      }
+    ],
+    "secciones": {
+      "vision": {
+        "tour": [
+          {
+            "node": "uuv_vision/picture",
+            "text": "picture recibe la imagen de /camera/right (o /camera/low_res) y la entrega cuando alguien llama al servicio /take_picture. Si no llegan fotos, prueba: ros2 service call /take_picture std_srvs/srv/Trigger"
+          },
+          {
+            "node": "uuv_vision/gate_analizer",
+            "text": "gate_analizer pide la foto, detecta la compuerta y responde por /GateService. Los otros *_analizer (navigation, search, octagon, pivot_align) siguen el mismo patrón, cada uno con su servicio. Ojo: el detector siempre devuelve gate."
+          },
+          {
+            "node": "uuv_mission/mission_handler_3",
+            "text": "En sim-competencia, mission_handler_3 llama al servicio de la tarea y publica el objetivo en /pose_objetivo. Para ver si llega: ros2 topic echo /pose_objetivo"
+          },
+          {
+            "node": "uuv_mission/instruction_handler",
+            "text": "En el Jetson (y en sim-secuencia) instruction_handler hace ese mismo papel: manda el objetivo por /pose_objetivo. Tras la misión siguen asmc (lee /pose_objetivo y publica /forces) y thrust_allocator (reparte /forces entre los motores): si el sub no se mueve tras detectar, revisa la sección Control."
+          }
         ]
       }
     }
@@ -35,7 +110,11 @@
     "summary": "Proyecto ficticio con el que se probaron las herramientas de documentación.",
     "tagline": "Proyecto de prueba",
     "novedadesNota": "Por ahora este repo es una copia de prueba del original, así que todos los cambios aparecen con el mismo autor.",
-    "theme": { "accent": "#8B9CF6", "deep": "#6366F1", "warm": "#F0900D" },
+    "theme": {
+      "accent": "#8B9CF6",
+      "deep": "#6366F1",
+      "warm": "#F0900D"
+    },
     "repo": "cyuxSz/docs-lab-proyecto-x",
     "branch": "main"
   }
