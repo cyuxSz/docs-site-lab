@@ -72,8 +72,6 @@ test("CSS: reglas de los paneles, oculto en presentación y sin colores fijos nu
 });
 
 test("el resalte actualiza las refs y repinta en el mismo efecto; resumen anunciado", () => {
-  assert.match(TSX, /resalteRef\.current = resalte;\s*ladosRef\.current = [^
-]*
-\s*sigma\.current\?\.refresh/);
+  assert.match(TSX, /resalteRef\.current = resalte;\s*ladosRef\.current = [^\n]*\n\s*sigma\.current\?\.refresh/);
   assert.match(TSX, /className="rg-comparar-resumen" role="status" aria-live="polite"/);
 });
