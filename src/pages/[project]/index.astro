@@ -36,7 +36,7 @@ const statusOf = (pkg: string) => {
 {sinConstruir ? (
   <Base title={`${p.name} · VantTec Docs`} description={p.summary}>
     <div class="container">
-      <main id="contenido" class="estado-pagina">
+      <main id="contenido" class="estado-pagina" data-pagefind-ignore="all">
         <h1>{p.name}</h1>
         <EstadoProyecto p={resumen} builtAt={builtAt} />
         <p><a href="/">← Volver al inicio</a></p>
