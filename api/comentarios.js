@@ -3,17 +3,12 @@
 //   SESSION_SECRET                                   el mismo que usa middleware.js (verifica la cookie docs_session)
 //   KV_REST_API_URL, KV_REST_API_TOKEN               Upstash Redis (los crea la integración de Vercel)
 //   o UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
-import { readFileSync } from "node:fs";
+// projects.json va como import estático para que el bundler de Vercel lo incluya en la función.
+import proyectos from "../projects.json" with { type: "json" };
 import { crearHandler } from "../lib/comentarios-core.mjs";
 
 let handler;
-function obtener() {
-  if (!handler) {
-    const proyectos = JSON.parse(readFileSync(new URL("../projects.json", import.meta.url), "utf8"));
-    handler = crearHandler({ env: process.env, proyectos });
-  }
-  return handler;
-}
+const obtener = () => (handler ??= crearHandler({ env: process.env, proyectos }));
 
 const delegar = (request) => obtener()(request);
 export const GET = delegar;
