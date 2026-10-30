@@ -112,6 +112,8 @@ function ComboNodo({ id, etiqueta, items, etiquetaValor, onElegir }: { id: strin
   const [texto, setTexto] = useState(etiquetaValor);
   const [abierto, setAbierto] = useState(false);
   const [idx, setIdx] = useState(0);
+  const valorRef = useRef(etiquetaValor);
+  valorRef.current = etiquetaValor;
   useEffect(() => setTexto(etiquetaValor), [etiquetaValor]);
   const res = useMemo(() => filtrarBusqueda(items, texto), [items, texto]);
   const lista = abierto && texto.trim() !== "" && texto !== etiquetaValor;
@@ -151,7 +153,7 @@ function ComboNodo({ id, etiqueta, items, etiquetaValor, onElegir }: { id: strin
         value={texto}
         onChange={(e) => { setTexto(e.target.value); setAbierto(true); setIdx(0); }}
         onKeyDown={tecla}
-        onBlur={() => { setAbierto(false); setTexto(etiquetaValor); }}
+        onBlur={() => { setAbierto(false); requestAnimationFrame(() => setTexto(valorRef.current)); }}
       />
       <ul className="rg-combo-lista" id={listaId} role="listbox" aria-label={`Resultados de ${etiqueta.toLowerCase()}`} hidden={!lista || res.length === 0}>
         {res.map((it, i) => (
@@ -640,6 +642,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   }, [stageHeight, fs, present]);
 
   useEffect(() => {
+    // Las refs se actualizan antes de repintar, en el mismo efecto, para que los reducers lean el valor nuevo.
+    resalteRef.current = resalte;
+    ladosRef.current = comparacion?.lado ?? null;
     sigma.current?.refresh({ skipIndexation: true });
   }, [selected, hovered, tourStep, secStep, planOn, resalte, comparacion]);
 
@@ -803,8 +808,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (!data || data.configs.length < 2) return;
     prepararModo();
     setCamino(null);
-    const primera = data.configs.find((c) => !c.legado) ?? data.configs[0];
-    setComparar([primera.id, data.configs.find((c) => c.id !== primera.id)!.id]);
+    const vigentes = data.configs.filter((c) => !c.legado);
+    const primera = vigentes[0] ?? data.configs[0];
+    const segunda = vigentes.find((c) => c.id !== primera.id) ?? data.configs.find((c) => c.id !== primera.id)!;
+    setComparar([primera.id, segunda.id]);
   };
   const entrarCamino = () => {
     prepararModo();
@@ -1386,7 +1393,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             ))}
             <button type="button" className="rg-tool" onClick={salirComparar}>Salir de comparar</button>
           </div>
-          <p className="rg-comparar-resumen" aria-live="polite">{textoResumen(comparacion.resumen, nombreConfig(comparar[0]), nombreConfig(comparar[1]))}</p>
+          <p className="rg-comparar-resumen" role="status" aria-live="polite">{textoResumen(comparacion.resumen, nombreConfig(comparar[0]), nombreConfig(comparar[1]))} (nodos y topics)</p>
           <ul className="rg-comparar-leyenda" aria-label="Leyenda de la comparación">
             {(["a", "b", "ambas"] as const).map((l) => {
               const est = estiloComparar(l);
@@ -1441,7 +1448,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
                 {ruta.pasos.map((id) => (
                   <li key={id}>
                     <button type="button" className="rg-link" onClick={() => irA(id)}>{nodeById.get(id)?.label ?? id}</button>
-                    <span className="rg-comparar-tipo">{TIPO_PASO[nodeById.get(id)?.kind ?? "node"]}</span>
+                    <span className="rg-comparar-tipo">{TIPO_PASO[nodeById.get(id)?.kind ?? "node"] ?? nodeById.get(id)?.kind}</span>
                   </li>
                 ))}
               </ol>

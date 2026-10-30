@@ -70,3 +70,10 @@ test("CSS: reglas de los paneles, oculto en presentación y sin colores fijos nu
   const reglas = CSS.split("}").filter((r) => r.includes(".rg-comparar") || r.includes(".rg-camino"));
   for (const r of reglas) assert.doesNotMatch(r, /#[0-9a-f]{3,8}\b/i, `color fijo en: ${r.trim().slice(0, 60)}`);
 });
+
+test("el resalte actualiza las refs y repinta en el mismo efecto; resumen anunciado", () => {
+  assert.match(TSX, /resalteRef\.current = resalte;\s*ladosRef\.current = [^
+]*
+\s*sigma\.current\?\.refresh/);
+  assert.match(TSX, /className="rg-comparar-resumen" role="status" aria-live="polite"/);
+});
