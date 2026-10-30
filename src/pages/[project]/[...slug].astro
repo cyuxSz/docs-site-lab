@@ -4,6 +4,7 @@ import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
 import RutasRol from "../../components/RutasRol.astro";
+import Comentarios from "../../components/Comentarios.astro";
 import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_LABEL } from "../../lib/data";
 import { isRestricted } from "../../../access.config.js";
 import { TYPE_LABEL } from "../../lib/labels";
@@ -111,6 +112,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             {next ? <a class="next" href={next.route} rel="next" data-astro-prefetch><span>Siguiente →</span><strong>{next.label}</strong></a> : <span />}
           </nav>
         )}
+        <Comentarios pagina={route} />
         {rutasDePagina.length > 0 && (
           <aside class="ruta-paso" hidden data-pagefind-ignore="all" aria-label="Ruta de lectura" data-proyecto={p.id} data-page={entry.data.path} data-rutas={JSON.stringify(rutasDePagina)}></aside>
         )}
@@ -174,5 +176,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
     import "../../scripts/rutas";
     import "../../scripts/personal";
     import "../../scripts/lectura";
+    import "../../scripts/comentarios";
   </script>
 </Base>
