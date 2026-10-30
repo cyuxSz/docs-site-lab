@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Portal de documentación multi-proyecto (prueba) con login de GitHub",
   "engines": {
-    "node": "24.x"
+    "node": "26.x"
   },
   "scripts": {
     "fetch": "node tools/fetch.mjs",
