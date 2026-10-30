@@ -32,6 +32,7 @@ const restricted = isRestricted(p.id);
 // Índice "En esta página": h2 y, sangrados, h3.
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
+const historial = p.pageList.find((x) => x.path === entry.data.path)?.historial ?? [];
 const rosNodes = pkg && p.ros ? p.ros.nodes.filter((n) => n.category === "ros2_node" && n.package === pkg) : [];
 // Encabezado al estilo de vanttec.com: sección en mayúsculas espaciadas sobre el título de la página.
 const section = sections(p.pageList).find((s) => s.pages.some((x) => x.route === route))?.label;
@@ -136,7 +137,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
               {entry.data.author && <span class="muted"> · {entry.data.author}</span>}
             </dd>
           </div>
-          <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>
+          {entry.data.claims > 0 && <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>}
           {entry.data.owner && <div><dt>Responsable</dt><dd>{entry.data.owner}</dd></div>}
           <div><dt>Fuente</dt><dd><a href={entry.data.source}>Ver en GitHub</a></dd></div>
           <div>
@@ -159,6 +160,23 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             </div>
           )}
         </dl>
+        {historial.length > 0 && (
+          <details class="historial">
+            <summary>Historial</summary>
+            <ol>
+              {historial.map((c) => (
+                <li>
+                  <span>{c.mensaje}</span>
+                  <span class="hist-meta"><time datetime={c.fecha}>{fmtDate(c.fecha)}</time> · {c.autor}</span>
+                  <span class="hist-enlaces">
+                    <a href={c.url} aria-label={`Commit ${c.sha}`}><code>{c.corto}</code></a>
+                    <a href={c.diff} aria-label={`Ver diff del commit ${c.corto}`}>ver diff</a>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
         {toc.length > 1 && (
           <nav class="toc-box" aria-labelledby="toc-title">
             <p class="toc-title" id="toc-title">En esta página</p>
