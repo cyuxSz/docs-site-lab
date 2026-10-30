@@ -389,8 +389,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           if (!visible(nodeById.get(s)) || !visible(nodeById.get(t))) return { ...attrs, hidden: true };
           if (attrs.plan) {
             if (!planRef.current) return { ...attrs, hidden: true };
-            // Etiqueta siempre visible: el plan se distingue por texto, no solo por color.
-            return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: etiquetaPlan(attrs.label), forceLabel: true, zIndex: 1 };
+            // Etiqueta solo al enfocar (como el resto de aristas); el "plan · " distingue por texto, no solo por color.
+            return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: etiquetaPlan(attrs.label), zIndex: 1 };
           }
           const focus = focusOf();
           // El nombre del topic solo aparece en las flechas del nodo enfocado, para no llenar el dibujo de texto.

@@ -3,7 +3,7 @@
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import type { ProjectData } from "./data";
-import { separarPlan } from "./plan.ts";
+import { separarPlan, acomodarPlan } from "./plan.ts";
 import { enlaceInterno, recorridoConfig } from "./legado.ts";
 import { recorridoSeccion, seccion, seccionesDe } from "./secciones.ts";
 
@@ -252,7 +252,10 @@ function layoutAll(nodes: GraphNode[], edges: GraphEdge[], groups: GraphCategory
       const ids = new Set(kept.map((n) => n.id));
       for (const e of plan.flow) ids.add(e.source).add(e.target);
       const todos = [...nodes, ...plan.nodes].filter((n) => ids.has(n.id) && owners.has(n.kind));
-      for (const [id, xy] of layered(todos, [...(flow ?? []), ...plan.flow])) {
+      const soloPlan = new Set(plan.nodes.map((n) => n.id));
+      const lbl = new Map(todos.map((n) => [n.id, n.label]));
+      const colocados = acomodarPlan(layered(todos, [...(flow ?? []), ...plan.flow]), soloPlan, (id) => lbl.get(id) ?? id);
+      for (const [id, xy] of colocados) {
         const n = todos.find((x) => x.id === id)!;
         n.pos = { ...n.pos, [`capas:plan:${key}`]: xy };
       }

@@ -49,3 +49,35 @@ export function notaPlan(n: { plan?: boolean; soloPlan?: boolean }): string | nu
     ? "Planeado, no corre hoy: forma parte de la arquitectura objetivo y todavía no está en el código."
     : "También forma parte de la arquitectura objetivo.";
 }
+
+// Posiciones de la vista plan: los nodos solo-plan van a una banda propia arriba y, en cada fila, los nodos
+// consecutivos se separan según la longitud de su etiqueta para que no se encimen.
+const UNIDAD_POR_CHAR = 0.32;
+const SEP_BASE = 10;
+const BANDA_PLAN = 6;
+const sepMin = (a: string, b: string) => Math.max(SEP_BASE, ((a.length + b.length) / 2) * UNIDAD_POR_CHAR + 2);
+
+function espaciarFila(ids: string[], pos: Map<string, [number, number]>, label: (id: string) => string) {
+  const fila = [...ids].sort((a, b) => pos.get(a)![0] - pos.get(b)![0] || a.localeCompare(b));
+  for (let i = 1; i < fila.length; i++) {
+    const prev = pos.get(fila[i - 1])!;
+    const cur = pos.get(fila[i])!;
+    const x = Math.max(cur[0], prev[0] + sepMin(label(fila[i - 1]), label(fila[i])));
+    pos.set(fila[i], [Math.round(x * 100) / 100, cur[1]]);
+  }
+}
+
+export function acomodarPlan(pos: Map<string, [number, number]>, soloPlan: Set<string>, label: (id: string) => string) {
+  const out = new Map(pos);
+  const reales = [...out.keys()].filter((id) => !soloPlan.has(id));
+  const planes = [...out.keys()].filter((id) => soloPlan.has(id));
+  const filas = new Map<number, string[]>();
+  for (const id of reales) filas.set(out.get(id)![1], [...(filas.get(out.get(id)![1]) ?? []), id]);
+  for (const ids of filas.values()) espaciarFila(ids, out, label);
+  if (planes.length) {
+    const top = Math.max(0, ...reales.map((id) => out.get(id)![1])) + BANDA_PLAN;
+    for (const id of planes) out.set(id, [out.get(id)![0], top]);
+    espaciarFila(planes, out, (id) => `${label(id)} (plan)`);
+  }
+  return out;
+}
