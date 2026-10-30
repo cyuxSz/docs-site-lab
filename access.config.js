@@ -11,14 +11,22 @@ const lower = (s) => String(s).toLowerCase();
 
 export const isRestricted = (id) => Object.keys(RESTRICTED).some((k) => lower(k) === lower(id ?? ""));
 
-// Función pura: ¿puede este login ver esta ruta? Solo restringe el primer segmento de la ruta.
+// Función pura: ¿puede este login ver esta ruta? Decodifica la ruta, separa por / y \, descarta segmentos vacíos
+// y ".", y restringe según el primer segmento. Con ".." o un % mal formado falla cerrado: se deniega si
+// cualquier segmento coincide con un proyecto restringido.
 export function canAccess(login, pathname) {
-  const raw = String(pathname ?? "").split("/").find(Boolean) ?? "";
-  let seg = raw;
+  const path = String(pathname ?? "");
+  let decoded = path;
+  let ok = true;
   try {
-    seg = decodeURIComponent(raw);
-  } catch {}
-  const id = Object.keys(RESTRICTED).find((k) => lower(k) === lower(seg));
+    decoded = decodeURIComponent(path);
+  } catch {
+    ok = false;
+  }
+  const segs = decoded.split(/[/\\]/).filter((s) => s && s !== ".");
+  const match = (s) => Object.keys(RESTRICTED).find((k) => lower(k) === lower(s));
+  const strict = !ok || segs.includes("..");
+  const id = strict ? segs.map(match).find(Boolean) : match(segs[0] ?? "");
   if (!id) return true;
   if (!login) return false;
   return RESTRICTED[id].some((l) => lower(l) === lower(login));
