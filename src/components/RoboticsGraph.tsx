@@ -125,6 +125,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const miniT = useRef<Encuadre | null>(null);
   const miniDrag = useRef(false);
   const presBtn = useRef<HTMLButtonElement>(null);
+  const panoramaBtn = useRef<HTMLButtonElement>(null);
   const presFs = useRef(false);
   const wasPresent = useRef(false);
   const togglePresentRef = useRef<() => void>(() => {});
@@ -772,7 +773,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </label>
         )}
         {data?.view === "ros" && data.panorama?.length ? (
-          <button type="button" className="rg-tour-btn" aria-pressed={panoramaOn} onClick={() => setPanoramaOn((v) => !v)}>Panorama</button>
+          <button ref={panoramaBtn} type="button" className="rg-tour-btn" aria-pressed={panoramaOn} onClick={() => setPanoramaOn((v) => !v)}>Panorama</button>
         ) : null}
         {data?.view === "ros" && config === "all" && (
           <label className="rg-check">
@@ -859,7 +860,13 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
 
       {panoramaOn && data?.view === "ros" && data.panorama?.length ? (
-        <nav className="rg-panorama" aria-label="Panorama del sistema" onKeyDown={(e) => { if (e.key === "Escape") setPanoramaOn(false); }}>
+        <nav className="rg-panorama" aria-label="Panorama del sistema" onKeyDown={(e) => {
+          // Esc cierra solo el Panorama (no la presentación) y devuelve el foco a su botón.
+          if (e.key !== "Escape") return;
+          e.stopPropagation();
+          setPanoramaOn(false);
+          panoramaBtn.current?.focus();
+        }}>
           <ol>
             {data.panorama.map((c, i) => (
               <li key={c.seccion}>
