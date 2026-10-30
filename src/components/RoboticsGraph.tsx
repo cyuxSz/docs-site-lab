@@ -16,6 +16,7 @@ import Graph from "graphology";
 import type Sigma from "sigma";
 import type { GraphData, GraphNode } from "../lib/graph";
 import { almacenSeguro } from "../lib/rutas";
+import { FILTROS_INICIALES, ocultoPorEstado, leerFiltrosUrl, escribirFiltrosUrl, estiloEstado, insignias, GRIS_SIN_USO, type FiltrosEstado } from "../lib/estados";
 import { encuadre, aMinimapa, aGrafo, rectVista, minimapaVisible, claveMinimapa, type Encuadre } from "../lib/minimapa";
 import { claveRecorrido, guardarPaso, pasoGuardado, borrarPaso, textoRetomar, accionTecla } from "../lib/recorrido";
 import { idsConPlan, planDisponible, claveLayout, etiquetaPlan, notaPlan, LEYENDA_PLAN } from "../lib/plan";
@@ -36,9 +37,7 @@ interface Props {
   views: View[];
 }
 
-const STATUS_LABEL: Record<string, string> = { en_uso: "En uso", legado: "Legado", sin_uso: "Sin uso", roto: "Roto", externo: "Externo" };
 const BROKEN = "#EF4444";
-const HIDDEN_BY_DEFAULT = new Set(["legado", "sin_uso"]);
 const OWNERS = new Set(["node", "hardware", "page"]);
 const TOUR_SEEN = "recorrido-visto";
 
@@ -86,11 +85,12 @@ function drawHover(dark: boolean, accent: string) {
 
 function readParams() {
   const q = new URLSearchParams(location.search);
-  return { view: q.get("vista"), config: q.get("config"), node: q.get("node"), seccion: q.get("seccion") };
+  return { view: q.get("vista"), config: q.get("config"), node: q.get("node"), seccion: q.get("seccion"), filtros: leerFiltrosUrl(location.search) };
 }
 
-function writeParams(view: string, config: string, node: string | null, seccion: string | null) {
+function writeParams(view: string, config: string, node: string | null, seccion: string | null, filtros: FiltrosEstado) {
   const q = new URLSearchParams(location.search);
+  escribirFiltrosUrl(q, filtros);
   view === "ros" ? q.delete("vista") : q.set("vista", view);
   config === "all" ? q.delete("config") : q.set("config", config);
   node ? q.set("node", node) : q.delete("node");
@@ -100,13 +100,14 @@ function writeParams(view: string, config: string, node: string | null, seccion:
 }
 
 export default function RoboticsGraph({ projectId, views }: Props) {
-  const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null, seccion: null } : readParams()), []);
+  const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null, seccion: null, filtros: FILTROS_INICIALES } : readParams()), []);
   const [view, setView] = useState(views.find((v) => v.id === initial.view)?.id ?? views[0].id);
   const [data, setData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState(initial.config ?? "all");
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
-  const [showOld, setShowOld] = useState(false);
+  const [filtros, setFiltros] = useState<FiltrosEstado>(initial.filtros);
+  const showOld = filtros.legado || filtros.sinUso;
   const [selected, setSelected] = useState<string | null>(initial.node);
   const [hovered, setHovered] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState<number | null>(null);
@@ -265,12 +266,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     // Con sección: solo su núcleo, canales y contexto (la variante con legado si "mostrar legado" está activo).
     if (secVariant) {
       const inSec = new Set([...secVariant.core, ...secVariant.channels, ...secVariant.context]);
-      for (const n of data.nodes) if (inSec.has(n.id) && !hiddenGroups.has(n.group) && (!capas || OWNERS.has(n.kind))) ids.add(n.id);
+      for (const n of data.nodes) if (inSec.has(n.id) && !hiddenGroups.has(n.group) && !ocultoPorEstado(n, filtros) && (!capas || OWNERS.has(n.kind))) ids.add(n.id);
       return ids;
     }
     const passes = (n: GraphNode) => {
       if (hiddenGroups.has(n.group) || n.soloPlan) return false;
-      if (n.kind === "node" && !showOld && config === "all" && HIDDEN_BY_DEFAULT.has(n.status ?? "")) return false;
+      if (config === "all" && ocultoPorEstado(n, filtros)) return false;
       if (config !== "all" && !n.configs.includes(config)) return false;
       return true;
     };
@@ -283,7 +284,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       }
     }
     return ids;
-  }, [data, config, hiddenGroups, showOld, capas, sec, planOn]);
+  }, [data, config, hiddenGroups, filtros, capas, sec, planOn]);
   const visibleRef = useRef(visibleIds);
   visibleRef.current = visibleIds;
   const contextRef = useRef(new Set<string>());
@@ -295,7 +296,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (!data || !container.current) return;
     const g = new Graph({ multi: true, type: "directed" });
     for (const n of data.nodes) {
-      g.addNode(n.id, { x: n.x, y: n.y, size: n.size, label: n.label, color: n.status === "roto" ? BROKEN : groupColor.get(n.group) ?? "#888" });
+      const est = estiloEstado(n.status, groupColor.get(n.group) ?? "#888");
+      g.addNode(n.id, { x: n.x, y: n.y, size: n.size, label: est.prefijo + n.label, color: n.status === "roto" ? BROKEN : est.color });
     }
     const edgeList = capas ? data.flowEdges! : data.edges;
     edgeList.forEach((e, i) => {
@@ -519,8 +521,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   }, [selected, hovered, tourStep, secStep, planOn]);
 
   useEffect(() => {
-    if (data) writeParams(view, config, selected, sec?.id ?? null);
-  }, [view, config, selected, data, sec]);
+    if (data) writeParams(view, config, selected, sec?.id ?? null, filtros);
+  }, [view, config, selected, data, sec, filtros]);
 
   // Al elegir un nodo (también desde ?node=) la cámara lo centra. En el recorrido no se mueve: se ve todo el camino
   // y solo cambia lo resaltado.
@@ -866,7 +868,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       vista: view,
       config,
       seccion: sec?.id ?? null,
-      legado: showOld,
+      legado: filtros.legado,
+      sinUso: filtros.sinUso,
       plan: showPlan,
       ocultos: [...hiddenGroups],
       nodo: selected,
@@ -894,7 +897,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     setSecStep(null);
     setSeccionId(a.seccion);
     setConfig(a.config);
-    setShowOld(a.legado);
+    setFiltros({ legado: a.legado, sinUso: a.sinUso });
     setShowPlan(a.plan);
     setHiddenGroups(new Set(a.ocultos));
     setSelected(a.nodo);
@@ -1033,9 +1036,10 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           <div className="rg-menu" onKeyDown={teclaMenu("vista")}>
             <button ref={(el) => { menuBtns.current.vista = el; }} id={menuBtnId("vista")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vista"} aria-controls={menuPanelId("vista")} onClick={() => alternarMenu("vista")}>Vista ▾</button>
             <div className="rg-menu-panel" role="menu" id={menuPanelId("vista")} aria-labelledby={menuBtnId("vista")} data-menu="vista" hidden={menu !== "vista"}>
-              {data.view === "ros" && config === "all" && (
-                <button type="button" role="menuitemcheckbox" aria-checked={showOld} className="rg-menu-item" {...rv("legado")} onClick={() => setShowOld((v) => !v)}>Mostrar legado y sin uso</button>
-              )}
+              {data.view === "ros" && config === "all" && (<>
+                <button type="button" role="menuitemcheckbox" aria-checked={filtros.legado} className="rg-menu-item" {...rv("legado")} onClick={() => setFiltros((f) => ({ ...f, legado: !f.legado }))}>Mostrar legado</button>
+                <button type="button" role="menuitemcheckbox" aria-checked={filtros.sinUso} className="rg-menu-item" {...rv("sinuso")} onClick={() => setFiltros((f) => ({ ...f, sinUso: !f.sinUso }))}>Mostrar sin uso</button>
+              </>)}
               {data.view === "ros" && planDisponible({ planFlow: planFlow.length, seccion: sec?.id ?? null, config: configObj }) && (
                 <button type="button" role="menuitemcheckbox" aria-checked={showPlan} className="rg-menu-item" {...rv("plan")} onClick={() => setShowPlan((v) => !v)}>Mostrar plan (arquitectura objetivo)</button>
               )}
@@ -1118,6 +1122,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
               {fsOk && <button type="button" role="menuitem" className="rg-menu-item" {...rv("fs")} onClick={accion(toggleFullscreen)}>{fs ? "Salir de pantalla completa" : "Pantalla completa"}</button>}
               <button type="button" role="menuitem" className="rg-menu-item" aria-disabled={ready === 0} {...rv("png")} onClick={accion(() => { if (ready !== 0) exportPng(); })}>Exportar PNG</button>
               <button type="button" role="menuitem" className="rg-menu-item" {...rv("enlace")} onClick={accion(() => { void copyLink(); })}>Copiar enlace</button>
+              {data.view === "ros" && <a role="menuitem" className="rg-menu-item" href={`/${projectId}/limpieza/`} {...rv("limpieza")}>Limpieza del repo</a>}
             </div>
           </div>
         )}
@@ -1137,6 +1142,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             </button>
           ))}
           {data.view === "ros" && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: BROKEN }} aria-hidden="true" />Roto</span>}
+          {data.view === "ros" && <span className="rg-chip rg-chip-legado rg-static" title="Solo lo lanza el sistema anterior"><span className="rg-reloj" aria-hidden="true">◷</span>Legado</span>}
+          {data.view === "ros" && <span className="rg-chip rg-chip-sin_uso rg-static" title="Ningún launch file lo lanza"><span className="rg-dot" style={{ background: GRIS_SIN_USO }} aria-hidden="true" />Sin uso</span>}
           {planOn && <span className="rg-chip rg-static"><span className="rg-dot rg-dot-plan" />{LEYENDA_PLAN}</span>}
           {sec && contextRef.current.size > 0 && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} />En gris: lo que conecta con la sección</span>}
         </div>
@@ -1148,7 +1155,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           {configObj.enlace && <a href={configObj.enlace}>Ver discrepancias</a>}
         </p>
       )}
-      {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
+      {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado» o «Mostrar sin uso» para verlos.</p>}
 
       {panoramaOn && data?.view === "ros" && data.panorama?.length ? (
         <nav className="rg-panorama" aria-label="Panorama del sistema" onKeyDown={(e) => {
@@ -1206,7 +1213,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
                 <strong className="rg-title">{node.label}</strong>
                 <span className="rg-sub">
                   {data?.groups.find((g) => g.id === node.group)?.label}
-                  {node.status && <span className={`badge badge-${node.status}`}>{STATUS_LABEL[node.status]}</span>}
+                  <span className="insignias">{insignias({ status: node.status, plan: node.plan, soloPlan: node.soloPlan }).map((b) => <span key={b.clase} className={`badge ${b.clase}`} title={b.titulo}>{b.texto}</span>)}</span>
                 </span>
               </div>
               <button onClick={() => setSelected(null)} aria-label="Cerrar">×</button>

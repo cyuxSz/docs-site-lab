@@ -4,7 +4,8 @@ import Base from "../../layouts/Base.astro";
 import RoboticsGraph from "../../components/RoboticsGraph.tsx";
 import { isRestricted } from "../../../access.config.js";
 import { separarPlan } from "../../lib/plan";
-import { builtProjects, project as load, projectNav, STATUS_LABEL } from "../../lib/data";
+import { builtProjects, project as load, projectNav } from "../../lib/data";
+import { insignias } from "../../lib/estados";
 
 export function getStaticPaths() {
   return builtProjects().map((p) => ({ params: { project: p.id } }));
@@ -63,7 +64,7 @@ const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label
                 <tr>
                   <td><a href={`?node=${encodeURIComponent(n.id)}`}><code>{n.label}</code></a></td>
                   <td><code>{n.package}</code></td>
-                  <td><span class={`badge badge-${n.status}`}>{STATUS_LABEL[n.status ?? ""]}</span></td>
+                  <td><span class="insignias">{insignias({ status: n.status, plan: n.plan }).map((b) => <span class={`badge ${b.clase}`} title={b.titulo}>{b.texto}</span>)}</span></td>
                   <td>{n.pubs.map((t) => <code style="display:block">{t}</code>)}</td>
                   <td>{n.subs.map((t) => <code style="display:block">{t}</code>)}</td>
                   <td>{n.configs.map(configLabel).join(", ")}</td>

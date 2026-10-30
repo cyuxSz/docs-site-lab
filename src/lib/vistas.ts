@@ -14,6 +14,7 @@ export interface EstadoVista {
   config: string;
   seccion: string | null;
   legado: boolean;
+  sinUso: boolean;
   plan: boolean;
   ocultos: string[];
   nodo: string | null;
@@ -44,11 +45,14 @@ function estadoValido(raw: unknown): EstadoVista | null {
   if (e.nodo !== null && !texto(e.nodo)) return null;
   if (typeof e.legado !== "boolean" || typeof e.plan !== "boolean") return null;
   if (!Array.isArray(e.ocultos) || !e.ocultos.every(texto)) return null;
+  const sinUso = e.sinUso === undefined ? e.legado : e.sinUso;
+  if (typeof sinUso !== "boolean") return null;
   const out: EstadoVista = {
     vista: e.vista,
     config: e.config,
     seccion: e.seccion as string | null,
     legado: e.legado,
+    sinUso,
     plan: e.plan,
     ocultos: [...(e.ocultos as string[])],
     nodo: e.nodo as string | null,
