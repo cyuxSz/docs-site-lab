@@ -14,6 +14,7 @@ export async function getStaticPaths() {
 const p = load(Astro.params.project!);
 const f = filasLimpieza(p.ros, p.repoUrl, p.sha);
 const total = f.sinUso.length + f.legado.length;
+const nombreBase = (a: string) => a.split(/[\/]/).filter(Boolean).pop() ?? a;
 const route = `/${p.id}/limpieza/`;
 const secciones = [
   { clave: "sinuso", titulo: "Sin uso (candidatos a borrar)", filas: f.sinUso, legado: false, vacio: "No hay nodos sin uso." },
@@ -51,7 +52,7 @@ const secciones = [
               <p class="hint">{s.vacio}</p>
             ) : (
               <div class="table-wrap">
-                <table class="data-table">
+                <table class="data-table limpieza-tabla">
                   <thead>
                     <tr>
                       <th scope="col">Revisado</th>
@@ -65,18 +66,18 @@ const secciones = [
                   <tbody>
                     {s.filas.map((r) => (
                       <tr data-fila={JSON.stringify(r)}>
-                        <td><input type="checkbox" data-id={r.id} aria-label={`Revisado: ${r.paquete}/${r.ejecutable}`} /></td>
-                        <td><code>{r.paquete}</code></td>
-                        <td><code>{r.ejecutable}</code></td>
-                        <td>{r.url ? <a href={r.url} rel="noopener noreferrer" target="_blank"><code>{r.archivo}</code></a> : <code>{r.archivo || "—"}</code>}</td>
+                        <td data-label="Revisado"><input type="checkbox" data-id={r.id} aria-label={`Revisado: ${r.paquete}/${r.ejecutable}`} /></td>
+                        <td data-label="Paquete"><code>{r.paquete}</code></td>
+                        <td data-label="Ejecutable"><code>{r.ejecutable}</code></td>
+                        <td data-label="Archivo">{r.url ? <a href={r.url} rel="noopener noreferrer" target="_blank" title={r.archivo} aria-label={`Abrir ${r.archivo}`}><code>{nombreBase(r.archivo)}</code></a> : <code title={r.archivo}>{r.archivo ? nombreBase(r.archivo) : "—"}</code>}</td>
                         {s.legado && (
-                          <td>
+                          <td data-label="Retirar">
                             {r.configs.map((c) => <div>Config: {c}</div>)}
-                            {r.launches.map((l) => <code style="display:block">{l}</code>)}
+                            {r.launches.map((l) => <code class="limpieza-ruta" title={l}>{l}</code>)}
                             {r.configs.length === 0 && r.launches.length === 0 && "—"}
                           </td>
                         )}
-                        <td>{r.motivo}</td>
+                        <td data-label="Motivo" class="limpieza-motivo">{r.motivo}</td>
                       </tr>
                     ))}
                   </tbody>
