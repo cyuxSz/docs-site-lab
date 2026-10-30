@@ -5,7 +5,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../src/styles/global.css", import.meta.url), "utf8");
-const regla = (sel) => css.match(new RegExp("(?:^|\n)" + sel.replace(/\./g, "\.") + "\s*\{([^}]*)\}"))?.[1] ?? "";
+const regla = (sel) => {
+  const i = css.indexOf(`\n${sel} {`);
+  return i < 0 ? "" : css.slice(i, css.indexOf("}", i));
+};
 
 test(".ptabs contiene a los hijos absolutos (position: relative + overflow-x)", () => {
   const r = regla(".ptabs");
