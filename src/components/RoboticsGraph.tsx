@@ -120,10 +120,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [miniOn, setMiniOn] = useState(false);
   const [saved, setSaved] = useState<number | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  const [panoramaOn, setPanoramaOn] = useState(false);
   const mini = useRef<HTMLCanvasElement>(null);
   const miniT = useRef<Encuadre | null>(null);
   const miniDrag = useRef(false);
   const presBtn = useRef<HTMLButtonElement>(null);
+  const panoramaBtn = useRef<HTMLButtonElement>(null);
   const presFs = useRef(false);
   const wasPresent = useRef(false);
   const togglePresentRef = useRef<() => void>(() => {});
@@ -770,6 +772,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             </select>
           </label>
         )}
+        {data?.view === "ros" && data.panorama?.length ? (
+          <button ref={panoramaBtn} type="button" className="rg-tour-btn" aria-pressed={panoramaOn} onClick={() => setPanoramaOn((v) => !v)}>Panorama</button>
+        ) : null}
         {data?.view === "ros" && config === "all" && (
           <label className="rg-check">
             <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} /> Mostrar legado y sin uso
@@ -853,6 +858,28 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         </p>
       )}
       {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
+
+      {panoramaOn && data?.view === "ros" && data.panorama?.length ? (
+        <nav className="rg-panorama" aria-label="Panorama del sistema" onKeyDown={(e) => {
+          // Esc cierra solo el Panorama (no la presentación) y devuelve el foco a su botón.
+          if (e.key !== "Escape") return;
+          e.stopPropagation();
+          setPanoramaOn(false);
+          panoramaBtn.current?.focus();
+        }}>
+          <ol>
+            {data.panorama.map((c, i) => (
+              <li key={c.seccion}>
+                {i > 0 && <span className="rg-panorama-flecha" aria-hidden="true">→</span>}
+                <button type="button" className="rg-panorama-caja" onClick={() => { pickSection(c.seccion); setPanoramaOn(false); }}>
+                  <strong>{c.titulo}</strong>
+                  <span>{c.texto}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      ) : null}
 
       <div className="rg-stage" style={stageHeight ? { height: stageHeight } : undefined}>
         <div ref={container} className="rg-canvas" style={{ pointerEvents: active ? "auto" : "none" }} role="img" aria-label={`Grafo: ${data?.title ?? ""}. La tabla de abajo tiene la misma información en texto.`} />
