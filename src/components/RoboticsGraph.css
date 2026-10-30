@@ -1,13 +1,13 @@
 .rg { display: flex; flex-direction: column; gap: 10px; }
 /* Una sola fila en escritorio (el buscador es compacto y lo demás vive en menús); en teléfono hace wrap ordenado. */
-.rg-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 14px; }
+.rg-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px; font-size: 14px; }
 .rg-tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--surface); }
 .rg-tabs button { border: 0; background: none; color: var(--muted); font: inherit; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
 .rg-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
 .rg-field { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .rg-field select { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; max-width: 60vw; }
 .rg-check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
-.rg-search input { width: 10rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
+.rg-search input { width: 11rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
 .rg-tour-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
 
 /* Diseño A: recorrido guiado. */
@@ -202,4 +202,11 @@ html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
   .rg-menu-panel { left: 0; right: 0; min-width: 0; max-width: none; }
   .rg-combo { flex: 1 1 100%; }
   .rg-combo-lista { right: 0; min-width: 0; max-width: none; }
+}
+
+/* Escritorio: etiquetas de los selects solo para lectores de pantalla, para que la barra quepa en una fila. */
+@media (min-width: 761px) {
+  .rg-field > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .rg-field select { max-width: 11rem; text-overflow: ellipsis; }
+  .rg-tabs button { padding: 5px 9px; }
 }
