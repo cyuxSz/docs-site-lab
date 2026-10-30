@@ -582,7 +582,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .comentarios-respuestas { margin-top: 12px; margin-inline-start: 16px; padding-inline-start: 12px; border-inline-start: 2px solid var(--line); }
 .comentario { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); }
 .comentario.resuelto { opacity: .6; }
-.comentario.borrado .comentario-texto { color: var(--muted); font-style: italic; }
+.comentario.borrado > .comentario-texto { color: var(--muted); font-style: italic; }
 .comentario-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
 .comentario-autor { color: var(--text); font-weight: 600; }
 .comentario-texto { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
