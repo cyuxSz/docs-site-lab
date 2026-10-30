@@ -33,7 +33,7 @@ Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acces
 Los enlaces viejos `/<id>/#/p/<ruta>.md` se redirigen en el navegador; `/<id>/wiki/` y `/<id>/content/*` con `vercel.json`.
 
 ## Proyectos restringidos
-`access.config.js` es la única fuente de verdad (`RESTRICTED`, `isRestricted`, `canAccess`); lo importan `middleware.js` y el build. Hoy `proyecto-x` solo lo ve `cyuxSz`: los demás miembros reciben un 403 "Este proyecto es privado". Su contenido no entra al índice de Pagefind, y su tarjeta en la portada solo muestra nombre e insignia.
+`access.config.js` es la única fuente de verdad (`RESTRICTED`, `isRestricted`, `canAccess`); lo importan `middleware.js` y el build. Dentro del portal, hoy `proyecto-x` solo lo ve `cyuxSz`: los demás miembros reciben un 403 "Este proyecto es privado". Su contenido no entra al índice de Pagefind, y su tarjeta en la portada solo muestra nombre e insignia. **Ojo:** esto solo protege el portal. El repo fuente `cyuxSz/docs-lab-proyecto-x` es público y tiene su propio despliegue en Vercel; para que el contenido sea privado de verdad hay que hacer privado el repo y proteger ese despliegue.
 
 Limitación aceptada: el usuario autorizado pierde la búsqueda dentro de un proyecto restringido (el índice de Pagefind es público para todos los miembros). En Preview los proyectos restringidos responden 403 siempre (no hay login de GitHub), incluso con `PREVIEW_TRUST_VERCEL_AUTH=1`.
 
