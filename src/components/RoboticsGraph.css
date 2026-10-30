@@ -130,3 +130,17 @@
 .rg-keys { color: var(--muted, inherit); font-size: 12px; opacity: .8; }
 html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
 .rg-plan-nota { color: var(--plan); font-size: 0.85em; font-style: italic; border-left: 2px solid var(--plan); padding-left: 0.5rem; margin: 0.4rem 0; }
+
+/* Panorama (nivel 0): Misión → Navegación → Control → Thrusters. */
+.rg-panorama ol { display: flex; align-items: stretch; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.rg-panorama li { display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; }
+.rg-panorama-flecha { color: var(--muted); font-size: 1.2em; flex: none; }
+.rg-panorama-caja { display: flex; flex-direction: column; gap: 4px; flex: 1; align-self: stretch; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.rg-panorama-caja span { color: var(--muted); font-size: 0.9em; }
+.rg-panorama-caja:hover { border-color: var(--accent); }
+.rg-panorama-caja:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .rg-panorama ol { flex-direction: column; }
+  .rg-panorama li { flex-direction: column; align-items: stretch; }
+  .rg-panorama-flecha { transform: rotate(90deg); align-self: center; }
+}
