@@ -639,7 +639,7 @@ html[data-enfoque] .doc-wiki > main { width: 100%; max-width: 860px; margin-inli
   .doc-wiki .sidenav, .doc-wiki .meta { position: fixed; top: 0; bottom: 0; z-index: 40; width: min(320px, 85vw); max-height: none; margin: 0; padding: 16px; overflow-y: auto; background: var(--surface); box-shadow: var(--shadow); visibility: hidden; transition: transform .2s ease, visibility .2s; }
   .doc-wiki .sidenav { left: 0; border: 0; border-inline-end: 1px solid var(--line); border-radius: 0; transform: translateX(-100%); }
   .doc-wiki .meta { right: 0; grid-column: auto; border-inline-start: 1px solid var(--line); transform: translateX(100%); }
-  html[data-cajon="izq"] .doc-wiki .sidenav, html[data-cajon="der"] .doc-wiki .meta { transform: none; visibility: visible; }
+  html[data-cajon="izq"] .doc-wiki .sidenav, html[data-cajon="der"] .doc-wiki .meta { transform: none; visibility: visible; transition: transform .2s ease, visibility 0s; }
   .doc-wiki .sidenav-toggle { display: none; }
   .doc-wiki .sidenav:not(.open) .sidenav-list { display: block; }
   .barras-velo { position: fixed; inset: 0; z-index: 39; display: block; background: color-mix(in srgb, var(--bg) 65%, transparent); }
