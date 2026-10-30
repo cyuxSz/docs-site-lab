@@ -18,8 +18,8 @@ const t = tarjetaEstado(p, builtAt);
   <p>{t.que}</p>
   <h3>Cuándo</h3>
   <p><time datetime={builtAt}>{t.cuando}</time></p>
-  <h3>Qué hacer</h3>
-  <ol>
+  <h3 id="estado-hacer">Qué hacer</h3>
+  <ol aria-labelledby="estado-hacer">
     {t.hacer.map((h) => <li>{h}</li>)}
   </ol>
 </section>

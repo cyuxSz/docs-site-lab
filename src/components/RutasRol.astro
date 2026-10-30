@@ -26,8 +26,8 @@ const { projectId, rutas } = Astro.props;
         {r.pasos.map((s, i) => (
           <li>
             <span class="rutas-check">
-              <input type="checkbox" id={`paso-${r.id}-${i}`} data-i={i} aria-label={`Marcar como leído: ${s.title}`} />
-              <label for={`paso-${r.id}-${i}`}>Leído</label>
+              <input type="checkbox" id={`paso-${r.id}-${i}`} data-i={i} />
+              <label for={`paso-${r.id}-${i}`}>Leído<span class="sr-only"> — marcar como leído: {s.title}</span></label>
             </span>
             <div class="rutas-texto">
               <a href={s.route} data-astro-prefetch>{s.title}</a>
@@ -46,6 +46,14 @@ const { projectId, rutas } = Astro.props;
       </div>
     </section>
   ))}
+  <dialog class="atajos-dialog" id="rutas-reiniciar" aria-labelledby="rutas-reiniciar-titulo" data-pagefind-ignore="all">
+    <div class="atajos-bar"><h2 id="rutas-reiniciar-titulo">Reiniciar ruta</h2></div>
+    <p class="atajos-nota" id="rutas-reiniciar-texto"></p>
+    <div class="atajos-bar">
+      <button type="button" data-reiniciar-ok>Reiniciar</button>
+      <button type="button" data-reiniciar-cancelar>Cancelar</button>
+    </div>
+  </dialog>
 </div>
 <script>
   import "../scripts/rutas";

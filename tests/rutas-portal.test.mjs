@@ -46,7 +46,7 @@ test("src/scripts/rutas.ts: usa la lógica de src/lib/rutas.ts, confirma el rein
   const src = read("src/scripts/rutas.ts");
   assert.match(src, /from\s+["']\.\.\/lib\/rutas(\.ts)?["']/);
   assert.match(src, /almacenSeguro\(/);
-  assert.match(src, /confirm\(/);
+  assert.match(src, /showModal\(/);
   assert.match(src, /Marcar como leído/);
   assert.match(src, /Siguiente: /);
   assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML/);
@@ -81,4 +81,16 @@ test("estilos: .rutas y .ruta-paso usan los tokens del tema, sin colores fijos",
     assert.match(reglas, /var\(--/, `${sel} usa tokens`);
     assert.doesNotMatch(reglas, /#[0-9a-f]{3,8}\b|rgba?\(/i, `${sel} no usa colores fijos`);
   }
+});
+
+test("a11y rutas: sin aria-label duplicado, texto sr-only único y diálogo propio en vez de confirm()", () => {
+  const c = read("src/components/RutasRol.astro");
+  assert.doesNotMatch(c, /aria-label=\{`Marcar como leído/);
+  assert.match(c, /class="sr-only"> — marcar como leído: \{s\.title\}/);
+  assert.match(c, /<dialog class="atajos-dialog" id="rutas-reiniciar"/);
+  const js = read("src/scripts/rutas.ts");
+  assert.doesNotMatch(js, /confirm\(/);
+  assert.match(js, /showModal\(\)/);
+  assert.match(read("src/components/EstadoProyecto.astro"), /<ol aria-labelledby="estado-hacer">/);
+  assert.match(read("src/pages/[project]/index.astro"), /class="estado-pagina" data-pagefind-ignore="all"/);
 });
