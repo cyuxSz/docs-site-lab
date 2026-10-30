@@ -32,6 +32,7 @@ const restricted = isRestricted(p.id);
 // Índice "En esta página": h2 y, sangrados, h3.
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
+const historial = p.pageList.find((x) => x.path === entry.data.path)?.historial ?? [];
 const rosNodes = pkg && p.ros ? p.ros.nodes.filter((n) => n.category === "ros2_node" && n.package === pkg) : [];
 // Encabezado al estilo de vanttec.com: sección en mayúsculas espaciadas sobre el título de la página.
 const section = sections(p.pageList).find((s) => s.pages.some((x) => x.route === route))?.label;
@@ -53,9 +54,14 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
 ---
 <Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={projectNav(p)} current="wiki">
   <div class="container">
-    <div class="doc">
-      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
+    <div class="doc doc-wiki">
+      <SideNav id="barra-izq" projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido">
+        <div class="barras-control" data-barras-control data-pagefind-ignore="all">
+          <button type="button" data-barra="izq" aria-controls="barra-izq" aria-expanded="true">Navegación</button>
+          <button type="button" data-enfoque-btn aria-pressed="false">Modo enfoque</button>
+          <button type="button" data-barra="der" aria-controls="barra-der" aria-expanded="true">Índice</button>
+        </div>
         <nav class="migas" aria-label="Migas" data-pagefind-ignore="all">
           <ol>
             {crumbs.map((c, i) => (
@@ -122,7 +128,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
           </template>
         ))}
       </main>
-      <aside class="meta" aria-label="Datos de la página" data-pagefind-ignore="all">
+      <aside class="meta" id="barra-der" aria-label="Datos de la página" data-pagefind-ignore="all">
         <dl>
           <div>
             <dt>Actualizado</dt>
@@ -131,7 +137,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
               {entry.data.author && <span class="muted"> · {entry.data.author}</span>}
             </dd>
           </div>
-          <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>
+          {entry.data.claims > 0 && <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>}
           {entry.data.owner && <div><dt>Responsable</dt><dd>{entry.data.owner}</dd></div>}
           <div><dt>Fuente</dt><dd><a href={entry.data.source}>Ver en GitHub</a></dd></div>
           <div>
@@ -154,6 +160,23 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             </div>
           )}
         </dl>
+        {historial.length > 0 && (
+          <details class="historial">
+            <summary>Historial</summary>
+            <ol>
+              {historial.map((c) => (
+                <li>
+                  <span>{c.mensaje}</span>
+                  <span class="hist-meta"><time datetime={c.fecha}>{fmtDate(c.fecha)}</time> · {c.autor}</span>
+                  <span class="hist-enlaces">
+                    <a href={c.url} aria-label={`Commit ${c.sha}`}><code>{c.corto}</code></a>
+                    <a href={c.diff} aria-label={`Ver diff del commit ${c.corto}`}>ver diff</a>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
         {toc.length > 1 && (
           <nav class="toc-box" aria-labelledby="toc-title">
             <p class="toc-title" id="toc-title">En esta página</p>
@@ -165,6 +188,8 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
       </aside>
     </div>
   </div>
+  <button type="button" class="salir-enfoque" data-salir-enfoque hidden data-pagefind-ignore="all">Salir del enfoque</button>
+  <div class="barras-velo" data-barras-velo hidden></div>
   {hasMermaid && (
     <script>
       import { renderMermaid } from "../../scripts/mermaid";
@@ -177,5 +202,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
     import "../../scripts/personal";
     import "../../scripts/lectura";
     import "../../scripts/comentarios";
+    import "../../scripts/barras";
   </script>
 </Base>

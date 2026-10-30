@@ -1,5 +1,5 @@
 // Interfaz de comentarios: pide la lista al entrar en vista y pinta con nodos DOM (nunca HTML del usuario).
-import { acciones, armarHilos, contador, fechaRelativa, mensajeError, opcionesEscritura, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
+import { acciones, armarHilos, claveCacheNav, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, partirMenciones, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
 
 const raiz = document.querySelector<HTMLElement>("section.comentarios[data-pagina]");
 if (raiz) iniciar(raiz);
@@ -14,12 +14,20 @@ function iniciar(root: HTMLElement) {
   const cont = form.querySelector<HTMLElement>("#comentario-contador")!;
   const errorForm = form.querySelector<HTMLElement>("[data-comentarios-error]")!;
   const enviar = form.querySelector<HTMLButtonElement>("button[type=submit]")!;
+  const toggle = root.querySelector<HTMLButtonElement>("[data-comentarios-toggle]")!;
+  const signo = root.querySelector<HTMLElement>("[data-comentarios-signo]")!;
+  const etiqueta = root.querySelector<HTMLElement>("[data-comentarios-etiqueta]")!;
+  const cuerpo = root.querySelector<HTMLElement>("#comentarios-cuerpo")!;
+  const agregar = root.querySelector<HTMLButtonElement>("[data-comentarios-agregar]")!;
+  const cancelar = form.querySelector<HTMLButtonElement>("[data-comentarios-cancelar]")!;
   const dlg = root.querySelector<HTMLDialogElement>("dialog#comentarios-borrar")!;
 
   let yo: string | null = null;
   let comentarios: Comentario[] = [];
   let aBorrar: { id: string; volver: HTMLElement | null } | null = null;
   // Tras repintar, el botón que abrió una acción ya no existe: se recupera por id y acción.
+  // Enlace directo #comentario-<uuid>: se despliega la sección y, al pintar, se enfoca ese comentario.
+  let idHash: string | null = /^#comentario-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] ?? null;
   let volverA: { id: string; accion: string } | null = null;
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, clase?: string, txt?: string) => {
@@ -37,6 +45,22 @@ function iniciar(root: HTMLElement) {
     return b;
   };
 
+  // Tras una escritura correcta el contador de la SideNav debe recalcularse en la siguiente carga.
+  function invalidarCacheNav() {
+    try {
+      sessionStorage.removeItem(claveCacheNav(pagina.split("/")[1] ?? ""));
+    } catch {
+      /* sessionStorage no disponible */
+    }
+  }
+
+  // Texto crudo con las @menciones resaltadas: solo nodos de texto y span.mencion (textContent), nunca HTML.
+  function textoConMenciones(txt: string) {
+    const p = el("p", "comentario-texto");
+    for (const t of partirMenciones(txt)) p.append(t.mencion ? el("span", "mencion", t.texto) : document.createTextNode(t.texto));
+    return p;
+  }
+
   async function pedir(metodo: string, cuerpo: unknown): Promise<{ ok: boolean; data?: any; mensaje?: string }> {
     let res: Response;
     try {
@@ -50,11 +74,23 @@ function iniciar(root: HTMLElement) {
     } catch {
       /* sin cuerpo JSON */
     }
-    if (res.ok) return { ok: true, data };
+    if (res.ok) {
+      invalidarCacheNav();
+      return { ok: true, data };
+    }
     return { ok: false, mensaje: mensajeError(res.status, { retryAfter: res.headers.get("Retry-After"), servidor: data?.error }) };
   }
 
+  // El indicador de carga se quita al terminar, con o sin error.
   async function cargar() {
+    try {
+      await cargarLista();
+    } finally {
+      estado.removeAttribute("data-cargando");
+    }
+  }
+
+  async function cargarLista() {
     let res: Response;
     try {
       res = await fetch(urlComentarios(pagina), { cache: "no-store", credentials: "same-origin" });
@@ -87,7 +123,19 @@ function iniciar(root: HTMLElement) {
   function pintar() {
     const hilos = armarHilos(comentarios);
     lista.replaceChildren(...hilos.map((h) => pintarHilo(h)));
+    etiqueta.textContent = etiquetaComentarios(contarAbiertos(comentarios));
     estado.textContent = hilos.length ? "" : "Aún no hay comentarios. Sé el primero.";
+    if (idHash) {
+      const destino = document.getElementById(`comentario-${idHash}`);
+      idHash = null;
+      if (destino) {
+        destino.tabIndex = -1;
+        destino.scrollIntoView({ block: "center" });
+        destino.focus();
+        volverA = null;
+        return;
+      }
+    }
     if (volverA) {
       const b = [...lista.querySelectorAll<HTMLElement>("button[data-accion]")].find((x) => x.dataset.id === volverA!.id && x.dataset.accion === volverA!.accion);
       b?.focus();
@@ -122,7 +170,7 @@ function iniciar(root: HTMLElement) {
     cab.append(el("span", `chip ${t.clase}`, t.etiqueta), el("span", "comentario-autor", c.autor ?? ""), time);
     if (c.editado) cab.append(el("span", undefined, "(editado)"));
     if (c.resuelto && !c.padre) cab.append(el("span", undefined, c.resueltoPor ? `Resuelto por ${c.resueltoPor}` : "Resuelto"));
-    li.append(cab, el("p", "comentario-texto", c.texto));
+    li.append(cab, textoConMenciones(c.texto));
 
     const a = acciones(c, yo);
     const barra = el("div", "comentario-acciones");
@@ -224,9 +272,8 @@ function iniciar(root: HTMLElement) {
       estado.textContent = r.mensaje ?? "";
       return;
     }
-    estado.focus?.();
     await cargar();
-    (form.querySelector("textarea") as HTMLElement | null)?.focus();
+    agregar.focus();
   });
 
   texto.addEventListener("input", () => (cont.textContent = contador(texto.value)));
@@ -247,19 +294,59 @@ function iniciar(root: HTMLElement) {
       errorForm.hidden = false;
       return;
     }
-    texto.value = "";
-    cont.textContent = contador("");
     await cargar();
-    enviar.focus();
+    cerrarFormulario();
+    agregar.focus();
   });
 
+  function cerrarFormulario() {
+    form.hidden = true;
+    agregar.setAttribute("aria-expanded", "false");
+    texto.value = "";
+    cont.textContent = contador("");
+    errorForm.textContent = "";
+    errorForm.hidden = true;
+  }
+
+  agregar.addEventListener("click", () => {
+    form.hidden = false;
+    agregar.setAttribute("aria-expanded", "true");
+    texto.focus();
+  });
+  cancelar.addEventListener("click", () => {
+    cerrarFormulario();
+    agregar.focus();
+  });
+
+  // Carga una sola vez, ya sea al entrar en vista o al desplegar antes.
+  let cargado = false;
+  function cargarUnaVez() {
+    if (cargado) return;
+    cargado = true;
+    void cargar();
+  }
+  toggle.addEventListener("click", () => {
+    const abrir = cuerpo.hidden;
+    cuerpo.hidden = !abrir;
+    toggle.setAttribute("aria-expanded", String(abrir));
+    signo.textContent = abrir ? "−" : "+";
+    if (abrir) cargarUnaVez();
+  });
+
+  if (idHash) {
+    cuerpo.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    signo.textContent = "−";
+    cargarUnaVez();
+  }
+
   // Carga perezosa: una sola petición cuando la sección entra en vista.
-  if (typeof IntersectionObserver === "undefined") void cargar();
+  if (typeof IntersectionObserver === "undefined") cargarUnaVez();
   else {
     const io = new IntersectionObserver((entradas) => {
       if (!entradas.some((x) => x.isIntersecting)) return;
       io.disconnect();
-      void cargar();
+      cargarUnaVez();
     });
     io.observe(root);
   }

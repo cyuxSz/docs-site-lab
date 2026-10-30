@@ -32,7 +32,8 @@ test("Comentarios.astro: section fuera de Pagefind, encabezado, estado aria-live
   const src = leer(COMP);
   assert.match(src, /<section[^>]*class="comentarios"[^>]*data-pagefind-ignore="all"|<section[^>]*data-pagefind-ignore="all"[^>]*class="comentarios"/);
   assert.match(src, /<section[^>]*aria-labelledby="comentarios-titulo"/);
-  assert.match(src, /<h2[^>]*id="comentarios-titulo"[^>]*>Comentarios<\/h2>/);
+  // Lote 8a: el h2 envuelve el botón de despliegue (ver comentarios-plegado.test.mjs).
+  assert.match(src, /<h2[^>]*id="comentarios-titulo"[^>]*>[^]*?Comentarios[^]*?<\/h2>/);
   assert.match(src, /data-pagina=\{pagina\}/);
   assert.match(src, /aria-live="polite"/);
   assert.match(src, /Cargando comentarios/);

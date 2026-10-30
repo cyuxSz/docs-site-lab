@@ -9,5 +9,8 @@
     if (letra === "s" || letra === "l") d.letra = letra;
     var ancho = localStorage.getItem("lectura:ancho");
     if (ancho === "estrecho" || ancho === "ancho") d.ancho = ancho;
+    // Barras plegadas de la wiki (lote 8a): solo "plegada"; el modo enfoque nunca se aplica aquí.
+    if (localStorage.getItem("wiki:barra-izq") === "plegada") d.barraIzq = "plegada";
+    if (localStorage.getItem("wiki:barra-der") === "plegada") d.barraDer = "plegada";
   } catch (e) {}
 })();
