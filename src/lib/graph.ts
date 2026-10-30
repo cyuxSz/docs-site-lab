@@ -32,6 +32,7 @@ export interface GraphNode {
   rosName?: string;
   types?: string[];
   doc?: string;
+  package?: string; // paquete ROS (solo nodos ROS)
   // Aparece en la arquitectura objetivo (ros.json); soloPlan: no existe hoy (todas sus aristas son plan).
   plan?: true;
   soloPlan?: true;
@@ -311,6 +312,7 @@ export function rosGraph(p: ProjectData): GraphData | null {
       rosName: n.ros_name,
       types: n.types,
       doc: n.package ? docs.get(n.package) : undefined,
+      ...(n.package ? { package: n.package } : {}),
       ...(n.plan ? { plan: true as const } : {}),
       ...(sep.soloPlan.has(n.id) ? { soloPlan: true as const } : {}),
     };
