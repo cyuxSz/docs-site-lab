@@ -4,6 +4,7 @@ import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
 import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_LABEL } from "../../lib/data";
+import { isRestricted } from "../../../access.config.js";
 import { TYPE_LABEL } from "../../lib/labels";
 import { anteriorSiguiente, migas } from "../../lib/navegacion.ts";
 import { urlEditar, urlReportar } from "../../lib/acciones.ts";
@@ -22,6 +23,8 @@ const { entry } = Astro.props;
 const p = load(entry.data.project);
 const { Content, headings } = await render(entry);
 const route = `/${p.id}/${Astro.params.slug}/`;
+// Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
+const restricted = isRestricted(p.id);
 // Índice "En esta página": h2 y, sangrados, h3.
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
@@ -49,10 +52,10 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             ))}
           </ol>
         </nav>
-        <article class="prose" data-pagefind-body data-glosario={glosario && glosario.route !== route ? glosario.route : undefined}>
-          <meta data-pagefind-filter="proyecto[content]" content={p.name} />
-          <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />
-          {pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
+        <article class="prose" data-pagefind-body={restricted ? undefined : ""} data-glosario={glosario && glosario.route !== route ? glosario.route : undefined}>
+          {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
+          {!restricted && <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />}
+          {!restricted && pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
           <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}{section && ` · ${section}`}</p>
           <Content />
         </article>

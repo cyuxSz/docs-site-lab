@@ -7,12 +7,10 @@
 //   con un nodo enfocado solo se animan y resaltan las suyas.
 // - En pantallas táctiles hay que tocar una vez para activarlo, así no atrapa el scroll de la página.
 // - Secciones (?seccion=<capa>): el grafo se reduce a los nodos de una capa, sus topics/servicios y, atenuado, el otro
-//   lado de cada conexión. Tiene su propio layout (calculado en el build) y su recorrido, en los diseños A y B.
+//   lado de cada conexión. Tiene su propio layout (calculado en el build) y su recorrido.
 // - Pantalla completa, exportar PNG y copiar el enlace a un nodo.
-// Prueba A/B (<html data-diseno>, ver Base.astro):
-// - A "Mapa guiado": columnas en el sentido del dato (de arriba abajo en teléfono), topics como etiqueta de la flecha,
+// - Vista ROS por capas: columnas en el sentido del dato (de arriba abajo en teléfono), topics como etiqueta de la flecha,
 //   abre en la configuración del recorrido guiado y lo muestra la primera vez.
-// - B "Explorador": acomodo libre (ForceAtlas2) con topics como nodos y un recuadro "Cómo leer este grafo".
 import { useEffect, useMemo, useRef, useState } from "react";
 import Graph from "graphology";
 import type Sigma from "sigma";
@@ -104,7 +102,6 @@ function writeParams(view: string, config: string, node: string | null, seccion:
 
 export default function RoboticsGraph({ projectId, views }: Props) {
   const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null, seccion: null } : readParams()), []);
-  const [diseno, setDiseno] = useState<"a" | "b">("a");
   const [view, setView] = useState(views.find((v) => v.id === initial.view)?.id ?? views[0].id);
   const [data, setData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +143,6 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     const coarse = matchMedia("(pointer: coarse)").matches;
     setTouch(coarse);
     setActive(!coarse);
-    setDiseno(document.documentElement.dataset.diseno === "b" ? "b" : "a");
     setFsOk(Boolean(document.fullscreenEnabled));
     // El botón de tema de Base.astro cambia data-theme: el grafo se vuelve a pintar con los colores del tema.
     const watcher = new MutationObserver(() => setTema((n) => n + 1));
@@ -169,8 +165,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       .catch((e) => setError(String(e.message || e)));
   }, [view]);
 
-  // Diseño A en la vista ROS: flechas nodo → nodo y columnas.
-  const capas = diseno === "a" && data?.view === "ros" && Boolean(data.flowEdges);
+  // Vista ROS: flechas nodo → nodo y columnas.
+  const capas = data?.view === "ros" && Boolean(data.flowEdges);
   const nodeById = useMemo(() => new Map((data?.nodes ?? []).map((n) => [n.id, n])), [data]);
   // El hardware toma el color cálido del vehículo (naranja en el UUV), como en su página de vanttec.com.
   const groupColor = useMemo(
@@ -183,7 +179,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     [data],
   );
 
-  // Diseño A: abre en la configuración del recorrido y lo muestra la primera vez.
+  // Abre en la configuración del recorrido y lo muestra la primera vez.
   useEffect(() => {
     if (!capas || !data || initial.seccion) return;
     if (!initial.config && config === "all" && (tourConfig || data.configs[0])) setConfig(tourConfig ?? data.configs[0].id);
@@ -632,30 +628,6 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         </div>
       )}
       {sinNucleo && <p className="rg-note" role="status">En esta sección solo hay nodos de legado o sin uso. Activa «Mostrar legado y sin uso» para verlos.</p>}
-
-      {diseno === "b" && data && (
-        <details className="rg-help">
-          <summary>Cómo leer este grafo</summary>
-          <ul>
-            <li>Cada <strong>círculo grande</strong> es un programa (nodo de ROS) o una pieza de hardware; los <strong>chicos</strong> son los mensajes que se pasan (topics y servicios).</li>
-            <li>Los <span className="rg-flowdot" aria-hidden="true" /> <strong>puntos verdes</strong> viajan en la dirección en que va el dato.</li>
-            <li>{touch ? "Toca" : "Pasa el cursor sobre"} un nodo para resaltar con quién habla; tócalo o haz clic para ver su detalle.</li>
-            {data.sections && data.sections.length > 0 && (
-              <li>Con <strong>Sección</strong> ves solo una capa (Control, Misión…) con sus topics; <span className="rg-dot rg-inline" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} /> <strong>en gris</strong> está lo que conecta con ella desde afuera.</li>
-            )}
-            {data.groups.filter((gr) => gr.hint).length > 0 && (
-              <li>
-                Qué significa cada color:
-                <ul className="rg-colors">
-                  {data.groups.filter((gr) => gr.hint).map((gr) => (
-                    <li key={gr.id}><span className="rg-dot rg-inline" style={{ background: groupColor.get(gr.id) }} /> <strong>{gr.label}</strong>: {gr.hint}</li>
-                  ))}
-                </ul>
-              </li>
-            )}
-          </ul>
-        </details>
-      )}
 
       <div className="rg-stage" style={stageHeight ? { height: stageHeight } : undefined}>
         <div ref={container} className="rg-canvas" style={{ pointerEvents: active ? "auto" : "none" }} role="img" aria-label={`Grafo: ${data?.title ?? ""}. La tabla de abajo tiene la misma información en texto.`} />
