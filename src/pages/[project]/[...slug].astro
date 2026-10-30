@@ -3,6 +3,7 @@
 import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
+import RutasRol from "../../components/RutasRol.astro";
 import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_LABEL } from "../../lib/data";
 import { isRestricted } from "../../../access.config.js";
 import { TYPE_LABEL } from "../../lib/labels";
@@ -38,12 +39,15 @@ const editar = urlEditar(p.repo, p.branch, entry.data.path);
 const pageRef = { title: entry.data.title, route, path: entry.data.path };
 // Vista previa de las citas de esta página: solo las líneas ya extraídas en el build (tools/citas.mjs).
 const citas = p.repoUrl && p.sha ? citasDe(entry.body ?? "", p.repoUrl, p.sha).flatMap((c) => (p.citas?.[c.key] ? [{ ...c, ...p.citas[c.key] }] : [])) : [];
+// Rutas por rol: rutas.md se vuelve checklist si el proyecto tiene rutas válidas; las demás páginas muestran su paso al pie.
+const esRutas = entry.data.path === "rutas.md" && Boolean(p.rutas?.length);
+const rutasDePagina = esRutas ? [] : (p.rutas ?? []).filter((r) => r.pasos.some((s) => s.page === entry.data.path));
 const glosario = p.pageList.find((x) => x.path === "glosario.md");
 ---
 <Base title={`${entry.data.title} · ${p.name}`} description={entry.data.description} project={projectNav(p)} current="wiki">
   <div class="container">
     <div class="doc">
-      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido">
         <nav class="migas" aria-label="Migas" data-pagefind-ignore="all">
           <ol>
@@ -57,13 +61,22 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
           {!restricted && <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />}
           {!restricted && pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
           <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}{section && ` · ${section}`}</p>
-          <Content />
+          {esRutas ? (
+            <>
+              <h1>{entry.data.title}</h1>
+              {entry.data.description && <p class="lead">{entry.data.description}</p>}
+              <RutasRol projectId={p.id} rutas={p.rutas!} />
+            </>
+          ) : <Content />}
         </article>
         {(prev || next) && (
           <nav class="prevnext" aria-label="Anterior y siguiente" data-pagefind-ignore="all">
             {prev ? <a class="prev" href={prev.route} rel="prev" data-astro-prefetch><span>← Anterior</span><strong>{prev.label}</strong></a> : <span />}
             {next ? <a class="next" href={next.route} rel="next" data-astro-prefetch><span>Siguiente →</span><strong>{next.label}</strong></a> : <span />}
           </nav>
+        )}
+        {rutasDePagina.length > 0 && (
+          <aside class="ruta-paso" hidden data-pagefind-ignore="all" aria-label="Ruta de lectura" data-proyecto={p.id} data-page={entry.data.path} data-rutas={JSON.stringify(rutasDePagina)}></aside>
         )}
         {citas.map((c) => (
           <template data-cita={c.key} data-file={c.file} data-start={c.start} data-end={c.end} data-truncated={c.truncated ? "1" : undefined} data-pagefind-ignore="all">
@@ -122,5 +135,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
   )}
   <script>
     import "../../scripts/prose";
+    import "../../scripts/rutas";
   </script>
 </Base>

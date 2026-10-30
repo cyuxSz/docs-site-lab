@@ -16,7 +16,7 @@ const route = `/${p.id}/novedades/`;
 <Base title={`Novedades · ${p.name}`} description={`Páginas de la wiki de ${p.name} actualizadas más recientemente.`} project={projectNav(p)} current="wiki">
   <div class="container">
     <div class="doc">
-      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
       <main id="contenido">
         <nav class="migas" aria-label="Migas">
           <ol>
