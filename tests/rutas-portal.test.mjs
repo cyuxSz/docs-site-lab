@@ -29,7 +29,8 @@ test("RutasRol: selector de rol con radios reales, casillas con label, progreso 
   assert.match(src, /<label[^>]*>[^]*type="checkbox"|type="checkbox"[^]*<label/, "casillas reales con label");
   assert.match(src, /<progress/);
   assert.match(src, /aria-live="polite"/, "el contador 'N de M' se anuncia");
-  assert.match(src, /Continuar con el siguiente paso/);
+  // Lote 9a: el botón principal arranca como "Empezar" (activa la ruta); el script cambia el texto con textoContinuar.
+  assert.match(src, /data-continuar[^>]*>\s*Empezar\s*</);
   assert.match(src, /Reiniciar ruta/);
   assert.match(src, /import\s+["']\.\.\/scripts\/rutas(\.ts)?["']/, "usa el script empaquetado");
 });

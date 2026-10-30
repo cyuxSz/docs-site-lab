@@ -1,4 +1,4 @@
-// Lote 4b-2 en el portal: botón "Copiar cita", estado de proyectos que no se construyeron, hoja de impresión y
+// Lote 4b-2 en el portal (el botón "Copiar cita" se quitó en el lote 9a): estado de proyectos que no se construyeron, hoja de impresión y
 // arreglos de los revisores (ancla segura, summary, .to-top sobre la barra, nota de atajos).
 // Scripts empaquetados (CSP), textContent en vez de HTML, fuera de Pagefind y estilos con tokens.
 import { test } from "node:test";
@@ -27,42 +27,13 @@ const reglasCon = (src, sel) => [...src.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filte
 // Reglas cuyo cuerpo (declaraciones) menciona `decl`.
 const reglasDecl = (src, decl) => [...src.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[2].includes(decl)).map((m) => m[0]).join("\n");
 
-// --- 1 y 2. Copiar como cita Markdown ---
-test("prose.ts: sección 'Copiar como cita Markdown' con botón, citaMarkdown y aviso", () => {
-  const s = read("src/scripts/prose.ts");
-  assert.match(s, /import\s*\{[^}]*\bcitaMarkdown\b[^}]*\}\s*from\s*["']\.\.\/\.\.\/tools\/citas\.mjs["']/);
-  const i = s.indexOf("// --- Copiar como cita Markdown");
-  assert.ok(i >= 0, "falta la sección // --- Copiar como cita Markdown");
-  const fin = s.indexOf("// ---", i + 10);
-  const sec = s.slice(i, fin < 0 ? undefined : fin);
-  assert.match(sec, /createElement\(["']button["']\)/);
-  assert.match(sec, /cita-copiar/);
-  assert.match(sec, /["']Copiar cita["']/);
-  assert.match(sec, /Copiar como cita Markdown/);
-  assert.match(sec, /citaMarkdown\(/);
-  assert.match(sec, /["']Copiado["']/);
-  assert.match(sec, /Cita copiada en Markdown/);
-  assert.match(sec, /No se pudo copiar la cita/);
-  assert.match(sec, /\.after\(/, "el botón va justo después del enlace");
-  assert.match(sec, /data-pagefind-ignore/);
-  assert.match(sec, /textContent/);
-  sinHtml("sección de cita", sec);
-});
-
+// --- 1 y 2. "Copiar cita" se quitó en el lote 9a (ver tests/pagina-limpia.test.mjs); copy() sigue para .copy-btn ---
 test("prose.ts: copy() con respaldo (textarea + execCommand) y región aria-live", () => {
   const s = read("src/scripts/prose.ts");
   assert.match(s, /navigator\.clipboard/);
   assert.match(s, /createElement\(["']textarea["']\)/);
   assert.match(s, /execCommand\(["']copy["']\)/);
   assert.match(s, /aria-live["'],\s*["']polite["']/);
-});
-
-test("CSS: .cita-copiar con tokens y foco visible", () => {
-  const r = reglasCon(css, ".cita-copiar");
-  assert.ok(r, "faltan estilos de .cita-copiar");
-  sinColores(".cita-copiar", r.replace(bloque(css, "@media print {"), ""));
-  assert.match(r, /var\(--/);
-  assert.match(r, /:focus-visible/);
 });
 
 // --- 3, 4 y 5. Estado de proyectos ---
@@ -129,7 +100,7 @@ test("@media print: oculta barra, navegación, botones y bloques personales", ()
   const p = bloque(css, "@media print {");
   assert.ok(p, "falta @media print en global.css");
   const ocultos = reglasDecl(p, "display: none");
-  for (const sel of [".topbar", ".ptabs", ".sidenav", ".migas", ".toc-box", ".prevnext", ".to-top", ".copy-btn", ".cita-copiar", ".anchor", ".favorito-btn", ".aviso-cambio", ".ruta-paso", ".lectura-ajustes", ".resaltado-barra", ".continuar", ".favoritos", ".search-dialog", ".atajos-dialog", ".popover", ".meta .acciones"]) {
+  for (const sel of [".topbar", ".ptabs", ".sidenav", ".migas", ".toc-box", ".prevnext", ".to-top", ".copy-btn", ".anchor", ".favorito-btn", ".aviso-cambio", ".ruta-paso", ".lectura-ajustes", ".resaltado-barra", ".continuar", ".favoritos", ".search-dialog", ".atajos-dialog", ".popover", ".meta .acciones"]) {
     assert.ok(ocultos.includes(sel), `@media print oculta ${sel}`);
   }
   assert.match(ocultos, /display:\s*none\s*!important/);

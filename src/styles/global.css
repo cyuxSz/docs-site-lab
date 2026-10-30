@@ -364,6 +364,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 @media (max-width: 1100px) {
   .doc, .doc.doc-2 { grid-template-columns: 220px minmax(0, 1fr); }
   .meta { position: static; grid-column: 2; }
+  .doc-wiki > .barra-caja-der { grid-column: 2; }
 }
 
 @media (max-width: 760px) {
@@ -532,11 +533,17 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .ruta-paso a { color: var(--accent-strong); font-weight: 600; }
 
 /* --- QoL de navegación personal: estrella, aviso de cambios, continuar, favoritos y atajos --- */
-.favorito-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; min-width: 44px; padding: 0 14px; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.favorito-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; min-height: 44px; min-width: 44px; padding: 0; border: 0; border-radius: var(--radius); background: none; color: var(--muted); cursor: pointer; }
 .favorito-btn svg { fill: none; }
-.favorito-btn:hover { color: var(--text); border-color: var(--accent); }
-.favorito-btn[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--accent); }
+.favorito-btn:hover { color: var(--text); }
+.favorito-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.favorito-btn[aria-pressed="true"] { color: var(--warn); }
 .favorito-btn[aria-pressed="true"] svg { fill: currentColor; }
+.titulo-pagina { display: flex; align-items: center; gap: 8px; }
+.titulo-pagina h1 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ruta-salir { justify-self: end; min-width: 44px; min-height: 44px; border: 0; border-radius: var(--radius); background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+.ruta-salir:hover { color: var(--text); }
+.ruta-salir:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .aviso-cambio { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; padding: 4px 4px 4px 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; }
 .aviso-cambio[hidden] { display: none; }
 .aviso-cambio .aviso-cerrar { flex: none; min-width: 44px; min-height: 44px; border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
@@ -560,9 +567,6 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .atajos-dialog kbd { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; background: var(--glass); color: var(--text); }
 
 /* Copiar cita Markdown: botón chico en línea, justo después del enlace a código. */
-.cita-copiar { display: inline-block; max-width: 100%; margin-left: 6px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--muted); font: inherit; font-size: 12px; line-height: 1.7; cursor: pointer; vertical-align: baseline; }
-.cita-copiar:hover { border-color: var(--accent); color: var(--accent); }
-.cita-copiar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Estado de un proyecto que no se construyó o no tiene documentación (tarjeta de la portada y /<id>/). */
 .estado-proyecto { display: grid; gap: 6px; min-width: 0; margin: 8px 0; padding: 12px 14px; border: 1px solid var(--danger); border-left-width: 4px; border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
@@ -631,30 +635,48 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .chip-bug { background: color-mix(in srgb, var(--danger) 20%, transparent); }
 .chip-otro { background: var(--glass); }
 
-/* Barras de la wiki (lote 8a): plegado en escritorio, cajones en móvil y modo enfoque. */
-.barras-control { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.barras-control button, .salir-enfoque { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
-.barras-control button:hover, .salir-enfoque:hover { border-color: var(--accent); }
-.barras-control button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.salir-enfoque { position: fixed; top: 12px; right: 12px; z-index: 50; background: var(--surface); box-shadow: var(--shadow); }
-.salir-enfoque[hidden], .barras-velo[hidden] { display: none; }
+/* Barras de la wiki: en escritorio se pliegan a un riel con ícono (lote 9a); en móvil son cajones; el enfoque deja los dos rieles. */
 .barras-velo { display: none; }
-.doc-wiki { --col-izq: 240px; --col-der: 220px; }
+.barras-velo[hidden] { display: none; }
+.doc-wiki { --col-izq: 240px; --col-der: 220px; --riel: 36px; }
 @media (max-width: 1100px) { .doc-wiki { --col-izq: 220px; } }
-@media (min-width: 900px) {
-  html[data-barra-izq="plegada"] .doc-wiki > .sidenav, html[data-barra-der="plegada"] .doc-wiki > .meta { display: none; }
-  html[data-barra-izq="plegada"] .doc-wiki { grid-template-columns: minmax(0, 1fr) var(--col-der); }
-  html[data-barra-der="plegada"] .doc-wiki { grid-template-columns: var(--col-izq) minmax(0, 1fr); }
-  html[data-barra-izq="plegada"][data-barra-der="plegada"] .doc-wiki { grid-template-columns: minmax(0, 1fr); }
+.barra-btn, .barras-movil button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--radius); background: none; color: var(--muted); cursor: pointer; }
+.barra-btn:hover, .barras-movil button:hover { background: var(--accent-soft); color: var(--text); }
+.barra-btn:focus-visible, .barras-movil button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.barras-movil { display: none; }
+@media screen and (min-width: 900px) {
+  .doc-wiki { transition: grid-template-columns .2s ease; }
+  .doc-wiki > .barra-caja { position: sticky; top: 92px; display: flex; flex-direction: column; max-height: calc(100vh - 108px); overflow: hidden; }
+  .barra-caja-izq .barra-btn { align-self: flex-start; }
+  .barra-caja-der .barra-btn { align-self: flex-end; }
+  .barra-caja .barra-btn { flex: none; }
+  .doc-wiki .barra-caja > .sidenav, .doc-wiki .barra-caja > .meta { position: static; flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; transition: transform .2s ease, visibility 0s; }
+  .doc-wiki .barra-caja-izq > .sidenav { width: var(--col-izq); }
+  .doc-wiki .barra-caja-der > .meta { width: var(--col-der); }
+  /* Plegada: la barra se desliza hacia su lado y queda el riel con el ícono. */
+  html[data-barra-izq="plegada"] .doc-wiki .barra-caja-izq > .sidenav, html[data-enfoque] .doc-wiki .barra-caja-izq > .sidenav { transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+  html[data-barra-der="plegada"] .doc-wiki .barra-caja-der > .meta, html[data-enfoque] .doc-wiki .barra-caja-der > .meta { transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+  html[data-barra-izq="plegada"] .doc-wiki { grid-template-columns: var(--riel) minmax(0, 1fr) var(--col-der); }
+  html[data-barra-der="plegada"] .doc-wiki { grid-template-columns: var(--col-izq) minmax(0, 1fr) var(--riel); }
+  html[data-barra-izq="plegada"][data-barra-der="plegada"] .doc-wiki, html[data-enfoque] .doc-wiki { grid-template-columns: var(--riel) minmax(0, 1fr) var(--riel); }
+  /* El espacio liberado se reparte: el artículo se centra con su ancho de lectura. */
+  html[data-barra-izq="plegada"] .doc-wiki > main, html[data-barra-der="plegada"] .doc-wiki > main, html[data-enfoque] .doc-wiki > main { width: 100%; max-width: var(--prose-max, 820px); min-width: 0; }
+  html[data-barra-izq="plegada"][data-barra-der="plegada"] .doc-wiki > main, html[data-enfoque] .doc-wiki > main { margin-inline: auto; }
+  html[data-enfoque] .doc-wiki .migas, html[data-enfoque] .doc-wiki .favorito-btn, html[data-enfoque] .doc-wiki .lectura-ajustes { display: none; }
 }
-@media (min-width: 900px) and (max-width: 1100px) {
-  html[data-barra-izq="plegada"] .doc-wiki { grid-template-columns: minmax(0, 1fr); }
-  html[data-barra-izq="plegada"] .doc-wiki > .meta { grid-column: 1; }
+@media screen and (min-width: 900px) and (max-width: 1100px) {
+  /* Con tres columnas no cabe: el índice baja bajo el artículo y su ícono queda a la derecha. */
+  .doc-wiki, html[data-barra-izq="plegada"] .doc-wiki, html[data-barra-der="plegada"] .doc-wiki { grid-template-columns: var(--col-izq) minmax(0, 1fr); }
+  html[data-barra-izq="plegada"] .doc-wiki, html[data-barra-izq="plegada"][data-barra-der="plegada"] .doc-wiki, html[data-enfoque] .doc-wiki { grid-template-columns: var(--riel) minmax(0, 1fr); }
+  .doc-wiki > .barra-caja-der { position: static; grid-column: 2; max-height: none; overflow: visible; }
+  .doc-wiki .barra-caja-der > .meta { width: auto; }
+  html[data-barra-der="plegada"] .doc-wiki .barra-caja-der > .meta, html[data-enfoque] .doc-wiki .barra-caja-der > .meta { display: none; }
+  html[data-barra-izq="plegada"][data-barra-der="plegada"] .doc-wiki > main, html[data-enfoque] .doc-wiki > main { margin-inline: 0; }
 }
-html[data-enfoque] .doc-wiki > .sidenav, html[data-enfoque] .doc-wiki > .meta, html[data-enfoque] .barras-control { display: none; }
-html[data-enfoque] .doc-wiki { grid-template-columns: minmax(0, 1fr); }
-html[data-enfoque] .doc-wiki > main { width: 100%; max-width: 860px; margin-inline: auto; min-width: 0; }
 @media (max-width: 899.98px) {
+  .barra-caja { display: contents; }
+  .barra-btn { display: none; }
+  .barras-movil { display: flex; gap: 4px; margin-bottom: 8px; }
   .doc-wiki .sidenav, .doc-wiki .meta { position: fixed; top: 0; bottom: 0; z-index: 40; width: min(320px, 85vw); max-height: none; margin: 0; padding: 16px; overflow-y: auto; background: var(--surface); box-shadow: var(--shadow); visibility: hidden; transition: transform .2s ease, visibility .2s; }
   .doc-wiki .sidenav { left: 0; border: 0; border-inline-end: 1px solid var(--line); border-radius: 0; transform: translateX(-100%); }
   .doc-wiki .meta { right: 0; grid-column: auto; border-inline-start: 1px solid var(--line); transform: translateX(100%); }
@@ -664,12 +686,12 @@ html[data-enfoque] .doc-wiki > main { width: 100%; max-width: 860px; margin-inli
   .barras-velo { position: fixed; inset: 0; z-index: 39; display: block; background: color-mix(in srgb, var(--bg) 65%, transparent); }
   .barras-velo[hidden] { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .doc-wiki .sidenav, .doc-wiki .meta { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .doc-wiki, .doc-wiki .sidenav, .doc-wiki .meta { transition: none !important; } }
 
 /* Impresión: negro sobre blanco, sin controles, enlaces con su URL y sin bloques cortados. */
 @media print {
   :root, :root[data-theme="light"] { --bg: #fff; --surface: #fff; --glass: #fff; --text: #000; --muted: #222; --line: #888; --accent: #000; --shadow: none; }
-  .topbar, .ptabs, .sidenav, .migas, .toc-box, .prevnext, .to-top, .copy-btn, .cita-copiar, .anchor, .favorito-btn, .aviso-cambio, .ruta-paso, .lectura-ajustes, .resaltado-barra, .continuar, .favoritos, .search-dialog, .atajos-dialog, .comentarios, .barras-control, .barras-velo, .salir-enfoque, .popover, .meta .acciones { display: none !important; }
+  .topbar, .ptabs, .sidenav, .migas, .toc-box, .prevnext, .to-top, .copy-btn, .anchor, .favorito-btn, .aviso-cambio, .ruta-paso, .lectura-ajustes, .resaltado-barra, .continuar, .favoritos, .search-dialog, .atajos-dialog, .comentarios, .barra-btn, .barras-movil, .barras-velo, .popover, .meta .acciones { display: none !important; }
   html, body { background: #fff; color: #000; box-shadow: none; background-image: none; }
   .doc, .doc.doc-2 { display: block; padding-top: 0; }
   .doc, main, .prose { max-width: none; width: auto; margin: 0; }
