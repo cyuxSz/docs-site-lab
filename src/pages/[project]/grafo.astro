@@ -10,7 +10,7 @@ export function getStaticPaths() {
 }
 
 const p = load(Astro.params.project!);
-// Proyecto restringido: sin data-pagefind-body no entra al índice de búsqueda (access.config.js).
+// Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
 const restricted = isRestricted(p.id);
 const views = [
   ...(p.ros ? [{ id: "ros", label: "Nodos ROS", url: `/${p.id}/ros.json` }] : []),

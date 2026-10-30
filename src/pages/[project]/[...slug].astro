@@ -23,7 +23,7 @@ const { entry } = Astro.props;
 const p = load(entry.data.project);
 const { Content, headings } = await render(entry);
 const route = `/${p.id}/${Astro.params.slug}/`;
-// Proyecto restringido: sin data-pagefind-body no entra al índice de búsqueda (access.config.js).
+// Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
 const restricted = isRestricted(p.id);
 // Índice "En esta página": h2 y, sangrados, h3.
 const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);

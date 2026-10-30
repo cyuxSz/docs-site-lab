@@ -30,3 +30,8 @@ test("sections: discrepancias/ se reconoce aunque su index.md tenga otro título
 test("sections: una carpeta desconocida usa el title de su index.md; sin índice, el nombre de la carpeta", () => {
   assert.deepEqual(sections(PAGES).map((g) => g.label), ["Empezar", "Operación", "Discrepancias (a revisar)", "Cosas raras", "sinindice"]);
 });
+
+test("sections: la etiqueta de una carpeta desconocida no sale de un sub/index.md", () => {
+  const pages = [page("zeta/sub/index.md", "Sub", "index"), page("zeta/a.md", "A")];
+  assert.deepEqual(sections(pages).map((g) => g.label), ["zeta"]);
+});
