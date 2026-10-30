@@ -638,3 +638,19 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 tr.limpieza-revisada td { opacity: .6; }
 tr.limpieza-revisada td:first-child { opacity: 1; }
 tr[hidden] { display: none; }
+
+/* Tabla de limpieza: compacta, rutas partibles, tarjetas en pantallas estrechas. */
+.limpieza-tabla { font-size: 13px; }
+.limpieza-tabla th, .limpieza-tabla td { padding: 6px 8px; }
+.limpieza-tabla code { white-space: normal; overflow-wrap: anywhere; }
+.limpieza-tabla .limpieza-ruta { display: block; }
+.limpieza-tabla .limpieza-motivo { min-width: 14rem; }
+.limpieza-tabla th:first-child, .limpieza-tabla td:first-child { width: 1%; white-space: nowrap; }
+@media (max-width: 640px) {
+  .limpieza-tabla, .limpieza-tabla tbody, .limpieza-tabla tr, .limpieza-tabla td { display: block; width: 100%; }
+  .limpieza-tabla thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .limpieza-tabla tr { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; padding: 4px 0; }
+  .limpieza-tabla td, .limpieza-tabla th:first-child, .limpieza-tabla td:first-child { border-bottom: 0; width: auto; white-space: normal; padding: 3px 10px; overflow-wrap: anywhere; }
+  .limpieza-tabla td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); font-weight: 600; }
+  .limpieza-tabla .limpieza-motivo { min-width: 0; }
+}
