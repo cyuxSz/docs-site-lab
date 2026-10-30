@@ -124,6 +124,8 @@
 .rg-presenting .rg-panorama,
 .rg-presenting .rg-note,
 .rg-presenting .rg-legado,
+.rg-presenting .rg-comparar,
+.rg-presenting .rg-camino,
 .rg-presenting .rg-minimap { display: none; }
 .rg-presenting .rg-exit { display: block; }
 .rg-presenting .rg-stage { flex: 1 1 auto; min-height: 0; height: auto !important; }
@@ -216,3 +218,36 @@ html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }
 .rg-chip-legado .rg-reloj { color: var(--warn); font-weight: 700; line-height: 1; }
 .rg-chip-sin_uso .rg-dot { border: 1px solid var(--line); }
 .rg-sub .insignias { margin-left: 2px; }
+
+/* Lotes 21 y 22: paneles de Comparar configuraciones y Camino entre nodos (solo variables de tema). */
+.rg-comparar, .rg-camino {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); font-size: 14px;
+}
+.rg-comparar-campos, .rg-camino-campos { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.rg-comparar-campo, .rg-camino-campo { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--muted); font-size: 13px; }
+.rg-comparar-campo select, .rg-camino-campo input {
+  padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; max-width: 100%;
+}
+.rg-camino-campo { position: relative; }
+.rg-comparar-resumen { margin: 0; font-weight: 600; }
+.rg-comparar-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; }
+.rg-comparar-leyenda li { display: inline-flex; align-items: center; gap: 6px; }
+.rg-comparar-punto { flex: 0 0 auto; }
+.rg-comparar-icono { font-weight: 700; }
+.rg-comparar-dif summary { cursor: pointer; font-weight: 600; }
+.rg-comparar-dif summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rg-comparar-dif h4 { margin: 8px 0 4px; font-size: 13px; color: var(--muted); }
+.rg-comparar-dif ul, .rg-camino-pasos { margin: 0; padding-left: 1.2em; }
+.rg-comparar-dif li, .rg-camino-pasos li { overflow-wrap: anywhere; }
+.rg-comparar-tipo { margin-left: 6px; color: var(--muted); font-size: 12px; }
+.rg-comparar-vacio, .rg-camino-ayuda { margin: 0; color: var(--muted); }
+.rg-camino-texto { margin: 0; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.rg-camino-aviso { margin: 0; padding: 6px 10px; border: 1px solid var(--warn); border-left-width: 4px; border-radius: var(--radius); }
+.rg-camino-swap { min-height: 36px; }
+.rg-camino .rg-combo-lista { top: 100%; }
+@media (max-width: 760px) {
+  .rg-comparar, .rg-camino { width: 100%; box-sizing: border-box; }
+  .rg-comparar-campo, .rg-camino-campo { flex: 1 1 100%; }
+  .rg-comparar-campo select, .rg-camino-campo input { width: 100%; box-sizing: border-box; }
+}

@@ -22,6 +22,8 @@ import { claveRecorrido, guardarPaso, pasoGuardado, borrarPaso, textoRetomar, ac
 import { idsConPlan, planDisponible, claveLayout, etiquetaPlan, notaPlan, LEYENDA_PLAN } from "../lib/plan";
 import { AVISO_LEGADO, configDelRecorrido, configInicial, recorridoActivo } from "../lib/legado";
 import { navegarLista, accionMenu } from "../lib/menu";
+import { compararConfigs, miembrosConfig, textoResumen, estiloComparar, leerCompararUrl, escribirCompararUrl } from "../lib/comparar";
+import { caminoMasCorto, aristasCamino, textoCamino, leerCaminoUrl, escribirCaminoUrl, modoInicialUrl } from "../lib/camino";
 import { candidatosBusqueda, filtrarBusqueda, destinoBusqueda, type ItemBusqueda } from "../lib/busqueda";
 import { MAX_VISTAS, claveVistas, leerVistas, serializarVistas, agregarVista, renombrarVista, borrarVista, vistaAplicable, type EstadoVista, type VistaGuardada } from "../lib/vistas";
 import "./RoboticsGraph.css";
@@ -40,6 +42,7 @@ interface Props {
 const BROKEN = "#EF4444";
 const OWNERS = new Set(["node", "hardware", "page"]);
 const TOUR_SEEN = "recorrido-visto";
+const TIPO_PASO: Record<string, string> = { node: "nodo", topic: "topic", service: "servicio", action: "acción", hardware: "hardware", page: "página" };
 
 const FLOW = { light: "#16a34a", dark: "#4ade80" };
 // Nodos de contexto de una sección: más chicos y en gris, para que el núcleo destaque.
@@ -85,12 +88,17 @@ function drawHover(dark: boolean, accent: string) {
 
 function readParams() {
   const q = new URLSearchParams(location.search);
-  return { view: q.get("vista"), config: q.get("config"), node: q.get("node"), seccion: q.get("seccion"), filtros: leerFiltrosUrl(location.search) };
+  return { view: q.get("vista"), config: q.get("config"), node: q.get("node"), seccion: q.get("seccion"), filtros: leerFiltrosUrl(location.search), search: location.search };
 }
 
-function writeParams(view: string, config: string, node: string | null, seccion: string | null, filtros: FiltrosEstado) {
+type ParConfigs = [string, string];
+interface CaminoSel { desde: string | null; hasta: string | null }
+
+function writeParams(view: string, config: string, node: string | null, seccion: string | null, filtros: FiltrosEstado, comparar: ParConfigs | null, camino: CaminoSel | null) {
   const q = new URLSearchParams(location.search);
   escribirFiltrosUrl(q, filtros);
+  escribirCompararUrl(q, comparar && comparar[0] !== comparar[1] ? comparar : null);
+  escribirCaminoUrl(q, camino?.desde && camino.hasta ? { desde: camino.desde, hasta: camino.hasta } : null);
   view === "ros" ? q.delete("vista") : q.set("vista", view);
   config === "all" ? q.delete("config") : q.set("config", config);
   node ? q.set("node", node) : q.delete("node");
@@ -99,8 +107,69 @@ function writeParams(view: string, config: string, node: string | null, seccion:
   history.replaceState(null, "", `${location.pathname}${s ? `?${s}` : ""}`);
 }
 
+// Combobox de nodo para el camino (origen y destino): mismos candidatos y filtro que el buscador de la barra.
+function ComboNodo({ id, etiqueta, items, etiquetaValor, onElegir }: { id: string; etiqueta: string; items: ItemBusqueda[]; etiquetaValor: string; onElegir: (id: string) => void }) {
+  const [texto, setTexto] = useState(etiquetaValor);
+  const [abierto, setAbierto] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const valorRef = useRef(etiquetaValor);
+  valorRef.current = etiquetaValor;
+  useEffect(() => setTexto(etiquetaValor), [etiquetaValor]);
+  const res = useMemo(() => filtrarBusqueda(items, texto), [items, texto]);
+  const lista = abierto && texto.trim() !== "" && texto !== etiquetaValor;
+  const listaId = `${id}-lista`;
+  const elegir = (it: ItemBusqueda) => {
+    setAbierto(false);
+    setIdx(0);
+    setTexto(it.label);
+    onElegir(it.id);
+  };
+  const tecla = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Con la lista abierta, Esc solo la cierra; si no, sube y sale del modo.
+    if (e.key === "Escape" && lista) { e.preventDefault(); e.stopPropagation(); setAbierto(false); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!texto.trim()) return;
+      e.preventDefault();
+      if (!lista) { setAbierto(true); return; }
+      const n = navegarLista(e.key, idx, res.length);
+      if (n !== null && n >= 0) setIdx(n);
+      return;
+    }
+    if (e.key === "Enter" && lista && res[idx]) { e.preventDefault(); elegir(res[idx]); }
+  };
+  return (
+    <div className="rg-combo rg-camino-campo">
+      <label htmlFor={id}>{etiqueta}</label>
+      <input
+        id={id}
+        type="text"
+        role="combobox"
+        autoComplete="off"
+        placeholder="Nodo o topic…"
+        aria-expanded={lista}
+        aria-controls={listaId}
+        aria-autocomplete="list"
+        aria-activedescendant={lista && res[idx] ? `${listaId}-${idx}` : undefined}
+        value={texto}
+        onChange={(e) => { setTexto(e.target.value); setAbierto(true); setIdx(0); }}
+        onKeyDown={tecla}
+        onBlur={() => { setAbierto(false); requestAnimationFrame(() => setTexto(valorRef.current)); }}
+      />
+      <ul className="rg-combo-lista" id={listaId} role="listbox" aria-label={`Resultados de ${etiqueta.toLowerCase()}`} hidden={!lista || res.length === 0}>
+        {res.map((it, i) => (
+          <li key={it.id} id={`${listaId}-${i}`} role="option" aria-selected={i === idx} className="rg-combo-op" onMouseDown={(e) => e.preventDefault()} onClick={() => elegir(it)}>
+            <span className="rg-combo-nombre">{it.label}</span>
+            <span className="rg-combo-meta">{it.tipo}{it.paquete ? ` · ${it.paquete}` : ""}</span>
+          </li>
+        ))}
+      </ul>
+      {lista && res.length === 0 && <p className="rg-combo-lista rg-combo-vacio">Sin resultados</p>}
+    </div>
+  );
+}
+
 export default function RoboticsGraph({ projectId, views }: Props) {
-  const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null, seccion: null, filtros: FILTROS_INICIALES } : readParams()), []);
+  const initial = useMemo(() => (typeof window === "undefined" ? { view: null, config: null, node: null, seccion: null, filtros: FILTROS_INICIALES, search: "" } : readParams()), []);
   const [view, setView] = useState(views.find((v) => v.id === initial.view)?.id ?? views[0].id);
   const [data, setData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +206,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [comboOpen, setComboOpen] = useState(false);
   const [comboIdx, setComboIdx] = useState(0);
   const [camTick, setCamTick] = useState(0);
+  const [comparar, setComparar] = useState<ParConfigs | null>(null);
+  const [camino, setCamino] = useState<CaminoSel | null>(null);
+  const modoAplicado = useRef(false);
+  const enfocarModo = useRef(false);
+  const resalteRef = useRef<{ nodos: Set<string>; aristas: Set<string> } | null>(null);
+  const ladosRef = useRef<Map<string, "a" | "b" | "ambas"> | null>(null);
   const menuBtns = useRef<Record<MenuId, HTMLButtonElement | null>>({ vista: null, mas: null, vistas: null });
   const menuFoco = useRef<"primero" | "ultimo" | null>(null);
   const camaraPend = useRef<EstadoVista["camara"]>(undefined);
@@ -258,6 +333,13 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (tour.length && tourConfig && !propio && !initial.node && !storage.get(TOUR_SEEN)) setTourStep(0);
   }, [capas, data]);
 
+  // Comparar: unión de las dos configuraciones, clasificada por lado.
+  const comparacion = useMemo(
+    () => (data?.view === "ros" && comparar ? compararConfigs(data.nodes, data.edges, comparar[0], comparar[1]) : null),
+    [data, comparar],
+  );
+  ladosRef.current = comparacion?.lado ?? null;
+
   // Qué se ve con los filtros actuales. Un topic o servicio solo se muestra si algún nodo visible lo usa,
   // para que al ocultar el legado no queden topics sueltos. En el diseño A los topics no son nodos.
   const visibleIds = useMemo(() => {
@@ -267,6 +349,13 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (secVariant) {
       const inSec = new Set([...secVariant.core, ...secVariant.channels, ...secVariant.context]);
       for (const n of data.nodes) if (inSec.has(n.id) && !hiddenGroups.has(n.group) && !ocultoPorEstado(n, filtros) && (!capas || OWNERS.has(n.kind))) ids.add(n.id);
+      return ids;
+    }
+    if (comparacion) {
+      for (const id of comparacion.lado.keys()) {
+        const n = nodeById.get(id);
+        if (n && !hiddenGroups.has(n.group) && (!capas || OWNERS.has(n.kind))) ids.add(id);
+      }
       return ids;
     }
     const passes = (n: GraphNode) => {
@@ -284,9 +373,27 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       }
     }
     return ids;
-  }, [data, config, hiddenGroups, filtros, capas, sec, planOn]);
+  }, [data, config, hiddenGroups, filtros, capas, sec, planOn, comparacion]);
   const visibleRef = useRef(visibleIds);
   visibleRef.current = visibleIds;
+  // Camino entre nodos: solo por lo que existe en la configuración y los filtros actuales.
+  const ruta = useMemo(() => {
+    if (!data || data.view !== "ros" || !camino?.desde || !camino.hasta) return null;
+    const permitidos = miembrosConfig(data.nodes, data.edges, config, filtros);
+    return caminoMasCorto(data.nodes, data.edges, camino.desde, camino.hasta, permitidos);
+  }, [data, camino, config, filtros]);
+  const resalte = useMemo(() => {
+    if (!data || !ruta) return null;
+    const nodos = new Set(capas ? ruta.pasos.filter((id) => OWNERS.has(nodeById.get(id)?.kind ?? "")) : ruta.pasos);
+    if (!capas) return { nodos, aristas: new Set(aristasCamino(ruta.pasos, data.edges)) };
+    // Por capas las flechas van entre dueños: las de dueños consecutivos del camino.
+    const flechas = new Set((data.flowEdges ?? []).map((e) => `${e.source}>${e.target}`));
+    const duenos = ruta.pasos.filter((id) => nodos.has(id));
+    const aristas = new Set<string>();
+    for (let i = 0; i + 1 < duenos.length; i++) for (const k of [`${duenos[i]}>${duenos[i + 1]}`, `${duenos[i + 1]}>${duenos[i]}`]) if (flechas.has(k)) aristas.add(k);
+    return { nodos, aristas };
+  }, [data, ruta, capas, nodeById]);
+  resalteRef.current = resalte;
   const contextRef = useRef(new Set<string>());
   contextRef.current = new Set(secVariant?.context ?? []);
   const visible = (n: GraphNode | undefined) => Boolean(n && visibleRef.current.has(n.id));
@@ -406,7 +513,19 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           const n = nodeById.get(id);
           if (!visible(n)) return { ...raw, hidden: true };
           // Nodo que solo existe en el plan: color de aviso y "(plan)" en la etiqueta, para no depender del color.
-          const attrs = n?.soloPlan ? { ...raw, color: planColor, label: `${raw.label} (plan)`, forceLabel: true } : raw;
+          let attrs = n?.soloPlan ? { ...raw, color: planColor, label: `${raw.label} (plan)`, forceLabel: true } : raw;
+          // Comparar: color y ícono por lado (el ícono se antepone a la etiqueta: no depende solo del color).
+          const lado = ladosRef.current?.get(id);
+          if (lado) {
+            const est = estiloComparar(lado);
+            attrs = { ...attrs, color: est.color, label: `${est.icono} ${raw.label}`, forceLabel: true };
+          }
+          // Camino: sus nodos resaltados y el resto atenuado.
+          const res = resalteRef.current;
+          if (res) {
+            if (res.nodos.has(id)) return { ...attrs, highlighted: true, zIndex: 2, forceLabel: true };
+            return { ...attrs, color: faded, label: capas ? attrs.label : "", forceLabel: false, zIndex: 0 };
+          }
           // Contexto de la sección: chico, gris y sin etiqueta salvo que esté enfocado o junto al nodo enfocado.
           const ctx = contextRef.current.has(id);
           const base = ctx ? { ...attrs, size: attrs.size * 0.7, color: dark ? CONTEXT.dark : CONTEXT.light, label: "" } : attrs;
@@ -425,6 +544,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             const f = focusOf();
             const enfocada = Boolean(f && (s === f || t === f));
             return { ...attrs, type: "arrow", color: planColor, size: 1.6, label: enfocada ? etiquetaPlan(attrs.label) : undefined, zIndex: 1 };
+          }
+          const res = resalteRef.current;
+          if (res) {
+            const [a, b] = [s, t];
+            if (res.aristas.has(`${a}>${b}`)) return { ...attrs, type: "arrow", color: edgeFocus, size: 3, zIndex: 2 };
+            return { ...attrs, color: edgeFaded, label: undefined };
           }
           const focus = focusOf();
           // El nombre del topic solo aparece en las flechas del nodo enfocado, para no llenar el dibujo de texto.
@@ -517,12 +642,27 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   }, [stageHeight, fs, present]);
 
   useEffect(() => {
+    // Las refs se actualizan antes de repintar, en el mismo efecto, para que los reducers lean el valor nuevo.
+    resalteRef.current = resalte;
+    ladosRef.current = comparacion?.lado ?? null;
     sigma.current?.refresh({ skipIndexation: true });
-  }, [selected, hovered, tourStep, secStep, planOn]);
+  }, [selected, hovered, tourStep, secStep, planOn, resalte, comparacion]);
 
   useEffect(() => {
-    if (data) writeParams(view, config, selected, sec?.id ?? null, filtros);
-  }, [view, config, selected, data, sec, filtros]);
+    if (data) writeParams(view, config, selected, sec?.id ?? null, filtros, comparar, camino);
+  }, [view, config, selected, data, sec, filtros, comparar, camino]);
+
+  // Abre el modo que pida el enlace (comparar gana a camino); los ids se validan contra la configuración y los nodos.
+  useEffect(() => {
+    if (!data || data.view !== "ros" || modoAplicado.current) return;
+    modoAplicado.current = true;
+    const configIds = data.configs.map((c) => c.id);
+    const ids = new Set(data.nodes.map((n) => n.id));
+    const modo = modoInicialUrl(initial.search, configIds, ids);
+    if (modo?.tipo === "comparar") setComparar(leerCompararUrl(initial.search, configIds));
+    else if (modo?.tipo === "camino") setCamino(leerCaminoUrl(initial.search, ids));
+    if (modo) { setTourStep(null); setSecStep(null); setSeccionId(null); }
+  }, [data]);
 
   // Al elegir un nodo (también desde ?node=) la cámara lo centra. En el recorrido no se mueve: se ve todo el camino
   // y solo cambia lo resaltado.
@@ -621,7 +761,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       presFs.current = true;
       void root.current.requestFullscreen().catch(() => { presFs.current = false; });
     }
-    if (stepIdx === null) {
+    if (stepIdx === null && !comparar && !camino) {
       if (sec && sec.tour.length) startSecTour(saved ?? 0);
       else if (capas && activo.pasos.length) startTour(saved ?? 0);
     }
@@ -655,6 +795,52 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     r.refresh();
   }, [present, ready]);
 
+  // Modos Comparar y Camino: se excluyen entre sí y con el recorrido, la sección y el Panorama.
+  const prepararModo = () => {
+    setTourStep(null);
+    setSecStep(null);
+    setSeccionId(null);
+    setPanoramaOn(false);
+    setSelected(null);
+    enfocarModo.current = true;
+  };
+  const entrarComparar = () => {
+    if (!data || data.configs.length < 2) return;
+    prepararModo();
+    setCamino(null);
+    const vigentes = data.configs.filter((c) => !c.legado);
+    const primera = vigentes[0] ?? data.configs[0];
+    const segunda = vigentes.find((c) => c.id !== primera.id) ?? data.configs.find((c) => c.id !== primera.id)!;
+    setComparar([primera.id, segunda.id]);
+  };
+  const entrarCamino = () => {
+    prepararModo();
+    setComparar(null);
+    setCamino({ desde: null, hasta: null });
+  };
+  const salirComparar = () => {
+    setComparar(null);
+    menuBtns.current.vista?.focus();
+  };
+  const salirCamino = () => {
+    setCamino(null);
+    menuBtns.current.vista?.focus();
+  };
+  const hayModo = Boolean(comparar || camino);
+  const nombreConfig = (id: string) => data?.configs.find((c) => c.id === id)?.label ?? id;
+  // Enfoca el elemento (o el primer visible que lo toca, si es un topic que la vista por capas no dibuja).
+  const irA = (id: string) => {
+    if (!data) return;
+    const dest = destinoBusqueda(id, data.edges, visibleIds);
+    if (dest) setSelected(dest);
+  };
+  useEffect(() => {
+    // Al entrar desde el menú, el foco pasa al primer control del panel.
+    if (!hayModo || !enfocarModo.current) return;
+    enfocarModo.current = false;
+    root.current?.querySelector<HTMLElement>(".rg-comparar select, .rg-camino input")?.focus();
+  }, [comparar === null, camino === null]);
+
   const camera = (action: "in" | "out" | "reset") => {
     const c = sigma.current?.getCamera();
     if (!c) return;
@@ -672,6 +858,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     });
 
   const startTour = (from = 0) => {
+    setComparar(null);
+    setCamino(null);
     setSelected(null);
     setSecStep(null);
     // El recorrido de una configuración no cambia la configuración; el global va a la que muestra todos sus nodos.
@@ -688,6 +876,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   };
   // Elegir una sección vuelve a "todas" las configuraciones; elegir una configuración quita la sección.
   const pickSection = (id: string) => {
+    if (id) { setComparar(null); setCamino(null); }
     setSelected(null);
     setTourStep(null);
     setSecStep(null);
@@ -695,6 +884,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (id) setConfig("all");
   };
   const startSecTour = (from = 0) => {
+    setComparar(null);
+    setCamino(null);
     setSelected(null);
     setTourStep(null);
     setSecStep(from);
@@ -747,10 +938,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   };
 
   // Buscador (combobox): nodos visibles y los topics/servicios que los tocan, con tipo y paquete.
-  const resultados = useMemo(
-    () => (data ? filtrarBusqueda(candidatosBusqueda(data.nodes, data.edges, visibleIds), query) : []),
-    [data, visibleIds, query],
-  );
+  // Un solo cálculo de candidatos: lo usan el buscador de la barra y los de origen/destino del camino.
+  const candidatos = useMemo(() => (data ? candidatosBusqueda(data.nodes, data.edges, visibleIds) : []), [data, visibleIds]);
+  const resultados = useMemo(() => filtrarBusqueda(candidatos, query), [candidatos, query]);
   const listaAbierta = comboOpen && query.trim() !== "";
   const comboListId = `rg-combo-lista-${projectId}`;
   const elegirResultado = (it: ItemBusqueda) => {
@@ -946,7 +1136,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {views.length > 1 && (
           <div className="rg-tabs" role="tablist" aria-label="Vista">
             {views.map((v) => (
-              <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => { setSelected(null); setTourStep(null); setSecStep(null); setSeccionId(null); setConfig("all"); setHiddenGroups(new Set()); setView(v.id); }}>
+              <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => { setSelected(null); setTourStep(null); setSecStep(null); setSeccionId(null); setComparar(null); setCamino(null); setConfig("all"); setHiddenGroups(new Set()); setView(v.id); }}>
                 {v.label}
               </button>
             ))}
@@ -971,7 +1161,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </label>
         )}
         {data?.view === "ros" && data.panorama?.length ? (
-          <button ref={panoramaBtn} type="button" className="rg-tour-btn" aria-pressed={panoramaOn} onClick={() => setPanoramaOn((v) => !v)}>Panorama</button>
+          <button ref={panoramaBtn} type="button" className="rg-tour-btn" aria-pressed={panoramaOn} onClick={() => { if (!panoramaOn) { setComparar(null); setCamino(null); } setPanoramaOn((v) => !v); }}>Panorama</button>
         ) : null}
         {data && (
           <div className="rg-combo rg-search">
@@ -1044,6 +1234,12 @@ export default function RoboticsGraph({ projectId, views }: Props) {
                 <button type="button" role="menuitemcheckbox" aria-checked={showPlan} className="rg-menu-item" {...rv("plan")} onClick={() => setShowPlan((v) => !v)}>Mostrar plan (arquitectura objetivo)</button>
               )}
               <button type="button" role="menuitemcheckbox" aria-checked={miniOn} className="rg-menu-item" {...rv("mini")} onClick={toggleMini}>Mostrar minimapa</button>
+              {data.view === "ros" && data.configs.length >= 2 && (
+                <button type="button" role="menuitem" className="rg-menu-item" aria-pressed={Boolean(comparar)} {...rv("comparar")} onClick={accion(entrarComparar)}>Comparar configuraciones</button>
+              )}
+              {data.view === "ros" && (
+                <button type="button" role="menuitem" className="rg-menu-item" aria-pressed={Boolean(camino)} {...rv("camino")} onClick={accion(entrarCamino)}>Camino entre nodos</button>
+              )}
             </div>
           </div>
         )}
@@ -1134,7 +1330,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       <p className="rg-copied rg-aviso" role="status" aria-live="polite">{aviso}</p>
 
       {data && (
-        <div className="rg-legend" id={`rg-leyenda-${projectId}`} aria-label="Capas" hidden={!leyendaOn}>
+        <div className="rg-legend" id={`rg-leyenda-${projectId}`} aria-label="Capas" hidden={!leyendaOn || Boolean(comparar)}>
           {data.groups.filter((gr) => !capas || !["topic", "service"].includes(gr.id)).map((gr) => (
             <button key={gr.id} className="rg-chip" aria-pressed={!hiddenGroups.has(gr.id)} title={gr.hint} onClick={() => toggleGroup(gr.id)}>
               <span className="rg-dot" style={{ background: groupColor.get(gr.id) }} />
@@ -1178,6 +1374,92 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </ol>
         </nav>
       ) : null}
+
+      {comparar && comparacion && data?.view === "ros" && (
+        <section className="rg-comparar" aria-label="Comparar configuraciones" onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          e.stopPropagation();
+          salirComparar();
+        }}>
+          <div className="rg-comparar-campos">
+            {([["Configuración A", 0], ["Configuración B", 1]] as const).map(([titulo, i]) => (
+              <label key={titulo} className="rg-comparar-campo">
+                <span>{titulo}</span>
+                <select value={comparar[i]} onChange={(e) => setComparar(i === 0 ? [e.target.value, comparar[1]] : [comparar[0], e.target.value])}>
+                  {data.configs.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </label>
+            ))}
+            <button type="button" className="rg-tool" onClick={salirComparar}>Salir de comparar</button>
+          </div>
+          <p className="rg-comparar-resumen" role="status" aria-live="polite">{textoResumen(comparacion.resumen, nombreConfig(comparar[0]), nombreConfig(comparar[1]))} (nodos y topics)</p>
+          <ul className="rg-comparar-leyenda" aria-label="Leyenda de la comparación">
+            {(["a", "b", "ambas"] as const).map((l) => {
+              const est = estiloComparar(l);
+              return (
+                <li key={l}>
+                  <svg className="rg-comparar-punto" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="5" fill={est.color} /></svg>
+                  <span className="rg-comparar-icono" aria-hidden="true">{est.icono}</span>
+                  <span>{est.texto}{l === "a" ? `: ${nombreConfig(comparar[0])}` : l === "b" ? `: ${nombreConfig(comparar[1])}` : ""}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <details className="rg-comparar-dif">
+            <summary>Diferencias ({comparacion.resumen.soloA + comparacion.resumen.soloB})</summary>
+            {([["soloA", comparar[0]], ["soloB", comparar[1]]] as const).map(([clave, cfg]) => (
+              <div key={clave}>
+                <h4>Solo en {nombreConfig(cfg)}</h4>
+                {comparacion.diferencias[clave].length === 0 ? <p className="rg-comparar-vacio">Nada</p> : (
+                  <ul>
+                    {comparacion.diferencias[clave].map((it) => (
+                      <li key={it.id}>
+                        <button type="button" className="rg-link" onClick={() => irA(it.id)}>{it.label}</button>
+                        <span className="rg-comparar-tipo">{it.kind === "topic" ? "topic" : "nodo"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </details>
+        </section>
+      )}
+
+      {camino && data?.view === "ros" && (
+        <section className="rg-camino" aria-label="Camino entre nodos" onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          e.stopPropagation();
+          salirCamino();
+        }}>
+          <div className="rg-camino-campos">
+            <ComboNodo id={`rg-camino-desde-${projectId}`} etiqueta="Origen" items={candidatos} etiquetaValor={camino.desde ? nodeById.get(camino.desde)?.label ?? "" : ""} onElegir={(id) => setCamino({ ...camino, desde: id })} />
+            <button type="button" className="rg-tool rg-camino-swap" aria-label="Intercambiar origen y destino" title="Intercambiar origen y destino" onClick={() => setCamino({ desde: camino.hasta, hasta: camino.desde })}>⇄</button>
+            <ComboNodo id={`rg-camino-hasta-${projectId}`} etiqueta="Destino" items={candidatos} etiquetaValor={camino.hasta ? nodeById.get(camino.hasta)?.label ?? "" : ""} onElegir={(id) => setCamino({ ...camino, hasta: id })} />
+            <button type="button" className="rg-tool" onClick={salirCamino}>Salir del camino</button>
+          </div>
+          {ruta ? (
+            <>
+              <p className="rg-camino-texto">{textoCamino(ruta.pasos, data.nodes, data.edges)}</p>
+              {!ruta.dirigido && <p className="rg-camino-aviso" role="status">⚠ La ruta no respeta el sentido de los mensajes</p>}
+              <ol className="rg-camino-pasos">
+                {ruta.pasos.map((id) => (
+                  <li key={id}>
+                    <button type="button" className="rg-link" onClick={() => irA(id)}>{nodeById.get(id)?.label ?? id}</button>
+                    <span className="rg-comparar-tipo">{TIPO_PASO[nodeById.get(id)?.kind ?? "node"] ?? nodeById.get(id)?.kind}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          ) : camino.desde && camino.hasta ? (
+            <p className="rg-camino-aviso" role="status">No hay camino entre {nodeById.get(camino.desde)?.label} y {nodeById.get(camino.hasta)?.label} en esta configuración</p>
+          ) : (
+            <p className="rg-camino-ayuda" role="status">Elige un origen y un destino.</p>
+          )}
+        </section>
+      )}
 
       <div className="rg-stage" style={stageHeight ? { height: stageHeight } : undefined}>
         <div ref={container} className="rg-canvas" style={{ pointerEvents: active ? "auto" : "none" }} role="img" aria-label={`Grafo: ${data?.title ?? ""}. La tabla de abajo tiene la misma información en texto.`} />
