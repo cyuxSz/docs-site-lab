@@ -146,9 +146,14 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const planOn = showPlan && planDisponible({ planFlow: planFlow.length, seccion: sec?.id ?? null, config: configObj });
   const planRef = useRef(planOn);
   planRef.current = planOn;
-  const stepIdx = secStep !== null ? secStep : tourStep;
+  // Guard: nunca un índice fuera del recorrido activo (p. ej. al cambiar de configuración, sección o vista).
+  const rawIdx = secStep !== null ? secStep : tourStep;
+  const stepIdx = rawIdx !== null && steps.length ? Math.min(Math.max(rawIdx, 0), steps.length - 1) : null;
   const setStepIdx = secStep !== null ? setSecStep : setTourStep;
   const tourNode = stepIdx !== null ? steps[stepIdx]?.node ?? null : null;
+  useEffect(() => {
+    if (rawIdx !== null && !steps.length) { setTourStep(null); setSecStep(null); }
+  }, [rawIdx, steps.length]);
   const state = useRef({ selected, hovered, tourNode });
   state.current = { selected, hovered, tourNode };
   const recKey = claveRecorrido(projectId, view, activo.claveSeccion);

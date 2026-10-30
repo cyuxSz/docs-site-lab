@@ -83,7 +83,9 @@ test("rosGraph: layout por capas con plan ('capas:plan:<filtro>') para 'all', 'o
   assert.ok(conPlan.nodes.every((n) => !n.pos?.["capas:plan:legado"]), "la configuración legado no tiene capa plan");
   // Columnas en el sentido del dato: imu_drv → ekf → asmc → viejo → ard.
   const x = (id) => byId(id).pos["capas:plan:all"][0];
-  assert.ok(x("ext/imu_drv") < x("ext/ekf") && x("ext/ekf") < x("ctl/asmc") && x("ctl/asmc") < x("ctl/viejo") && x("ctl/viejo") < x("hw:ard"));
+  assert.ok(x("ctl/asmc") < x("ctl/viejo") && x("ctl/viejo") < x("hw:ard"));
+  // Los nodos solo-plan van en su banda, repartidos a lo ancho de los reales y en el orden del dato.
+  assert.ok(x("ext/imu_drv") < x("ext/ekf"));
 });
 
 test("rosGraph: un proyecto sin capa plan no publica planFlowEdges con contenido", () => {
