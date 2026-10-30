@@ -104,7 +104,7 @@ const statusOf = (pkg: string) => {
               <a class="btn btn-primary" href={`/${p.id}/grafo/`} data-astro-prefetch>Abrir el grafo</a>
             </div>
             <p class="hint">Cada configuración es un launch file en uso. El grafo filtrado muestra solo sus nodos, topics y hardware.</p>
-            <p class="hint"><a href={`/${p.id}/limpieza/`} data-astro-prefetch>Limpieza del repo</a>: {byStatus("sin_uso")} sin uso y {byStatus("legado")} legado por revisar.</p>
+            <p class="hint"><a href={`/${p.id}/limpieza/`} data-astro-prefetch>Limpieza del repo</a>: {conteo.sinUso} sin uso y {conteo.legado} legado por revisar.</p>
             <div class="cards">
               {p.ros.configs.map((c) => {
                 const launch = p.ros!.launches.find((l) => l.path === c.launch);
