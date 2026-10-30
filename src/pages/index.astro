@@ -46,7 +46,7 @@ const first = open[0];
           const Tag = live ? "a" : "div";
           if (isRestricted(p.id)) {
             return (
-              <Tag class:list={["vcard", "vcard-min", { "is-off": !live }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
+              <Tag class:list={["vcard", { "is-off": !live }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
                 <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
                 <div class="vcard-body">
                   <span class="card-title">{p.name}</span>
