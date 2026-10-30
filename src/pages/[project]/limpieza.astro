@@ -1,0 +1,94 @@
+---
+// Limpieza del repo: candidatos a borrar (sin uso y legado) con progreso "revisado" local. Sin data-pagefind-body.
+import Base from "../../layouts/Base.astro";
+import SideNav from "../../components/SideNav.astro";
+import { builtProjects, project as load, projectNav } from "../../lib/data";
+import { filasLimpieza } from "../../lib/limpieza.ts";
+
+export async function getStaticPaths() {
+  return builtProjects()
+    .filter((p) => load(p.id).ros)
+    .map((p) => ({ params: { project: p.id } }));
+}
+
+const p = load(Astro.params.project!);
+const f = filasLimpieza(p.ros, p.repoUrl, p.sha);
+const total = f.sinUso.length + f.legado.length;
+const route = `/${p.id}/limpieza/`;
+const secciones = [
+  { clave: "sinuso", titulo: "Sin uso (candidatos a borrar)", filas: f.sinUso, legado: false, vacio: "No hay nodos sin uso." },
+  { clave: "legado", titulo: "Legado (se puede borrar cuando se retire lo indicado)", filas: f.legado, legado: true, vacio: "No hay nodos legado." },
+];
+---
+<Base title={`Limpieza del repo · ${p.name}`} description={`Nodos sin uso y legado de ${p.name} que se pueden retirar del repo.`} project={projectNav(p)} current="wiki">
+  <div class="container">
+    <div class="doc">
+      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
+      <main id="contenido" data-limpieza data-proyecto={p.id} data-nombre={p.name}>
+        <nav class="migas" aria-label="Migas">
+          <ol>
+            <li><a href={`/${p.id}/`} data-astro-prefetch>{p.name}</a></li>
+            <li><span aria-current="page">Limpieza del repo</span></li>
+          </ol>
+        </nav>
+        <section class="prose">
+          <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}</p>
+          <h1>Limpieza del repo</h1>
+          <p class="hint">Nodos que ninguna configuración en uso lanza. Marca los que ya revisaste: el progreso se guarda solo en este navegador. No se borra nada del repo desde aquí.</p>
+        </section>
+
+        <div class="limpieza-barra">
+          <p class="limpieza-progreso" data-resumen role="status" aria-live="polite">0 de {total} revisados</p>
+          <div class="limpieza-barra-fondo" aria-hidden="true"><div class="limpieza-barra-llena" data-barra></div></div>
+          <label class="limpieza-filtro"><input type="checkbox" data-ocultar /> Ocultar revisados</label>
+          <button type="button" class="btn" data-exportar>Exportar como Markdown</button>
+        </div>
+
+        {secciones.map((s) => (
+          <section class="block" data-seccion={s.clave}>
+            <div class="block-head"><h2>{s.titulo}</h2></div>
+            {s.filas.length === 0 ? (
+              <p class="hint">{s.vacio}</p>
+            ) : (
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Revisado</th>
+                      <th scope="col">Paquete</th>
+                      <th scope="col">Ejecutable</th>
+                      <th scope="col">Archivo</th>
+                      {s.legado && <th scope="col">Retirar</th>}
+                      <th scope="col">Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {s.filas.map((r) => (
+                      <tr data-fila={JSON.stringify(r)}>
+                        <td><input type="checkbox" data-id={r.id} aria-label={`Revisado: ${r.paquete}/${r.ejecutable}`} /></td>
+                        <td><code>{r.paquete}</code></td>
+                        <td><code>{r.ejecutable}</code></td>
+                        <td>{r.url ? <a href={r.url} rel="noopener noreferrer" target="_blank"><code>{r.archivo}</code></a> : <code>{r.archivo || "—"}</code>}</td>
+                        {s.legado && (
+                          <td>
+                            {r.configs.map((c) => <div>Config: {c}</div>)}
+                            {r.launches.map((l) => <code style="display:block">{l}</code>)}
+                            {r.configs.length === 0 && r.launches.length === 0 && "—"}
+                          </td>
+                        )}
+                        <td>{r.motivo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        ))}
+      </main>
+    </div>
+  </div>
+</Base>
+<script>
+  import "../../scripts/limpieza.ts";
+</script>

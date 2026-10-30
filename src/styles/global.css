@@ -627,3 +627,14 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
   :is(.prose table, .data-table) td::before { content: none; }
   mark.resaltado { background: none; border-bottom: 0; color: inherit; }
 }
+
+/* Lote 8c: insignias agrupadas (estado + plan) y pagina de limpieza. */
+.insignias { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.limpieza-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 12px 0 20px; }
+.limpieza-progreso { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.limpieza-barra-fondo { flex: 1 1 140px; min-width: 100px; max-width: 320px; height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.limpieza-barra-llena { width: 0; height: 100%; background: var(--ok); transition: width .2s; }
+.limpieza-filtro { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+tr.limpieza-revisada td { opacity: .6; }
+tr.limpieza-revisada td:first-child { opacity: 1; }
+tr[hidden] { display: none; }
