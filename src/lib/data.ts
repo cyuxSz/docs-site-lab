@@ -7,6 +7,16 @@ import { join } from "node:path";
 
 const CONTENT = join(process.cwd(), ".content");
 
+export interface Commit {
+  sha: string;
+  corto: string;
+  fecha: string;
+  autor: string;
+  mensaje: string;
+  url: string;
+  diff: string;
+}
+
 export interface PageInfo {
   path: string;
   route: string;
@@ -18,6 +28,7 @@ export interface PageInfo {
   updated: string | null;
   author: string | null;
   commit?: string | null;
+  historial?: Commit[];
 }
 
 export interface RosNode {
