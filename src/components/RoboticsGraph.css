@@ -98,7 +98,7 @@
 
 /* Minimapa: canvas propio en la esquina inferior derecha del escenario (el zoom va a la izquierda). */
 .rg-minimap {
-  position: absolute; right: 10px; bottom: 10px; z-index: 2; width: 160px; height: 110px; max-width: 40%;
+  position: absolute; right: 10px; bottom: 10px; z-index: 2; width: 160px; height: auto; aspect-ratio: 160 / 110; max-width: 40%;
   border: 1px solid var(--line); border-radius: 10px; background: var(--surface); opacity: .92; cursor: crosshair; touch-action: none;
 }
 .rg-exit { position: absolute; top: 10px; right: 10px; z-index: 3; display: none; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
@@ -116,3 +116,8 @@
 .rg-presenting .rg-tour { position: static; max-width: 900px; font-size: clamp(18px, 2.4vw, 28px); }
 .rg-presenting .rg-tour .rg-tour-step { font-size: 14px; }
 .rg-presenting .rg-tour-actions button { min-height: 44px; }
+.rg-presenting { gap: 0; }
+.rg-presenting .rg-stage { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.rg-presenting .rg-tour { width: 100%; max-width: none; margin: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+.rg-keys { color: var(--muted, inherit); font-size: 12px; opacity: .8; }
+html.rg-no-scroll, html.rg-no-scroll body { overflow: hidden; }

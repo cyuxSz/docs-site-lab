@@ -563,10 +563,26 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   togglePresentRef.current = () => (nav.current.present ? exitPresent() : enterPresent());
   exitPresentRef.current = exitPresent;
   useEffect(() => {
-    // El foco vuelve al botón al salir.
+    // El foco vuelve al botón al salir y pasa a "Salir" al entrar.
     if (wasPresent.current && !present) presBtn.current?.focus();
+    if (present) root.current?.querySelector<HTMLElement>(".rg-exit")?.focus();
     wasPresent.current = present;
   }, [present]);
+
+  // Sin scroll de la página de fondo mientras se presenta; también se limpia al desmontar.
+  useEffect(() => {
+    if (!present) return;
+    document.documentElement.classList.add("rg-no-scroll");
+    return () => document.documentElement.classList.remove("rg-no-scroll");
+  }, [present]);
+
+  // Etiquetas más grandes en presentación.
+  useEffect(() => {
+    const r = sigma.current;
+    if (!r) return;
+    r.setSetting("labelSize", present ? 18 : 12);
+    r.refresh();
+  }, [present, ready]);
 
   const camera = (action: "in" | "out" | "reset") => {
     const c = sigma.current?.getCamera();
@@ -759,7 +775,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </>
         )}
         {data && (
-          <button ref={presBtn} className="rg-tool" type="button" aria-pressed={present} onClick={() => (present ? exitPresent() : enterPresent())}>Modo presentación</button>
+          <button ref={presBtn} className="rg-tool" type="button" aria-pressed={present} aria-keyshortcuts="P" title="Modo presentación (P)" onClick={() => (present ? exitPresent() : enterPresent())}>Modo presentación</button>
         )}
         {data && (
           <button className="rg-tool" type="button" aria-pressed={miniOn} onClick={toggleMini}>{miniOn ? "Ocultar minimapa" : "Mostrar minimapa"}</button>
@@ -863,6 +879,8 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           <p>{step.text}</p>
           <div className="rg-tour-actions">
             <button onClick={endTour}>{secStep !== null ? "Cerrar" : "Saltar"}</button>
+            {present && stepIdx > 0 && <button onClick={() => setStepIdx(0)}>Desde el inicio</button>}
+            {present ? <small className="rg-keys">← → para avanzar</small> : null}
             <span />
             {stepIdx > 0 && <button onClick={() => setStepIdx(stepIdx - 1)}>Anterior</button>}
             {stepIdx < steps.length - 1
