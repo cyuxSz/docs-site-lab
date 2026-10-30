@@ -1,6 +1,6 @@
 // Rutas por rol en el navegador: página /<id>/rutas/ (checklist) y bloque "Ruta X · paso N de M" al pie de cada paso.
 // El texto de la wiki llega por atributos de datos y se pinta con textContent; nunca con HTML.
-import { almacenSeguro, claveRol, leidos, marcar, pasoEnPagina, progreso, reiniciar, rolGuardado, type Ruta } from "../lib/rutas.ts";
+import { activarRuta, almacenSeguro, claveRol, desactivarRuta, leidos, marcar, pasoActivo, progreso, reiniciar, rolGuardado, textoContinuar, type Ruta } from "../lib/rutas.ts";
 
 const alm = almacenSeguro(() => localStorage);
 const parse = (s: string | undefined): Ruta[] => {
@@ -30,8 +30,9 @@ if (root) {
     if (cont) cont.textContent = `${pr.texto} pasos leídos`;
     const btn = panel.querySelector<HTMLButtonElement>("[data-continuar]");
     if (btn) {
-      btn.disabled = pr.siguiente === null;
-      btn.textContent = pr.siguiente === null ? "Ruta completa" : "Continuar con el siguiente paso";
+      const t = textoContinuar(pr);
+      btn.disabled = t.deshabilitado;
+      btn.textContent = t.texto;
     }
   };
 
@@ -82,7 +83,9 @@ if (root) {
     });
     panel.querySelector("[data-continuar]")?.addEventListener("click", () => {
       const { siguiente } = progreso(leidos(alm, proyecto, ruta));
-      if (siguiente !== null) location.href = ruta.pasos[siguiente].route;
+      if (siguiente === null) return;
+      activarRuta(alm, proyecto, ruta.id);
+      location.href = ruta.pasos[siguiente].route;
     });
     const btnReiniciar = panel.querySelector<HTMLButtonElement>("[data-reiniciar]");
     btnReiniciar?.addEventListener("click", () => {
@@ -104,11 +107,11 @@ if (pie) {
   const proyecto = pie.dataset.proyecto!;
   const page = pie.dataset.page!;
   const rutas = parse(pie.dataset.rutas);
-  const ruta = rutas.find((r) => r.id === rolGuardado(alm, proyecto, rutas));
-  if (ruta) {
+  const activo = pasoActivo(alm, proyecto, rutas, page);
+  if (activo) {
+    const { ruta, i } = activo;
     const l = leidos(alm, proyecto, ruta);
-    const i = pasoEnPagina(ruta, page, l);
-    if (i >= 0) {
+    {
       const estado = document.createElement("p");
       estado.className = "ruta-paso-estado";
       estado.textContent = `Ruta ${ruta.nombre} · paso ${i + 1} de ${ruta.pasos.length}`;
@@ -129,7 +132,24 @@ if (pie) {
         nav.href = `/${proyecto}/rutas/`;
         nav.textContent = "Volver a Rutas por rol";
       }
-      pie.replaceChildren(estado, label, nav);
+
+      const salir = document.createElement("button");
+      salir.type = "button";
+      salir.className = "ruta-salir";
+      salir.textContent = "✕";
+      salir.setAttribute("aria-label", `Salir de la ruta ${ruta.nombre}`);
+      salir.title = `Salir de la ruta ${ruta.nombre}`;
+      salir.addEventListener("click", () => {
+        desactivarRuta(alm, proyecto);
+        pie.hidden = true;
+        const h1 = document.querySelector<HTMLElement>("h1");
+        if (h1) {
+          h1.tabIndex = -1;
+          h1.focus();
+        }
+      });
+
+      pie.replaceChildren(estado, label, nav, salir);
       pie.hidden = false;
     }
   }
