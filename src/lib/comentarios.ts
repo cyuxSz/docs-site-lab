@@ -57,7 +57,20 @@ export function tipoInfo(t: unknown): { etiqueta: string; clase: string } {
 }
 
 export const textoValido = (t: string): boolean => typeof t === "string" && t.trim().length >= 1 && t.trim().length <= MAX_TEXTO;
-export const contador = (t: string): string => `${t.length}/${MAX_TEXTO}`;
+export const contador = (t: string): string => `${t.trim().length}/${MAX_TEXTO}`;
+
+// Comentarios no borrados fuera de hilos resueltos (las huérfanas no cuentan, como en armarHilos).
+export function contarAbiertos(lista: Comentario[] | null | undefined): number {
+  let n = 0;
+  for (const h of armarHilos(lista)) {
+    if (h.resuelto) continue;
+    if (!h.borrado) n++;
+    n += h.respuestas.filter((r) => !r.borrado).length;
+  }
+  return n;
+}
+
+export const etiquetaComentarios = (n: number | null): string => (n === null ? "Comentarios" : `Comentarios (${n})`);
 
 export function mensajeError(codigo: number | string, opts: { retryAfter?: string | number | null; servidor?: unknown } = {}): string {
   switch (codigo) {

@@ -577,7 +577,14 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 /* Comentarios por página */
 .comentarios { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line); }
 .comentarios h2 { margin: 0 0 12px; font-size: 22px; }
+.comentarios-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.comentarios-toggle:hover { border-color: var(--accent); }
+.comentarios-toggle [data-comentarios-signo] { display: inline-block; width: 1ch; text-align: center; color: var(--accent); }
+[data-comentarios-agregar] { min-height: 44px; margin-top: 12px; }
 .comentarios-estado { color: var(--muted); margin: 0 0 12px; }
+.comentarios-estado[data-cargando]::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-inline-end: 8px; vertical-align: -2px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: comentarios-giro .8s linear infinite; }
+@keyframes comentarios-giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .comentarios-estado[data-cargando]::before { animation: none; } }
 .comentarios-lista, .comentarios-respuestas { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .comentarios-respuestas { margin-top: 12px; margin-inline-start: 16px; padding-inline-start: 12px; border-inline-start: 2px solid var(--line); }
 .comentario { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); }
@@ -590,7 +597,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .comentario-acciones button { min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
 .comentario-acciones button:hover { border-color: var(--accent); }
 .comentario-acciones button:disabled, .comentarios-form button:disabled { opacity: .6; cursor: default; }
-.comentarios-form, .comentarios-form-inline { display: grid; gap: 12px; margin-top: 16px; }
+.comentarios-form:not([hidden]), .comentarios-form-inline { display: grid; gap: 12px; margin-top: 16px; }
 .comentarios-form-inline { margin-top: 12px; }
 .comentarios .campo { display: grid; gap: 4px; }
 .comentarios label { font-size: 14px; font-weight: 600; }
@@ -605,10 +612,45 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .chip-bug { background: color-mix(in srgb, var(--danger) 20%, transparent); }
 .chip-otro { background: var(--glass); }
 
+/* Barras de la wiki (lote 8a): plegado en escritorio, cajones en móvil y modo enfoque. */
+.barras-control { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.barras-control button, .salir-enfoque { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+.barras-control button:hover, .salir-enfoque:hover { border-color: var(--accent); }
+.barras-control button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.salir-enfoque { position: fixed; top: 12px; right: 12px; z-index: 50; background: var(--surface); box-shadow: var(--shadow); }
+.salir-enfoque[hidden], .barras-velo[hidden] { display: none; }
+.barras-velo { display: none; }
+.doc-wiki { --col-izq: 240px; --col-der: 220px; }
+@media (max-width: 1100px) { .doc-wiki { --col-izq: 220px; } }
+@media (min-width: 900px) {
+  html[data-barra-izq="plegada"] .doc-wiki > .sidenav, html[data-barra-der="plegada"] .doc-wiki > .meta { display: none; }
+  html[data-barra-izq="plegada"] .doc-wiki { grid-template-columns: minmax(0, 1fr) var(--col-der); }
+  html[data-barra-der="plegada"] .doc-wiki { grid-template-columns: var(--col-izq) minmax(0, 1fr); }
+  html[data-barra-izq="plegada"][data-barra-der="plegada"] .doc-wiki { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 900px) and (max-width: 1100px) {
+  html[data-barra-izq="plegada"] .doc-wiki { grid-template-columns: minmax(0, 1fr); }
+  html[data-barra-izq="plegada"] .doc-wiki > .meta { grid-column: 1; }
+}
+html[data-enfoque] .doc-wiki > .sidenav, html[data-enfoque] .doc-wiki > .meta, html[data-enfoque] .barras-control { display: none; }
+html[data-enfoque] .doc-wiki { grid-template-columns: minmax(0, 1fr); }
+html[data-enfoque] .doc-wiki > main { width: 100%; max-width: 860px; margin-inline: auto; min-width: 0; }
+@media (max-width: 899.98px) {
+  .doc-wiki .sidenav, .doc-wiki .meta { position: fixed; top: 0; bottom: 0; z-index: 40; width: min(320px, 85vw); max-height: none; margin: 0; padding: 16px; overflow-y: auto; background: var(--surface); box-shadow: var(--shadow); visibility: hidden; transition: transform .2s ease, visibility .2s; }
+  .doc-wiki .sidenav { left: 0; border: 0; border-inline-end: 1px solid var(--line); border-radius: 0; transform: translateX(-100%); }
+  .doc-wiki .meta { right: 0; grid-column: auto; border-inline-start: 1px solid var(--line); transform: translateX(100%); }
+  html[data-cajon="izq"] .doc-wiki .sidenav, html[data-cajon="der"] .doc-wiki .meta { transform: none; visibility: visible; }
+  .doc-wiki .sidenav-toggle { display: none; }
+  .doc-wiki .sidenav:not(.open) .sidenav-list { display: block; }
+  .barras-velo { position: fixed; inset: 0; z-index: 39; display: block; background: color-mix(in srgb, var(--bg) 65%, transparent); }
+  .barras-velo[hidden] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .doc-wiki .sidenav, .doc-wiki .meta { transition: none; } }
+
 /* Impresión: negro sobre blanco, sin controles, enlaces con su URL y sin bloques cortados. */
 @media print {
   :root, :root[data-theme="light"] { --bg: #fff; --surface: #fff; --glass: #fff; --text: #000; --muted: #222; --line: #888; --accent: #000; --shadow: none; }
-  .topbar, .ptabs, .sidenav, .migas, .toc-box, .prevnext, .to-top, .copy-btn, .cita-copiar, .anchor, .favorito-btn, .aviso-cambio, .ruta-paso, .lectura-ajustes, .resaltado-barra, .continuar, .favoritos, .search-dialog, .atajos-dialog, .comentarios, .popover, .meta .acciones { display: none !important; }
+  .topbar, .ptabs, .sidenav, .migas, .toc-box, .prevnext, .to-top, .copy-btn, .cita-copiar, .anchor, .favorito-btn, .aviso-cambio, .ruta-paso, .lectura-ajustes, .resaltado-barra, .continuar, .favoritos, .search-dialog, .atajos-dialog, .comentarios, .barras-control, .barras-velo, .salir-enfoque, .popover, .meta .acciones { display: none !important; }
   html, body { background: #fff; color: #000; box-shadow: none; background-image: none; }
   .doc, .doc.doc-2 { display: block; padding-top: 0; }
   .doc, main, .prose { max-width: none; width: auto; margin: 0; }
