@@ -95,3 +95,24 @@
 /* Pantalla completa: el contenedor entero (barra, grafo y paneles) llena la pantalla con el fondo del tema. */
 .rg:fullscreen { height: 100%; padding: 12px; overflow: auto; background: var(--bg-image) fixed, var(--bg); }
 .rg:fullscreen .rg-stage { flex: 1 1 auto; min-height: 0; height: auto !important; }
+
+/* Minimapa: canvas propio en la esquina inferior derecha del escenario (el zoom va a la izquierda). */
+.rg-minimap {
+  position: absolute; right: 10px; bottom: 10px; z-index: 2; width: 160px; height: 110px; max-width: 40%;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); opacity: .92; cursor: crosshair; touch-action: none;
+}
+.rg-exit { position: absolute; top: 10px; right: 10px; z-index: 3; display: none; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+
+/* Modo presentación: solo el lienzo y el texto del paso. Sin pantalla completa nativa cubre toda la ventana. */
+.rg-presenting { position: fixed; inset: 0; z-index: 1000; padding: 12px; overflow: hidden; background: var(--bg-image) fixed, var(--bg); }
+.rg-presenting .rg-toolbar,
+.rg-presenting .rg-legend,
+.rg-presenting .rg-drawer,
+.rg-presenting .rg-search,
+.rg-presenting .rg-note,
+.rg-presenting .rg-minimap { display: none; }
+.rg-presenting .rg-exit { display: block; }
+.rg-presenting .rg-stage { flex: 1 1 auto; min-height: 0; height: auto !important; }
+.rg-presenting .rg-tour { position: static; max-width: 900px; font-size: clamp(18px, 2.4vw, 28px); }
+.rg-presenting .rg-tour .rg-tour-step { font-size: 14px; }
+.rg-presenting .rg-tour-actions button { min-height: 44px; }
