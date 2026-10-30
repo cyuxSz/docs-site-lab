@@ -401,3 +401,12 @@ test("api/comentarios.js exporta GET/POST/PATCH/DELETE que delegan en el core (s
   assert.equal(res.status, 401);
   cabecerasJson(res, "api 401");
 });
+
+test("503: con SESSION_SECRET ausente o corto no acepta ninguna cookie (misma política que el middleware)", async () => {
+  for (const secreto of [undefined, "abc"]) {
+    const { handler } = await montar({ env: { SESSION_SECRET: secreto } });
+    const res = await handler(req("GET", { cookie: cookieDe("ana", { secret: secreto ?? "" }), pagina: PAG }));
+    assert.equal(res.status, 503, `secreto ${secreto}`);
+    cabecerasJson(res, "503");
+  }
+});
