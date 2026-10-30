@@ -12,6 +12,7 @@ const docs = defineCollection({
     description: z.string().optional().default(""),
     owner: z.string().optional().default(""),
     claims: z.number().default(0),
+    level: z.string().optional(),
     updated: z.string().nullable(),
     author: z.string().nullable(),
     source: z.string(),

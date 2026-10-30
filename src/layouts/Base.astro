@@ -9,15 +9,17 @@ import temaScript from "../scripts/tema-inline.js?raw";
 import { isRestricted } from "../../access.config.js";
 import { ATAJOS } from "../lib/atajos.ts";
 import { themeStyle, type ProjectTheme } from "../lib/data";
+import type { Sugerencia } from "../lib/lectura.ts";
 
 interface Props {
   title: string;
   description?: string;
   // Con proyecto: pestañas Resumen / Wiki / Grafo / Diagramas y sus colores (projectNav en lib/data.ts).
-  project?: { id: string; name: string; theme?: ProjectTheme; wiki?: string; diagrams?: boolean; repoUrl?: string };
+  project?: { id: string; name: string; theme?: ProjectTheme; wiki?: string; diagrams?: boolean; repoUrl?: string; sugerencias?: Sugerencia[] };
   current?: "resumen" | "wiki" | "grafo";
 }
 const { title, description = "Documentación de los proyectos de software de VantTec.", project, current } = Astro.props;
+const sugerencias = project?.sugerencias ?? [];
 ---
 <!doctype html>
 <html lang="es">
@@ -78,6 +80,21 @@ const { title, description = "Documentación de los proyectos de software de Van
     <dialog class="search-dialog" id="search" aria-label="Buscar en la documentación">
       <div class="search-bar"><strong>Buscar</strong><button type="button" data-search-close aria-label="Cerrar">×</button></div>
       <div id="pagefind" data-pagefind-ignore="all"></div>
+      <div class="search-extra" data-search-extra data-pagefind-ignore="all" hidden>
+        <div data-bloque-recientes hidden>
+          <h3>Búsquedas recientes</h3>
+          <ul data-recientes></ul>
+          <button type="button" data-borrar-recientes hidden>Borrar recientes</button>
+        </div>
+        {sugerencias.length > 0 && (
+          <div data-bloque-sugerencias>
+            <h3>Sugerencias</h3>
+            <ul>
+              {sugerencias.map((s) => <li><a href={s.route}>{s.title}</a></li>)}
+            </ul>
+          </div>
+        )}
+      </div>
     </dialog>
 
     <dialog class="atajos-dialog" id="atajos" aria-labelledby="atajos-titulo" data-pagefind-ignore="all" data-wiki={project?.wiki ?? ""} data-grafo={project ? `/${project.id}/grafo/` : ""} data-novedades={project ? `/${project.id}/novedades/` : ""}>
@@ -91,48 +108,8 @@ const { title, description = "Documentación de los proyectos de software de Van
 
     <script>
       import "../scripts/atajos";
-      // Pagefind UI se descarga la primera vez que se abre la búsqueda, no en cada página.
-      const dialog = document.getElementById("search") as HTMLDialogElement;
-      let loaded = false;
-      async function openSearch() {
-        dialog.showModal();
-        if (!loaded) {
-          loaded = true;
-          const css = document.createElement("link");
-          css.rel = "stylesheet";
-          css.href = "/pagefind/pagefind-ui.css";
-          document.head.append(css);
-          try {
-            await new Promise((resolve, reject) => {
-              const s = document.createElement("script");
-              s.src = "/pagefind/pagefind-ui.js";
-              s.onload = resolve;
-              s.onerror = reject;
-              document.head.append(s);
-            });
-            // @ts-expect-error global que define pagefind-ui.js
-            new window.PagefindUI({ element: "#pagefind", showSubResults: true, resetStyles: false, autofocus: true, openFilters: ["proyecto", "tipo", "paquete"] });
-          } catch {
-            document.getElementById("pagefind")!.textContent = "La búsqueda solo existe en el sitio construido (npm run build).";
-          }
-        }
-        (dialog.querySelector("input") as HTMLInputElement | null)?.focus();
-      }
-      document.querySelectorAll("[data-search-open]").forEach((b) => b.addEventListener("click", openSearch));
-      dialog.querySelector("[data-search-close]")!.addEventListener("click", () => dialog.close());
-      document.addEventListener("keydown", (e) => {
-        const typing = (e.target as HTMLElement).closest("input, textarea, [contenteditable]");
-        if (e.key === "/" && !typing && !dialog.open) {
-          e.preventDefault();
-          openSearch();
-        }
-        // Ctrl/Cmd+K abre la búsqueda también dentro de un campo de texto.
-        if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key?.toLowerCase() === "k") {
-          e.preventDefault();
-          if (!dialog.open) openSearch();
-        }
-      });
-      if (/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll("[data-search-kbd]").forEach((k) => (k.textContent = "⌘K"));
+      // Buscador (Pagefind UI, recientes y ?q=): carga diferida, Ctrl/Cmd+K y "/".
+      import "../scripts/busqueda";
       // Enlaces a otros sitios (GitHub, papers) en otra pestaña, para que el portal siga abierto. Se decide al hacer
       // clic, así cubre también los enlaces que crean los componentes (panel del grafo, resultados de búsqueda).
       const external = (a: HTMLAnchorElement) => /^https?:$/.test(a.protocol) && a.host !== location.host;
