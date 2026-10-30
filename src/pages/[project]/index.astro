@@ -11,7 +11,7 @@ export function getStaticPaths() {
 }
 
 const p = load(Astro.params.project!);
-// Proyecto restringido: sin data-pagefind-body no entra al índice de búsqueda (access.config.js).
+// Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
 const restricted = isRestricted(p.id);
 const packages = p.pageList.filter((x) => x.path.startsWith("packages/") && x.type !== "index");
 const highlight = ["quickstart.md", "onboarding.md", "operations/estado.md", "architecture/overview.md"]

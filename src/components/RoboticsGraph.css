@@ -9,10 +9,6 @@
 .rg-search input { width: 11rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
 .rg-tour-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
 
-.rg-inline { display: inline-block; width: 9px; height: 9px; vertical-align: 0; }
-.rg-flowdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
-:root[data-theme="light"] .rg-flowdot { background: #16a34a; box-shadow: 0 0 6px #16a34a; }
-
 /* Diseño A: recorrido guiado. */
 /* Va debajo del lienzo y se queda pegada al borde inferior de la pantalla mientras el grafo está a la vista. */
 .rg-tour {

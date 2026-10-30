@@ -125,7 +125,7 @@ export function sections(pages: PageInfo[]) {
   for (const [dir, label] of SECTIONS) groups.set(dir, { label, pages: [] });
   for (const p of visible) {
     const dir = p.path.includes("/") ? p.path.split("/")[0] : "";
-    if (!groups.has(dir)) groups.set(dir, { label: visible.find((x) => x.type === "index" && x.path.split("/")[0] === dir && x.path.includes("/"))?.title ?? dir, pages: [] });
+    if (!groups.has(dir)) groups.set(dir, { label: visible.find((x) => x.type === "index" && x.path === `${dir}/index.md`)?.title ?? dir, pages: [] });
     groups.get(dir)!.pages.push(p);
   }
   for (const g of groups.values()) g.pages.sort((a, b) => Number(b.type === "index") - Number(a.type === "index") || a.title.localeCompare(b.title, "es"));
