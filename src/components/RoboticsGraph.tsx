@@ -198,7 +198,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [panoramaOn, setPanoramaOn] = useState(false);
   const [menu, setMenu] = useState<MenuId | null>(null);
   const [menuItem, setMenuItem] = useState("");
-  const [leyendaOn, setLeyendaOn] = useState(true);
+  const [leyendaOn, setLeyendaOn] = useState(false);
   const [vistas, setVistas] = useState<VistaGuardada[]>([]);
   const [guardando, setGuardando] = useState<string | null>(null);
   const [renombrando, setRenombrando] = useState<{ id: string; texto: string } | null>(null);
@@ -277,8 +277,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     };
     document.addEventListener("fullscreenchange", onFs);
     setMiniOn(minimapaVisible(storage.get(claveMinimapa), innerWidth));
-    // Leyenda plegada por defecto en pantallas angostas (sin persistir) y vistas guardadas validadas.
-    setLeyendaOn(innerWidth >= 760);
+    // Leyenda plegada por defecto en todas las pantallas (sin persistir); las vistas guardadas se validan.
     setVistas(leerVistas(storage.get(claveVistas(projectId))));
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -1224,7 +1223,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         )}
         {data && (
           <div className="rg-menu" onKeyDown={teclaMenu("vista")}>
-            <button ref={(el) => { menuBtns.current.vista = el; }} id={menuBtnId("vista")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vista"} aria-controls={menuPanelId("vista")} onClick={() => alternarMenu("vista")}>Vista ▾</button>
+            <button ref={(el) => { menuBtns.current.vista = el; }} id={menuBtnId("vista")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vista"} aria-controls={menuPanelId("vista")} onClick={() => alternarMenu("vista")}>Mostrar ▾</button>
             <div className="rg-menu-panel" role="menu" id={menuPanelId("vista")} aria-labelledby={menuBtnId("vista")} data-menu="vista" hidden={menu !== "vista"}>
               {data.view === "ros" && config === "all" && (<>
                 <button type="button" role="menuitemcheckbox" aria-checked={filtros.legado} className="rg-menu-item" {...rv("legado")} onClick={() => setFiltros((f) => ({ ...f, legado: !f.legado }))}>Mostrar legado</button>
@@ -1245,7 +1244,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         )}
         {data && (
           <div className="rg-menu rg-vistas" onKeyDown={teclaMenu("vistas")}>
-            <button ref={(el) => { menuBtns.current.vistas = el; }} id={menuBtnId("vistas")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vistas"} aria-controls={menuPanelId("vistas")} onClick={() => alternarMenu("vistas")}>Vistas ▾</button>
+            <button ref={(el) => { menuBtns.current.vistas = el; }} id={menuBtnId("vistas")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vistas"} aria-controls={menuPanelId("vistas")} onClick={() => alternarMenu("vistas")}>Guardadas ▾</button>
             <div className="rg-menu-panel" role="menu" id={menuPanelId("vistas")} aria-labelledby={menuBtnId("vistas")} data-menu="vistas" hidden={menu !== "vistas"}>
               <button type="button" role="menuitem" className="rg-menu-item" {...rv("guardar")} onClick={() => { setGuardando(""); setAvisoVistas(vistas.length >= MAX_VISTAS ? `Máximo ${MAX_VISTAS} vistas: borra una para guardar otra` : ""); }}>Guardar vista…</button>
               {guardando !== null && (
