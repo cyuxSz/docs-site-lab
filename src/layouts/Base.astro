@@ -104,6 +104,7 @@ const sugerencias = project?.sugerencias ?? [];
           <li><span class="atajos-teclas">{a.teclas.map((t) => <kbd>{t}</kbd>)}</span><span>{a.descripcion}</span></li>
         ))}
       </ul>
+      <p class="atajos-nota">Los atajos se pausan mientras hay un diálogo abierto.</p>
     </dialog>
 
     <script>

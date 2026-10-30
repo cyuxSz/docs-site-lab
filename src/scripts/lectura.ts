@@ -1,6 +1,6 @@
 // Lectura en la página de la wiki: resalta el término de ?q= (lo pone Pagefind) y ajusta letra y ancho.
 // Todo el texto (de la wiki y de la URL) se pinta con nodos DOM y textContent; nunca con HTML.
-import { CLAVE_ANCHO, CLAVE_LETRA, coincidencias, normalizarAncho, normalizarLetra, PARAM_RESALTADO, terminosResaltado } from "../lib/lectura.ts";
+import { CLAVE_ANCHO, CLAVE_LETRA, coincidencias, decodificarAncla, normalizarAncho, normalizarLetra, PARAM_RESALTADO, terminosResaltado } from "../lib/lectura.ts";
 import { almacenSeguro } from "../lib/rutas.ts";
 
 const alm = almacenSeguro(() => localStorage);
@@ -64,11 +64,14 @@ if (barra && prose && terminos.length) {
   const termino = q.trim().replace(/\s+/g, " ").slice(0, 80);
   if (texto) texto.textContent = marcas.length ? `${marcas.length}${marcas.length >= MAX_MARCAS ? "+" : ""} ${marcas.length === 1 ? "coincidencia" : "coincidencias"} de «${termino}»` : `No se encontró «${termino}» en esta página`;
   barra.hidden = false;
+  const fijarAlto = () => document.documentElement.style.setProperty("--resaltado-alto", `${barra.offsetHeight}px`);
+  fijarAlto();
+  addEventListener("resize", () => !barra.hidden && fijarAlto());
 
   if (marcas.length) {
     const reducido = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let destino = marcas[0];
-    const ancla = location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : "";
+    const ancla = decodificarAncla(location.hash);
     const el = ancla ? document.getElementById(ancla) : null;
     if (el) destino = marcas.find((m) => el.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) ?? marcas[0];
     destino.scrollIntoView({ block: "center", behavior: reducido ? "auto" : "smooth" });
@@ -82,6 +85,7 @@ if (barra && prose && terminos.length) {
       padre.normalize();
     }
     barra.hidden = true;
+    document.documentElement.style.removeProperty("--resaltado-alto");
     const url = new URL(location.href);
     url.searchParams.delete(PARAM_RESALTADO);
     history.replaceState(history.state, "", url.pathname + url.search + url.hash);

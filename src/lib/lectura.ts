@@ -214,3 +214,14 @@ export type Ancho = (typeof ANCHOS)[number];
 
 export const normalizarLetra = (v: unknown): Letra => ((LETRAS as readonly unknown[]).includes(v) ? (v as Letra) : "m");
 export const normalizarAncho = (v: unknown): Ancho => ((ANCHOS as readonly unknown[]).includes(v) ? (v as Ancho) : "normal");
+
+// --- Ancla de la URL ---
+// Quita el "#" inicial y decodifica; una ancla mal formada (%E0%A4%A) no debe romper el script.
+export function decodificarAncla(hash: unknown): string {
+  if (typeof hash !== "string") return "";
+  try {
+    return decodeURIComponent(hash.replace(/^#/, ""));
+  } catch {
+    return "";
+  }
+}

@@ -78,7 +78,8 @@ export interface ProjectSummary {
   updated?: string | null;
   error?: boolean;
   empty?: boolean;
-  message?: string;
+  causa?: string;
+  ramas?: string[];
 }
 
 export interface ProjectData extends ProjectSummary {

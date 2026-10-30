@@ -12,6 +12,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { citasDe, extraerLineas } from "./citas.mjs";
+import { clasificarError, limpiarControl } from "./estado.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 import { pageRoute, parseRutas } from "./rutas.mjs";
 
@@ -39,21 +40,6 @@ function walk(dir) {
     const p = join(dir, name);
     return statSync(p).isDirectory() ? walk(p) : [p];
   });
-}
-
-// Traduce el error de git a algo que se pueda mostrar en la portada.
-function describeError(err, project) {
-  const msg = hideToken(err.message);
-  if (/Authentication failed|could not read Username|Repository not found|returned error: 40[34]/i.test(msg)) {
-    return {
-      auth: true,
-      message: TOKEN
-        ? `DOCS_GITHUB_TOKEN no puede leer ${project.repo}: caducó, se revocó o no incluye ese repo.`
-        : `${project.repo} es privado y falta DOCS_GITHUB_TOKEN.`,
-    };
-  }
-  if (/Remote branch .* not found/i.test(msg)) return { message: `No existe la rama ${project.branch} en ${project.repo}.` };
-  return { message: msg.split("\n").find((l) => l.trim())?.slice(0, 240) || "Error desconocido." };
 }
 
 // Los tokens fine-grained traen su fecha de caducidad en un header; avisa si faltan 14 días o menos.
@@ -256,8 +242,7 @@ function buildProject(project) {
     try {
       pending = git(["-C", dir, "ls-remote", "--heads", "origin", "docs/*"]).split("\n").filter(Boolean).map((l) => l.split("refs/heads/")[1]);
     } catch {}
-    const hint = pending.length ? ` Hay ramas de documentación sin mergear: ${pending.join(", ")}.` : "";
-    return { ...project, empty: true, message: `La rama ${project.branch} todavía no tiene openwiki/ ni docs/arch/.${hint}` };
+    return { ...project, empty: true, causa: "vacio", ramas: pending };
   }
 
   const rosFile = join(wikiRoot, ".graph", "ros.json");
@@ -269,7 +254,7 @@ function buildProject(project) {
   const { rutas, avisos } = existsSync(rutasFile)
     ? parseRutas(splitFrontmatter(readFileSync(rutasFile, "utf8")).body, { project: project.id, pages: pages.map((p) => p.path) })
     : { rutas: [], avisos: [] };
-  for (const a of avisos) console.warn(`⚠ ${project.id}: ${a}`);
+  for (const a of avisos) console.warn(`⚠ ${project.id}: ${limpiarControl(a)}`);
   const summary = {
     ...project,
     repoUrl,
@@ -299,11 +284,12 @@ for (const p of projects) {
   try {
     const result = buildProject(p);
     summary.push(result);
-    console.log(result.empty ? `○ ${p.id}: ${result.message}` : `✓ ${p.id}: ${result.pages} páginas, ${result.rosNodes} nodos ROS`);
+    console.log(result.empty ? `○ ${p.id}: sin openwiki/ ni docs/arch/ en ${p.branch}` : `✓ ${p.id}: ${result.pages} páginas, ${result.rosNodes} nodos ROS`);
   } catch (err) {
-    const { auth, message } = describeError(err, p);
-    console.error(`✗ ${p.id}: ${message}`);
-    summary.push({ ...p, error: true, auth: Boolean(auth), message });
+    const causa = clasificarError(err, { token: Boolean(TOKEN) });
+    const linea = hideToken(err instanceof Error ? err.message : String(err)).split(/\r?\n/).find((l) => l.trim()) ?? "";
+    console.error(`✗ ${p.id} (${causa}): ${limpiarControl(linea).slice(0, 240) || "error desconocido"}`);
+    summary.push({ ...p, error: true, auth: causa === "sin-token" || causa === "sin-acceso", causa });
   }
 }
 writeFileSync(join(OUT, "projects.json"), JSON.stringify({ builtAt: new Date().toISOString(), alerts, projects: summary }, null, 2));
