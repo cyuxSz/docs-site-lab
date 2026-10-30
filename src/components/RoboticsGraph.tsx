@@ -20,6 +20,9 @@ import { encuadre, aMinimapa, aGrafo, rectVista, minimapaVisible, claveMinimapa,
 import { claveRecorrido, guardarPaso, pasoGuardado, borrarPaso, textoRetomar, accionTecla } from "../lib/recorrido";
 import { idsConPlan, planDisponible, claveLayout, etiquetaPlan, notaPlan, LEYENDA_PLAN } from "../lib/plan";
 import { AVISO_LEGADO, configDelRecorrido, configInicial, recorridoActivo } from "../lib/legado";
+import { navegarLista, accionMenu } from "../lib/menu";
+import { candidatosBusqueda, filtrarBusqueda, destinoBusqueda, type ItemBusqueda } from "../lib/busqueda";
+import { MAX_VISTAS, claveVistas, leerVistas, serializarVistas, agregarVista, renombrarVista, borrarVista, vistaAplicable, type EstadoVista, type VistaGuardada } from "../lib/vistas";
 import "./RoboticsGraph.css";
 
 interface View {
@@ -53,6 +56,8 @@ const cssVar = (name: string, fallback: string) => getComputedStyle(document.bod
 const storage = almacenSeguro(() => localStorage);
 const MINI_W = 160;
 const MINI_H = 110;
+type MenuId = "vista" | "mas" | "vistas";
+const nuevoId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Date.now().toString(36));
 
 // Etiqueta del nodo resaltado con los colores del tema (la de Sigma es siempre un recuadro blanco).
 function drawHover(dark: boolean, accent: string) {
@@ -121,6 +126,21 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   const [saved, setSaved] = useState<number | null>(null);
   const [showPlan, setShowPlan] = useState(false);
   const [panoramaOn, setPanoramaOn] = useState(false);
+  const [menu, setMenu] = useState<MenuId | null>(null);
+  const [menuItem, setMenuItem] = useState("");
+  const [leyendaOn, setLeyendaOn] = useState(true);
+  const [vistas, setVistas] = useState<VistaGuardada[]>([]);
+  const [guardando, setGuardando] = useState<string | null>(null);
+  const [renombrando, setRenombrando] = useState<{ id: string; texto: string } | null>(null);
+  const [avisoVistas, setAvisoVistas] = useState("");
+  const [comboOpen, setComboOpen] = useState(false);
+  const [comboIdx, setComboIdx] = useState(0);
+  const [camTick, setCamTick] = useState(0);
+  const menuBtns = useRef<Record<MenuId, HTMLButtonElement | null>>({ vista: null, mas: null, vistas: null });
+  const menuFoco = useRef<"primero" | "ultimo" | null>(null);
+  const camaraPend = useRef<EstadoVista["camara"]>(undefined);
+  const saltarCentro = useRef(false);
+  const vistaPend = useRef<EstadoVista | null>(null);
   const mini = useRef<HTMLCanvasElement>(null);
   const miniT = useRef<Encuadre | null>(null);
   const miniDrag = useRef(false);
@@ -181,6 +201,9 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     };
     document.addEventListener("fullscreenchange", onFs);
     setMiniOn(minimapaVisible(storage.get(claveMinimapa), innerWidth));
+    // Leyenda plegada por defecto en pantallas angostas (sin persistir) y vistas guardadas validadas.
+    setLeyendaOn(innerWidth >= 760);
+    setVistas(leerVistas(storage.get(claveVistas(projectId))));
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       const escribiendo = Boolean(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)));
@@ -469,11 +492,17 @@ export default function RoboticsGraph({ projectId, views }: Props) {
       } else setStageHeight(null);
     }
     r.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+    // Vista guardada con cámara: se aplica después del reset y el centrado del nodo no la pisa.
+    if (camaraPend.current) {
+      r.getCamera().setState({ ...camaraPend.current, angle: 0 });
+      saltarCentro.current = true;
+      setTimeout(() => { camaraPend.current = undefined; }, 400);
+    }
     r.refresh();
     // Si el primer dibujo cae justo cuando Sigma termina de montarse se pierde: se repite en el siguiente cuadro.
     const frame = requestAnimationFrame(() => r.refresh());
     return () => cancelAnimationFrame(frame);
-  }, [visibleIds, ready, planOn]);
+  }, [visibleIds, ready, planOn, camTick]);
 
   // Sigma no se entera solo de que cambió el alto del contenedor.
   useEffect(() => {
@@ -481,6 +510,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (!r) return;
     r.resize();
     r.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+    if (camaraPend.current) r.getCamera().setState({ ...camaraPend.current, angle: 0 });
     r.refresh();
   }, [stageHeight, fs, present]);
 
@@ -496,10 +526,14 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   // y solo cambia lo resaltado.
   useEffect(() => {
     const r = sigma.current;
-    if (!r || !selected || !graph.current?.hasNode(selected)) return;
+    if (!r || !selected || !graph.current?.hasNode(selected) || saltarCentro.current) return;
     const pos = r.getNodeDisplayData(selected);
     if (pos) r.getCamera().animate({ x: pos.x, y: pos.y }, { duration: reducedMotion() ? 0 : 400 });
   }, [selected, ready]);
+  // Después de los demás efectos de cada commit: el salto del centrado solo vale para ese commit.
+  useEffect(() => {
+    saltarCentro.current = false;
+  });
 
   // Guarda el paso en cada cambio; así se puede retomar tras recargar.
   useEffect(() => {
@@ -599,7 +633,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
   exitPresentRef.current = exitPresent;
   useEffect(() => {
     // El foco vuelve al botón al salir y pasa a "Salir" al entrar.
-    if (wasPresent.current && !present) presBtn.current?.focus();
+    if (wasPresent.current && !present) menuBtns.current.mas?.focus();
     if (present) root.current?.querySelector<HTMLElement>(".rg-exit")?.focus();
     wasPresent.current = present;
   }, [present]);
@@ -710,19 +744,180 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     setTimeout(() => setAviso(""), 2500);
   };
 
-  // Buscador: nombres de los nodos que se ven ahora.
-  const searchable = useMemo(
-    () => (data?.nodes ?? []).filter((n) => visibleIds.has(n.id) && OWNERS.has(n.kind)).sort((a, b) => a.label.localeCompare(b.label)),
-    [data, visibleIds],
+  // Buscador (combobox): nodos visibles y los topics/servicios que los tocan, con tipo y paquete.
+  const resultados = useMemo(
+    () => (data ? filtrarBusqueda(candidatosBusqueda(data.nodes, data.edges, visibleIds), query) : []),
+    [data, visibleIds, query],
   );
-  const goTo = (text: string) => {
-    setQuery(text);
-    const hit = searchable.find((n) => n.label.toLowerCase() === text.trim().toLowerCase());
-    if (!hit) return;
+  const listaAbierta = comboOpen && query.trim() !== "";
+  const comboListId = `rg-combo-lista-${projectId}`;
+  const elegirResultado = (it: ItemBusqueda) => {
+    if (!data) return;
+    const dest = destinoBusqueda(it.id, data.edges, visibleIds);
+    if (!dest) return;
     setTourStep(null);
-    setSelected(hit.id);
+    setSecStep(null);
+    setSelected(dest);
     setQuery("");
+    setComboOpen(false);
+    setComboIdx(0);
   };
+  const teclaCombo = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      // Con la lista abierta solo la cierra; con texto y lista cerrada lo borra; si no, deja pasar el Esc.
+      if (listaAbierta) { e.preventDefault(); e.stopPropagation(); setComboOpen(false); }
+      else if (query) { e.preventDefault(); e.stopPropagation(); setQuery(""); }
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!query.trim()) return;
+      e.preventDefault();
+      if (!listaAbierta) { setComboOpen(true); return; }
+      const n = navegarLista(e.key, comboIdx, resultados.length);
+      if (n !== null && n >= 0) setComboIdx(n);
+      return;
+    }
+    if (e.key === "Enter" && listaAbierta && resultados[comboIdx]) {
+      e.preventDefault();
+      elegirResultado(resultados[comboIdx]);
+    }
+  };
+
+  // Menús desplegables de la barra ("Vista", "Vistas", "Más"): uno abierto a la vez, foco en los ítems.
+  const menuPanelId = (id: MenuId) => `rg-menu-${id}-${projectId}`;
+  const menuBtnId = (id: MenuId) => `rg-menubtn-${id}-${projectId}`;
+  const itemsMenu = (id: MenuId) => Array.from(root.current?.querySelectorAll<HTMLElement>(`[data-menu="${id}"] [role^="menuitem"]`) ?? []);
+  const rv = (k: string) => ({ tabIndex: menuItem === k ? 0 : -1, onFocus: () => setMenuItem(k) });
+  const abrirMenu = (id: MenuId, donde: "primero" | "ultimo") => {
+    menuFoco.current = donde;
+    setMenuItem("");
+    setMenu(id);
+  };
+  const cerrarMenu = (devolverFoco: boolean) => {
+    const m = menu;
+    setMenu(null);
+    setGuardando(null);
+    setRenombrando(null);
+    setAvisoVistas("");
+    if (devolverFoco && m) menuBtns.current[m]?.focus();
+  };
+  const alternarMenu = (id: MenuId) => (menu === id ? cerrarMenu(false) : abrirMenu(id, "primero"));
+  // Ítem de acción: ejecuta y cierra el menú devolviendo el foco a su botón.
+  const accion = (fn: () => void) => () => { cerrarMenu(true); fn(); };
+  const teclaMenu = (id: MenuId) => (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    if (menu !== id) {
+      if (t === menuBtns.current[id] && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        abrirMenu(id, e.key === "ArrowUp" ? "ultimo" : "primero");
+      }
+      return;
+    }
+    const a = accionMenu(e.key);
+    if (a === "cerrar") {
+      // Esc cierra solo el menú: no sale de la presentación ni cierra el Panorama ni el panel.
+      e.preventDefault();
+      e.stopPropagation();
+      cerrarMenu(true);
+      return;
+    }
+    // Tab cierra sin quitar el foco al siguiente control (el cambio de foco ocurre antes de ocultar el menú).
+    if (a === "salir") { setTimeout(() => setMenu(null), 0); return; }
+    if (t.tagName === "INPUT") return;
+    // Enter y espacio activan el botón enfocado de forma nativa.
+    const items = itemsMenu(id);
+    const n = navegarLista(e.key, items.indexOf(t), items.length);
+    if (n !== null) { e.preventDefault(); items[n]?.focus(); }
+  };
+  useEffect(() => {
+    if (!menu || !menuFoco.current) return;
+    const items = itemsMenu(menu);
+    (menuFoco.current === "ultimo" ? items[items.length - 1] : items[0])?.focus();
+    menuFoco.current = null;
+  }, [menu]);
+  // Clic o toque fuera del menú lo cierra; el listener solo existe mientras hay un menú abierto.
+  useEffect(() => {
+    if (!menu) return;
+    const fuera = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".rg-menu")) {
+        setMenu(null);
+        setGuardando(null);
+        setRenombrando(null);
+      }
+    };
+    document.addEventListener("pointerdown", fuera);
+    return () => document.removeEventListener("pointerdown", fuera);
+  }, [menu]);
+
+  // Panorama: al abrirlo el foco pasa a la primera caja (Esc lo cierra y devuelve el foco a su botón).
+  useEffect(() => {
+    if (panoramaOn) root.current?.querySelector<HTMLElement>(".rg-panorama-caja")?.focus();
+  }, [panoramaOn]);
+
+  // Vistas guardadas (localStorage vía almacenSeguro; lo leído ya viene validado).
+  const persistirVistas = (lista: VistaGuardada[]) => {
+    setVistas(lista);
+    storage.set(claveVistas(projectId), serializarVistas(lista));
+  };
+  const guardarVista = () => {
+    if (guardando === null) return;
+    const cam = sigma.current?.getCamera().getState();
+    const estado: EstadoVista = {
+      vista: view,
+      config,
+      seccion: sec?.id ?? null,
+      legado: showOld,
+      plan: showPlan,
+      ocultos: [...hiddenGroups],
+      nodo: selected,
+      ...(cam ? { camara: { x: cam.x, y: cam.y, ratio: cam.ratio } } : {}),
+    };
+    const r = agregarVista(vistas, guardando, estado, nuevoId(), Date.now());
+    if (!r.ok) {
+      setAvisoVistas(r.motivo === "lleno" ? `Máximo ${MAX_VISTAS} vistas: borra una para guardar otra` : "Escribe un nombre para la vista");
+      return;
+    }
+    persistirVistas(r.lista);
+    setGuardando(null);
+    setAvisoVistas("Vista guardada");
+    requestAnimationFrame(() => itemsMenu("vistas")[0]?.focus());
+  };
+  const aplicarEstado = (e: EstadoVista) => {
+    if (!data) return;
+    const a = vistaAplicable(e, {
+      configs: data.configs.map((c) => c.id),
+      secciones: (data.sections ?? []).map((x) => x.id),
+      nodos: new Set(data.nodes.map((n) => n.id)),
+      grupos: data.groups.map((g) => g.id),
+    });
+    setTourStep(null);
+    setSecStep(null);
+    setSeccionId(a.seccion);
+    setConfig(a.config);
+    setShowOld(a.legado);
+    setShowPlan(a.plan);
+    setHiddenGroups(new Set(a.ocultos));
+    setSelected(a.nodo);
+    if (a.camara) {
+      camaraPend.current = a.camara;
+      setCamTick((n) => n + 1);
+    }
+  };
+  const aplicarVista = (v: VistaGuardada) => {
+    if (v.estado.vista !== view && views.some((x) => x.id === v.estado.vista)) {
+      // Otra vista: se cambia primero y el estado se aplica cuando lleguen sus datos.
+      vistaPend.current = v.estado;
+      setSelected(null);
+      setView(v.estado.vista);
+    } else aplicarEstado(v.estado);
+  };
+  // Declarado después del efecto de apertura inicial para que lo aplicado gane sobre la configuración por defecto.
+  useEffect(() => {
+    const e = vistaPend.current;
+    if (!e || !data || e.vista !== view) return;
+    vistaPend.current = null;
+    aplicarEstado(e);
+  }, [data]);
 
   const node = selected ? nodeById.get(selected) : undefined;
   const neighbors = useMemo(() => {
@@ -775,31 +970,42 @@ export default function RoboticsGraph({ projectId, views }: Props) {
         {data?.view === "ros" && data.panorama?.length ? (
           <button ref={panoramaBtn} type="button" className="rg-tour-btn" aria-pressed={panoramaOn} onClick={() => setPanoramaOn((v) => !v)}>Panorama</button>
         ) : null}
-        {data?.view === "ros" && config === "all" && (
-          <label className="rg-check">
-            <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} /> Mostrar legado y sin uso
-          </label>
-        )}
-        {data?.view === "ros" && planDisponible({ planFlow: planFlow.length, seccion: sec?.id ?? null, config: configObj }) && (
-          <label className="rg-check rg-plan-check">
-            <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} /> Mostrar plan (arquitectura objetivo)
-          </label>
-        )}
         {data && (
-          <label className="rg-field rg-search">
-            <span className="sr-only">Ir a un nodo</span>
+          <div className="rg-combo rg-search">
+            <label className="sr-only" htmlFor={`rg-combo-${projectId}`}>Ir a un nodo o topic</label>
             <input
-              type="search"
-              list={`rg-nodes-${projectId}`}
-              placeholder="Ir a nodo…"
+              id={`rg-combo-${projectId}`}
+              type="text"
+              role="combobox"
+              autoComplete="off"
+              placeholder="Ir a nodo o topic…"
+              aria-expanded={listaAbierta}
+              aria-controls={comboListId}
+              aria-autocomplete="list"
+              aria-activedescendant={listaAbierta && resultados[comboIdx] ? `${comboListId}-${comboIdx}` : undefined}
               value={query}
-              onChange={(e) => goTo(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && goTo(query)}
+              onChange={(e) => { setQuery(e.target.value); setComboOpen(true); setComboIdx(0); }}
+              onKeyDown={teclaCombo}
+              onBlur={() => setComboOpen(false)}
             />
-            <datalist id={`rg-nodes-${projectId}`}>
-              {searchable.map((n) => <option key={n.id} value={n.label} />)}
-            </datalist>
-          </label>
+            <ul className="rg-combo-lista" id={comboListId} role="listbox" aria-label="Resultados" hidden={!listaAbierta || resultados.length === 0}>
+              {resultados.map((it, i) => (
+                <li
+                  key={it.id}
+                  id={`${comboListId}-${i}`}
+                  role="option"
+                  aria-selected={i === comboIdx}
+                  className="rg-combo-op"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => elegirResultado(it)}
+                >
+                  <span className="rg-combo-nombre">{it.label}</span>
+                  <span className="rg-combo-meta">{it.tipo}{it.paquete ? ` · ${it.paquete}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+            {listaAbierta && resultados.length === 0 && <p className="rg-combo-lista rg-combo-vacio">Sin resultados</p>}
+          </div>
         )}
         {capas && !sec && activo.pasos.length > 0 && tourStep === null && (
           <>
@@ -824,33 +1030,118 @@ export default function RoboticsGraph({ projectId, views }: Props) {
           </>
         )}
         {data && (
-          <button ref={presBtn} className="rg-tool" type="button" aria-pressed={present} aria-keyshortcuts="P" title="Modo presentación (P)" onClick={() => (present ? exitPresent() : enterPresent())}>Modo presentación</button>
+          <div className="rg-menu" onKeyDown={teclaMenu("vista")}>
+            <button ref={(el) => { menuBtns.current.vista = el; }} id={menuBtnId("vista")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vista"} aria-controls={menuPanelId("vista")} onClick={() => alternarMenu("vista")}>Vista ▾</button>
+            <div className="rg-menu-panel" role="menu" id={menuPanelId("vista")} aria-labelledby={menuBtnId("vista")} data-menu="vista" hidden={menu !== "vista"}>
+              {data.view === "ros" && config === "all" && (
+                <button type="button" role="menuitemcheckbox" aria-checked={showOld} className="rg-menu-item" {...rv("legado")} onClick={() => setShowOld((v) => !v)}>Mostrar legado y sin uso</button>
+              )}
+              {data.view === "ros" && planDisponible({ planFlow: planFlow.length, seccion: sec?.id ?? null, config: configObj }) && (
+                <button type="button" role="menuitemcheckbox" aria-checked={showPlan} className="rg-menu-item" {...rv("plan")} onClick={() => setShowPlan((v) => !v)}>Mostrar plan (arquitectura objetivo)</button>
+              )}
+              <button type="button" role="menuitemcheckbox" aria-checked={miniOn} className="rg-menu-item" {...rv("mini")} onClick={toggleMini}>Mostrar minimapa</button>
+            </div>
+          </div>
         )}
         {data && (
-          <button className="rg-tool" type="button" aria-pressed={miniOn} onClick={toggleMini}>{miniOn ? "Ocultar minimapa" : "Mostrar minimapa"}</button>
-        )}
-        {data && fsOk && (
-          <button className="rg-tool" type="button" aria-pressed={fs} onClick={toggleFullscreen}>{fs ? "Salir de pantalla completa" : "Pantalla completa"}</button>
+          <div className="rg-menu rg-vistas" onKeyDown={teclaMenu("vistas")}>
+            <button ref={(el) => { menuBtns.current.vistas = el; }} id={menuBtnId("vistas")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "vistas"} aria-controls={menuPanelId("vistas")} onClick={() => alternarMenu("vistas")}>Vistas ▾</button>
+            <div className="rg-menu-panel" role="menu" id={menuPanelId("vistas")} aria-labelledby={menuBtnId("vistas")} data-menu="vistas" hidden={menu !== "vistas"}>
+              <button type="button" role="menuitem" className="rg-menu-item" {...rv("guardar")} onClick={() => { setGuardando(""); setAvisoVistas(vistas.length >= MAX_VISTAS ? `Máximo ${MAX_VISTAS} vistas: borra una para guardar otra` : ""); }}>Guardar vista…</button>
+              {guardando !== null && (
+                <form className="rg-vistas-form" onSubmit={(e) => { e.preventDefault(); guardarVista(); }}>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    autoFocus
+                    aria-label="Nombre de la vista"
+                    placeholder="Nombre de la vista"
+                    value={guardando}
+                    onChange={(e) => setGuardando(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Escape") return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setGuardando(null);
+                      setAvisoVistas("");
+                      itemsMenu("vistas")[0]?.focus();
+                    }}
+                  />
+                  <button type="submit" className="rg-tool">Guardar</button>
+                </form>
+              )}
+              <p className="rg-vistas-aviso" role="status">{avisoVistas}</p>
+              {vistas.length === 0 && <p className="rg-vistas-vacio">Aún no hay vistas guardadas.</p>}
+              <ul className="rg-vistas-lista" role="none">
+                {vistas.map((v) => (
+                  <li key={v.id} role="none">
+                    {renombrando?.id === v.id ? (
+                      <input
+                        type="text"
+                        maxLength={60}
+                        autoFocus
+                        aria-label={`Nuevo nombre de ${v.nombre}`}
+                        value={renombrando.texto}
+                        onChange={(e) => setRenombrando({ id: v.id, texto: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            persistirVistas(renombrarVista(vistas, v.id, renombrando.texto));
+                            setRenombrando(null);
+                            requestAnimationFrame(() => itemsMenu("vistas")[0]?.focus());
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setRenombrando(null);
+                            requestAnimationFrame(() => itemsMenu("vistas")[0]?.focus());
+                          }
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <button type="button" role="menuitem" className="rg-menu-item rg-vistas-nombre" {...rv(`aplicar-${v.id}`)} onClick={accion(() => aplicarVista(v))}>{v.nombre}</button>
+                        <button type="button" role="menuitem" className="rg-menu-item rg-vistas-op" aria-label={`Renombrar ${v.nombre}`} {...rv(`ren-${v.id}`)} onClick={() => setRenombrando({ id: v.id, texto: v.nombre })}>Renombrar</button>
+                        <button type="button" role="menuitem" className="rg-menu-item rg-vistas-op" aria-label={`Borrar ${v.nombre}`} {...rv(`del-${v.id}`)} onClick={() => { persistirVistas(borrarVista(vistas, v.id)); setAvisoVistas("Vista borrada"); requestAnimationFrame(() => itemsMenu("vistas")[0]?.focus()); }}>Borrar</button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         )}
         {data && (
-          <button className="rg-tool" type="button" onClick={exportPng} disabled={ready === 0}>Exportar PNG</button>
+          <div className="rg-menu" onKeyDown={teclaMenu("mas")}>
+            <button ref={(el) => { menuBtns.current.mas = el; }} id={menuBtnId("mas")} type="button" className="rg-tool" aria-haspopup="menu" aria-expanded={menu === "mas"} aria-controls={menuPanelId("mas")} onClick={() => alternarMenu("mas")}>Más ▾</button>
+            <div className="rg-menu-panel" role="menu" id={menuPanelId("mas")} aria-labelledby={menuBtnId("mas")} data-menu="mas" hidden={menu !== "mas"}>
+              <button ref={presBtn} type="button" role="menuitem" className="rg-menu-item" aria-pressed={present} aria-keyshortcuts="P" {...rv("pres")} onClick={accion(() => (present ? exitPresent() : enterPresent()))}>Modo presentación</button>
+              {fsOk && <button type="button" role="menuitem" className="rg-menu-item" {...rv("fs")} onClick={accion(toggleFullscreen)}>{fs ? "Salir de pantalla completa" : "Pantalla completa"}</button>}
+              <button type="button" role="menuitem" className="rg-menu-item" aria-disabled={ready === 0} {...rv("png")} onClick={accion(() => { if (ready !== 0) exportPng(); })}>Exportar PNG</button>
+              <button type="button" role="menuitem" className="rg-menu-item" {...rv("enlace")} onClick={accion(() => { void copyLink(); })}>Copiar enlace</button>
+            </div>
+          </div>
         )}
-        <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.filter((n) => !capas || OWNERS.has(n.kind)).length}` : ""}</span>
+        {data && (
+          <button type="button" className="rg-tool rg-leyenda-btn" aria-expanded={leyendaOn} aria-controls={`rg-leyenda-${projectId}`} onClick={() => setLeyendaOn((v) => !v)}>Leyenda</button>
+        )}
       </div>
 
+      <p className="rg-copied rg-aviso" role="status" aria-live="polite">{aviso}</p>
+
       {data && (
-        <div className="rg-legend" aria-label="Capas">
+        <div className="rg-legend" id={`rg-leyenda-${projectId}`} aria-label="Capas" hidden={!leyendaOn}>
           {data.groups.filter((gr) => !capas || !["topic", "service"].includes(gr.id)).map((gr) => (
             <button key={gr.id} className="rg-chip" aria-pressed={!hiddenGroups.has(gr.id)} title={gr.hint} onClick={() => toggleGroup(gr.id)}>
               <span className="rg-dot" style={{ background: groupColor.get(gr.id) }} />
               {gr.label}
             </button>
           ))}
-          {data.view === "ros" && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: BROKEN }} />Roto</span>}
+          {data.view === "ros" && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: BROKEN }} aria-hidden="true" />Roto</span>}
           {planOn && <span className="rg-chip rg-static"><span className="rg-dot rg-dot-plan" />{LEYENDA_PLAN}</span>}
           {sec && contextRef.current.size > 0 && <span className="rg-chip rg-static"><span className="rg-dot" style={{ background: isDark() ? CONTEXT.dark : CONTEXT.light }} />En gris: lo que conecta con la sección</span>}
         </div>
       )}
+      <span className="rg-count" aria-live="polite">{data ? `${visibleCount} de ${data.nodes.filter((n) => !capas || OWNERS.has(n.kind)).length}` : ""}</span>
       {configObj?.legado && (
         <p className="rg-legado" role="note">
           {AVISO_LEGADO}
@@ -871,7 +1162,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             {data.panorama.map((c, i) => (
               <li key={c.seccion}>
                 {i > 0 && <span className="rg-panorama-flecha" aria-hidden="true">→</span>}
-                <button type="button" className="rg-panorama-caja" onClick={() => { pickSection(c.seccion); setPanoramaOn(false); }}>
+                <button type="button" className="rg-panorama-caja" aria-label={`${c.titulo}: ${c.texto}`} onClick={() => { pickSection(c.seccion); setPanoramaOn(false); }}>
                   <strong>{c.titulo}</strong>
                   <span>{c.texto}</span>
                 </button>
@@ -947,7 +1238,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
               {node.doc && <a className="btn btn-primary" href={node.doc}>Ver documentación completa</a>}
               <button className="btn" type="button" onClick={copyLink}>Copiar enlace a este nodo</button>
             </div>
-            <p className="rg-copied" role="status" aria-live="polite">{aviso}</p>
+            <p className="rg-copied" aria-hidden="true">{aviso}</p>
           </aside>
         )}
       </div>
