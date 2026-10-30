@@ -226,9 +226,11 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 .sidenav-toggle { display: none; }
 .sidenav h2 { margin: 18px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sidenav ul { list-style: none; margin: 0; padding: 0; }
-.sidenav a { display: block; padding: 4px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
+.sidenav a { position: relative; display: block; padding: 4px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
 .sidenav a:hover { background: var(--accent-soft); }
 .sidenav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.sidenav ul:not(.extra) a { padding-inline-end: 3.6em; }
+.nav-contador { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; pointer-events: none; }
 .sidenav .extra { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
 
 .meta { position: sticky; top: 92px; font-size: 13px; color: var(--muted); }
@@ -605,6 +607,18 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .comentarios textarea { resize: vertical; }
 .comentarios-contador { justify-self: end; font-size: 12px; color: var(--muted); }
 .comentarios-error { margin: 0; color: var(--danger); }
+.mencion { color: var(--accent-strong); background: var(--accent-soft); border-radius: 4px; padding: 0 3px; font-weight: 600; }
+.panel-comentarios { display: grid; gap: 16px; }
+.panel-comentarios .panel-filtros { display: flex; flex-wrap: wrap; gap: 12px; }
+.panel-comentarios .campo { display: grid; gap: 4px; min-width: 0; flex: 1 1 200px; }
+.panel-comentarios label { font-size: 14px; font-weight: 600; }
+.panel-comentarios select { width: 100%; box-sizing: border-box; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.panel-comentarios .comentarios-estado { margin: 0; }
+.panel-comentarios .panel-pagina { margin-bottom: 20px; }
+.panel-comentarios .panel-pagina h2 { margin: 0 0 8px; font-size: 18px; overflow-wrap: anywhere; }
+.panel-comentarios .panel-hilos { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.panel-comentarios .panel-hilo { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); min-width: 0; }
+.panel-comentarios .panel-hilo a { display: inline-block; min-height: 24px; color: var(--accent-strong); }
 .chip-duda, .chip-aclaracion, .chip-sugerencia, .chip-bug, .chip-otro { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--text); border: 1px solid var(--line); }
 .chip-duda { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .chip-aclaracion { background: color-mix(in srgb, var(--ok) 20%, transparent); }

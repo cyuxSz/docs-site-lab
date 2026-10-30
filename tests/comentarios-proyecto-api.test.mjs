@@ -308,3 +308,18 @@ test("el GET por página (?pagina=) sigue igual: {yo, comentarios}", async () =>
   assert.deepEqual(Object.keys(body).sort(), ["comentarios", "yo"]);
   assert.equal(body.comentarios.length, 1);
 });
+
+test("autocuración: un GET ?pagina= con comentarios no borrados añade la página al índice (sin gastar rate limit); sin ellos, no", async () => {
+  const { handler, redis } = await montar();
+  // Comentarios previos al índice: hash sin entrada en com:idx.
+  redis.data.set(`com:${PAG}`, new Map([["a", JSON.stringify({ id: "a", padre: null, autor: "ana", tipo: "duda", texto: "x", creado: new Date(T0).toISOString(), resuelto: false, borrado: false })]]));
+  redis.data.set(`com:${PAG2}`, new Map([["b", JSON.stringify({ id: "b", padre: null, autor: null, tipo: "duda", texto: "", creado: new Date(T0).toISOString(), resuelto: false, borrado: true })]]));
+  assert.deepEqual(idx(redis, "uuv"), []);
+  assert.equal((await handler(leer({ login: "ana", qs: `pagina=${encodeURIComponent(PAG)}` }))).status, 200);
+  assert.deepEqual(idx(redis, "uuv"), [PAG]);
+  assert.equal((await handler(leer({ login: "ana", qs: `pagina=${encodeURIComponent(PAG2)}` }))).status, 200);
+  assert.deepEqual(idx(redis, "uuv"), [PAG], "solo borrados: no entra");
+  assert.ok(!redis.comandos.some(([c]) => /^(INCR|EXPIRE)$/i.test(c)), "no gasta el límite de escritura");
+  const body = await (await porProyecto(handler, "ana", "uuv")).json();
+  assert.deepEqual(body.paginas.map((p) => p.pagina), [PAG], "el panel ya lo ve");
+});

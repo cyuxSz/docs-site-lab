@@ -47,7 +47,10 @@ function fakeRedis() {
       case "HVALS": return [...(data.get(a[0])?.values() ?? [])];
       case "HSET": { const h = hash(a[0]); let n = 0; for (let i = 1; i < a.length; i += 2) { if (!h.has(a[i])) n++; h.set(a[i], String(a[i + 1])); } return n; }
       case "HSETNX": { const h = hash(a[0]); if (h.has(a[1])) return 0; h.set(a[1], String(a[2])); return 1; }
-      case "HDEL": { const h = data.get(a[0]); let n = 0; for (const f of a.slice(1)) if (h?.delete(f)) n++; return n; }
+      case "HDEL": { const h = data.get(a[0]); let n = 0; for (const f of a.slice(1)) if (h?.delete(f)) n++; if (h instanceof Map && h.size === 0) data.delete(a[0]); return n; }
+      case "SADD": { if (!(data.get(a[0]) instanceof Set)) data.set(a[0], new Set()); let n = 0; for (const m of a.slice(1)) if (!data.get(a[0]).has(String(m))) { data.get(a[0]).add(String(m)); n++; } return n; }
+      case "SREM": { const s = data.get(a[0]); let n = 0; for (const m of a.slice(1)) if (s instanceof Set && s.delete(String(m))) n++; if (s instanceof Set && s.size === 0) data.delete(a[0]); return n; }
+      case "SMEMBERS": return data.get(a[0]) instanceof Set ? [...data.get(a[0])] : [];
       case "INCR": { const v = Number(data.get(a[0]) ?? 0) + 1; data.set(a[0], String(v)); return v; }
       case "GET": return typeof data.get(a[0]) === "string" ? data.get(a[0]) : null;
       case "SET": data.set(a[0], String(a[1])); return "OK";
