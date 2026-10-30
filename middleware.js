@@ -13,6 +13,7 @@
 // al preview obligaba a aceptar cualquier *.vercel.app parecido (cualquiera puede registrar ese nombre), así que los
 // Preview se protegen con el login de Vercel y, si no se confía en él, responden 403.
 import { next } from "@vercel/functions";
+import { canAccess } from "./access.config.js";
 
 export const config = {
   matcher: ["/((?!favicon\\.ico$).*)"],
@@ -85,8 +86,8 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 // title y message son HTML fijo del middleware; todo dato externo (login, org) pasa antes por esc().
 function page(status, title, message) {
   const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
-<style>body{font:16px/1.6 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:radial-gradient(120% 80% at 50% -10%,#01165c,#010c3d 45%,#01052a);color:#eef3fb}main{max-width:420px;padding:24px;text-align:center}a{color:#49c1d2}</style>
-<main><h1>${title}</h1><p>${message}</p></main></html>`;
+<style>body{font:16px/1.6 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:radial-gradient(120% 80% at 50% -10%,#01165c,#010c3d 45%,#01052a);color:#eef3fb}main{max-width:420px;padding:24px;text-align:center}a{color:#49c1d2}ol{text-align:left}</style>
+<main><h1>${title}</h1><div>${message}</div></main></html>`;
   return new Response(html, {
     status,
     headers: { ...SECURITY_HEADERS, "content-type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" },
@@ -128,6 +129,8 @@ export default async function middleware(request) {
   const jar = cookies(request);
 
   if (process.env.VERCEL_ENV === "preview") {
+    // En Preview no hay login de GitHub, así que no se puede saber quién es: los proyectos restringidos nunca se sirven.
+    if (!canAccess(null, url.pathname)) return page(403, "Este proyecto es privado", "<p>Este proyecto es privado; revísalo en producción.</p><p>Pide acceso a quien administra el portal.</p>");
     if (process.env.PREVIEW_TRUST_VERCEL_AUTH === "1") return next({ headers: { "Cache-Control": "private, no-store" } });
     return page(403, "Preview sin login", "Los Preview se protegen con el login de Vercel. Activa Vercel Authentication y PREVIEW_TRUST_VERCEL_AUTH=1, o revisa el cambio en producción.");
   }
@@ -161,7 +164,13 @@ export default async function middleware(request) {
     const user = await (await gh("/user", token)).json();
     if (!user.login || !(await isAllowed(user.login, token))) {
       const org = process.env.ALLOWED_ORG || "";
-      return page(403, "Sin acceso", `No se pudo confirmar que @${esc(user.login || "?")} pertenece a ${esc(org || "la lista de acceso")}. Si sí perteneces, haz pública tu membresía en <a href="https://github.com/orgs/${encodeURIComponent(org)}/people">la página de miembros de la org</a> o pide a un admin que apruebe la app, y <a href="/auth/login">vuelve a intentar</a>.`);
+      const who = esc(user.login || "?");
+      if (!org) return page(403, "Sin acceso", `<p>@${who} no está en la lista de acceso.</p><p><a href="/auth/login">Reintentar</a></p>`);
+      return page(
+        403,
+        "Sin acceso",
+        `<p>No se pudo confirmar que @${who} pertenece a ${esc(org)}. Probablemente tu membresía es privada:</p><ol><li>Abre <a href="https://github.com/orgs/${encodeURIComponent(org)}/people">la página de miembros de la org</a>.</li><li>Búscate con tu usuario.</li><li>En tu fila, cambia la visibilidad de "Private" a "Public".</li><li>Vuelve a intentarlo: <a href="/auth/login">iniciar sesión</a>.</li></ol><p>O pide a un admin que apruebe la app.</p>`,
+      );
     }
     const session = await sign({ login: user.login, exp: Date.now() + SESSION_DAYS * 864e5 });
     return redirect(safeTarget(back), [setCookie(COOKIE, session, SESSION_DAYS * 86400), setCookie("oauth_state", "", 0)]);
@@ -177,5 +186,8 @@ export default async function middleware(request) {
     return redirect(`/auth/login?next=${encodeURIComponent(url.pathname + url.search)}`);
   }
   if (path === "/auth/me") return Response.json({ login: session.login }, noStore);
+  if (!canAccess(session.login, url.pathname)) {
+    return page(403, "Este proyecto es privado", `<p>@${esc(session.login)} no tiene acceso a este proyecto.</p><p>Pide acceso a quien administra el portal.</p><p><a href="/">Volver al portal</a></p>`);
+  }
   return next({ headers: { "Cache-Control": "private, no-store" } });
 }
