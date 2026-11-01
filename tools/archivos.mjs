@@ -39,7 +39,12 @@ export function walk(dir, raiz = dir) {
       }
     }
   };
-  rec(dir);
+  try {
+    rec(dir);
+  } catch (e) {
+    if (e?.code === "ENOENT" || e?.code === "ENOTDIR") return [];
+    throw e;
+  }
   return out;
 }
 

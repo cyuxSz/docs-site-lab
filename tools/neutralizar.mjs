@@ -50,6 +50,8 @@ function conSpans(texto, fn) {
 
 const ATX = /^\s{0,3}#{1,6}(\s|$)/;
 const ITEM = /^\s{0,3}([-*+]|\d{1,9}[.)])(\s|$)|^\s{0,3}>/;
+const CORTE = /^\s{0,3}(-+|\*+|_+|=+)\s*$/;
+const HTML_INI = /^\s{0,3}<[A-Za-z\/!?]/;
 const CELDA = /(?<!\\)\|/;
 
 // Aplica fn solo al texto que no está en bloques ``` / ~~~ ni en `código en línea`. Los spans no cruzan bloques: cortan
@@ -74,6 +76,12 @@ export function outsideCode(body, fn) {
     } else if (line.trim() === "") {
       cerrar();
       out.push(line);
+    } else if (CORTE.test(line)) {
+      cerrar();
+      out.push(conSpans(line, fn));
+    } else if (HTML_INI.test(line)) {
+      cerrar();
+      bloque.push(line);
     } else if (ATX.test(line) || CELDA.test(line)) {
       cerrar();
       out.push(CELDA.test(line) ? line.split(CELDA).map((c) => conSpans(c, fn)).join("|") : conSpans(line, fn));
