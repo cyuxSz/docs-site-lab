@@ -18,9 +18,31 @@ export const claveUltima = (p: string) => `personal:${p}:ultima`;
 export const claveFavoritos = (p: string) => `personal:${p}:favoritos`;
 export const claveVisto = (p: string, route: string) => `personal:${p}:visto:${route}`;
 
-// Ruta interna del proyecto: "/<p>/..." sin "//", sin esquemas ni barras invertidas ni caracteres de control.
-const rutaValida = (p: string, route: unknown): route is string =>
-  typeof route === "string" && route.startsWith(`/${p}/`) && !route.startsWith("//") && !/[\\\u0000-\u001f]/u.test(route);
+// Decodifica en rondas (tope 5) hasta estabilizar; null si hay escape mal formado o no se estabiliza.
+// Copia de la lógica de access.config.js (canAccess). No se importa de allí: este archivo va al bundle del cliente y
+// expondría los logins de RESTRICTED. Si cambia una, cambia la otra.
+function decodificar(ruta: string): string | null {
+  let actual = ruta;
+  try {
+    for (let i = 0; i < 5; i++) {
+      const sig = decodeURIComponent(actual);
+      if (sig === actual) return actual;
+      actual = sig;
+    }
+    return decodeURIComponent(actual) === actual ? actual : null;
+  } catch {
+    return null;
+  }
+}
+
+// Ruta interna del proyecto: "/<p>/..." sin "//", sin esquemas ni barras invertidas ni caracteres de control, y que
+// tampoco los tenga (ni ".." ni "//") una vez decodificada.
+const rutaValida = (p: string, route: unknown): route is string => {
+  if (typeof route !== "string" || !route.startsWith(`/${p}/`) || route.startsWith("//") || /[\\\u0000-\u001f]/u.test(route)) return false;
+  const d = decodificar(route);
+  if (d === null || d.includes("//") || /[\\\u0000-\u001f]/u.test(d)) return false;
+  return !d.split("/").includes("..");
+};
 
 const parsear = (s: string | null): unknown => {
   if (s === null) return null;
