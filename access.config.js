@@ -11,22 +11,33 @@ const lower = (s) => String(s).toLowerCase();
 
 export const isRestricted = (id) => Object.keys(RESTRICTED).some((k) => lower(k) === lower(id ?? ""));
 
-// Función pura: ¿puede este login ver esta ruta? Decodifica la ruta, separa por / y \, descarta segmentos vacíos
-// y ".", y restringe según el primer segmento. Con ".." o un % mal formado falla cerrado: se deniega si
-// cualquier segmento coincide con un proyecto restringido.
-export function canAccess(login, pathname) {
-  const path = String(pathname ?? "");
-  let decoded = path;
-  let ok = true;
+// Decodifica en rondas hasta que la ruta deja de cambiar (tope de 5). Devuelve null si un escape está mal formado o
+// si tras 5 rondas todavía cambiaría: quien llama deniega (fail-closed).
+// Copia local en src/lib/personal.ts (no se importa de aquí: este archivo lista logins y no debe ir al bundle del cliente).
+const MAX_RONDAS = 5;
+function decodificar(path) {
+  let actual = path;
   try {
-    decoded = decodeURIComponent(path);
+    for (let i = 0; i < MAX_RONDAS; i++) {
+      const sig = decodeURIComponent(actual);
+      if (sig === actual) return actual;
+      actual = sig;
+    }
+    return decodeURIComponent(actual) === actual ? actual : null;
   } catch {
-    ok = false;
+    return null;
   }
+}
+
+// Función pura: ¿puede este login ver esta ruta? Decodifica la ruta en rondas, separa por / y \, descarta segmentos
+// vacíos y ".", y restringe según el primer segmento. Falla cerrado (false para todos): escape mal formado, ruta que no
+// se estabiliza en 5 rondas o cualquier segmento "..".
+export function canAccess(login, pathname) {
+  const decoded = decodificar(String(pathname ?? ""));
+  if (decoded === null) return false;
   const segs = decoded.split(/[/\\]/).filter((s) => s && s !== ".");
-  const match = (s) => Object.keys(RESTRICTED).find((k) => lower(k) === lower(s));
-  const strict = !ok || segs.includes("..");
-  const id = strict ? segs.map(match).find(Boolean) : match(segs[0] ?? "");
+  if (segs.includes("..")) return false;
+  const id = Object.keys(RESTRICTED).find((k) => lower(k) === lower(segs[0] ?? ""));
   if (!id) return true;
   if (!login) return false;
   return RESTRICTED[id].some((l) => lower(l) === lower(login));
