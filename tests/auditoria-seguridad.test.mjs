@@ -322,3 +322,26 @@ test("limpiezaMarkdown: paquete/ejecutable y launches siguen en código en líne
   assert.ok(md.includes("`ctl/pid_node`"), md);
   assert.ok(!md.includes("`ctl/pid\\_node`"));
 });
+
+// ---------- Correcciones de revisión ----------
+test("neutralizeHtml: un code span no se empareja a través de un thematic break ni de un inicio de HTML", () => {
+  for (const md of ["a `x\n---\n<img src=x>`", "a `x\n***\n<img src=x>`", "a `x\n<div>\ny` <img src=x>"]) {
+    const out = neutralizeHtml(md);
+    assert.ok(!/<img/.test(out), md + " => " + out);
+  }
+});
+
+test("walk: un directorio inexistente da [] (repo sin openwiki/ o docs/arch/)", () => {
+  const raiz = mkdtempSync(join(tmpdir(), "walk-"));
+  try {
+    assert.deepEqual(walk(join(raiz, "openwiki"), raiz), []);
+    assert.deepEqual(walk(join(raiz, "no", "existe")), []);
+  } finally {
+    rmSync(raiz, { recursive: true, force: true });
+  }
+});
+
+test("limpiezaMarkdown: el texto exportado escapa < y >", () => {
+  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/<img src=x>.cpp" })] }, "", SHA), new Set());
+  assert.ok(md.includes("\\<img src=x\\>"), md);
+});
