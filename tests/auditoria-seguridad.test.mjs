@@ -325,7 +325,7 @@ test("limpiezaMarkdown: paquete/ejecutable y launches siguen en código en líne
 
 // ---------- Correcciones de revisión ----------
 test("neutralizeHtml: un code span no se empareja a través de un thematic break ni de un inicio de HTML", () => {
-  for (const md of ["a `x\n---\n<img src=x>`", "a `x\n***\n<img src=x>`", "a `x\n<div>\ny` <img src=x>"]) {
+  for (const md of ["a `x\n---\n<img src=x>`", "a `x\n***\n<img src=x>`", "a `x\n_ _ _\nw <img src=x> y`", "a `x\n- - -\n<img src=x>`","a `x\n<div>\ny` <img src=x>"]) {
     const out = neutralizeHtml(md);
     assert.ok(!/<img/.test(out), md + " => " + out);
   }
