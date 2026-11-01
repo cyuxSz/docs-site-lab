@@ -50,7 +50,7 @@ function conSpans(texto, fn) {
 
 const ATX = /^\s{0,3}#{1,6}(\s|$)/;
 const ITEM = /^\s{0,3}([-*+]|\d{1,9}[.)])(\s|$)|^\s{0,3}>/;
-const CORTE = /^\s{0,3}(-+|\*+|_+|=+)\s*$/;
+const CORTE = /^\s{0,3}(?:(?:-[ \t]*)+|(?:\*[ \t]*)+|(?:_[ \t]*)+|=+)\s*$/;
 const HTML_INI = /^\s{0,3}<[A-Za-z\/!?]/;
 const CELDA = /(?<!\\)\|/;
 
