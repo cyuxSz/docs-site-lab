@@ -107,7 +107,7 @@ if (pie) {
   const proyecto = pie.dataset.proyecto!;
   const page = pie.dataset.page!;
   const rutas = parse(pie.dataset.rutas);
-  const activo = pasoActivo(alm, proyecto, rutas, page);
+  const activo = pasoActivo(alm, proyecto, rutas, page, location.hash);
   if (activo) {
     const { ruta, i } = activo;
     const l = leidos(alm, proyecto, ruta);
