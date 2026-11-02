@@ -43,7 +43,7 @@ test("canAccess: '..' en cualquier segmento (literal o codificado) se deniega a 
 test("canAccess: un escape mal formado deniega siempre (fail-closed), en cualquier ronda de decodificación", async () => {
   const { canAccess } = await acceso();
   for (const login of ["otro", null, "cyuxSz"]) {
-    for (const path of ["/%ZZ/proyecto-x/", "/uuv/%E0%A4%A/", "/uuv/%/", "/uuv/%25ZZ/"]) {
+    for (const path of ["/%ZZ/proyecto-x/", "/uuv/%E0%A4%A/", "/uuv/%/", "/uuv/%E0%A4/"]) {
       assert.doesNotThrow(() => canAccess(login, path), path);
       assert.equal(canAccess(login, path), false, `${login} ${path}`);
     }
@@ -96,7 +96,7 @@ test("rutaValida: rechaza '..' codificado una o varias veces, %2f%2f y %5c tras 
 test("rutaValida: escape mal formado o sin estabilizar en 5 rondas → rechazada", () => {
   let capas = "%41";
   for (let i = 0; i < 10; i++) capas = capas.replace(/%/g, "%25");
-  for (const route of ["/uuv/%ZZ/", "/uuv/%E0%A4%A/", "/uuv/%25ZZ/", `/uuv/${capas}/`]) assert.equal(aceptada("uuv", route), false, route);
+  for (const route of ["/uuv/%ZZ/", "/uuv/%E0%A4%A/", "/uuv/%/", `/uuv/${capas}/`]) assert.equal(aceptada("uuv", route), false, route);
 });
 
 test("rutaValida: lo almacenado también se valida al leer (ultimaVisita y favoritos)", () => {
@@ -142,8 +142,8 @@ test("walk: lista los archivos normales de la wiki (recursivo)", () => {
 test("walk/leerDentro: un archivo fuera de la raíz del checkout no se lista ni se lee (comprobación con realpath)", () => {
   const raiz = checkout();
   try {
-    // Con la raíz en openwiki/sub, openwiki/a.md queda fuera: solo sub/b.md puede aparecer.
-    assert.deepEqual(nombres(raiz, walk(join(raiz, "openwiki"), join(raiz, "openwiki", "sub"))), ["openwiki/sub/b.md"]);
+    // Vuelta 2 (C): si el directorio recorrido queda fuera de la raíz, walk devuelve [] entero.
+    assert.deepEqual(nombres(raiz, walk(join(raiz, "openwiki"), join(raiz, "openwiki", "sub"))), []);
     assert.equal(leerDentro(join(raiz, "openwiki"), join(raiz, ".git", "config")), null, "fuera de la raíz → null");
     assert.equal(leerDentro(raiz, join(raiz, "openwiki", "a.md")), "# A\n");
     assert.equal(leerDentro(raiz, join(raiz, "openwiki", "no-existe.md")), null);
@@ -286,22 +286,24 @@ const REPO = "https://github.com/o/r";
 const SHA = "abc123";
 const nodo = (id, extra = {}) => ({ id, label: id.split("/").pop(), category: "ros2_node", package: id.split("/")[0], layer: "control", status: "sin_uso", file: `src/${id}.cpp`, line: 10, configs: [], launches: [], ...extra });
 const EVIL = "src/a](https://evil.example)";
+// Vuelta 2 (D): texto() mete U+200B para cortar autolinks; las aserciones de escapado lo ignoran.
+const sinZ = (s) => s.replace(/​/g, "");
 
 test("limpiezaMarkdown: una ruta con '](' no crea un enlace (texto del enlace escapado)", () => {
-  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, REPO, SHA), new Set());
+  const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, REPO, SHA), new Set()));
   assert.ok(md.includes("[src/a\\]\\(https://evil.example\\)]("), md);
 });
 
 test("limpiezaMarkdown: los paréntesis del destino del enlace van como %28/%29", () => {
-  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, REPO, SHA), new Set());
+  const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, REPO, SHA), new Set()));
   assert.ok(md.includes("(https://github.com/o/r/blob/abc123/src/a%5D%28https%3A//evil.example%29#L10)"), md);
 });
 
 test("limpiezaMarkdown: sin URL, la ruta en texto plano también se escapa ([ ] ( ) \\ `)", () => {
-  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, "no-es-github", SHA), new Set());
+  const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, "no-es-github", SHA), new Set()));
   assert.ok(md.includes("src/a\\]\\(https://evil.example\\)"), md);
   assert.doesNotMatch(md, /(?<!\\)\]\(https:\/\/evil/);
-  const md2 = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/[x]\\y`z.cpp" })] }, "no-es-github", SHA), new Set());
+  const md2 = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/[x]\\y`z.cpp" })] }, "no-es-github", SHA), new Set()));
   assert.ok(md2.includes("src/\\[x\\]\\\\y\\`z.cpp"), md2);
 });
 
@@ -311,14 +313,14 @@ test("limpiezaMarkdown: nombre del proyecto y configs a retirar también se esca
     launches: [],
     nodes: [nodo("p/a", { status: "legado", configs: ["c"] })],
   };
-  const md = limpiezaMarkdown("uuv](https://evil.example)", filasLimpieza(ros, REPO, SHA), new Set());
+  const md = sinZ(limpiezaMarkdown("uuv](https://evil.example)", filasLimpieza(ros, REPO, SHA), new Set()));
   assert.match(md, /^# Limpieza del repo · uuv\\\]\\\(https:\/\/evil\.example\\\)$/m);
   assert.ok(md.includes("\\[clic\\]\\(https://evil.example\\)"), md);
   assert.doesNotMatch(md, /(?<!\\)\[clic\]/);
 });
 
 test("limpiezaMarkdown: paquete/ejecutable y launches siguen en código en línea (sin barras invertidas visibles)", () => {
-  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("ctl/pid_node")] }, REPO, SHA), new Set());
+  const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("ctl/pid_node")] }, REPO, SHA), new Set()));
   assert.ok(md.includes("`ctl/pid_node`"), md);
   assert.ok(!md.includes("`ctl/pid\\_node`"));
 });
@@ -342,6 +344,183 @@ test("walk: un directorio inexistente da [] (repo sin openwiki/ o docs/arch/)", 
 });
 
 test("limpiezaMarkdown: el texto exportado escapa < y >", () => {
-  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/<img src=x>.cpp" })] }, "", SHA), new Set());
+  const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/<img src=x>.cpp" })] }, "", SHA), new Set()));
   assert.ok(md.includes("\\<img src=x\\>"), md);
+});
+
+// ==================== Vuelta 2: hallazgos de cubic y CodeRabbit en #31 ====================
+// Astro 7 renderiza el Markdown con satteri (no con remark): los tests juzgan con ese mismo parser, con GFM y sin
+// frontmatter (fetch.mjs antepone el suyo, así que un "---" del cuerpo nunca es frontmatter).
+const satteri = await modulo("satteri");
+const PARSE = { features: { gfm: true, frontmatter: false } };
+const nodosDe = (md, tipos) => {
+  const out = [];
+  const rec = (n) => {
+    if (tipos.includes(n.type)) out.push(n);
+    for (const c of n.children ?? []) rec(c);
+  };
+  rec(satteri.markdownToMdast(md, PARSE));
+  return out;
+};
+
+// ---------- A. neutralizeHtml con el parser real ----------
+const ATAQUES = [
+  ["valla de 4 backticks cerrada con 3", '````\nx\n```\n<img src="/auth/logout/">'],
+  ["\\r suelto como salto de línea", 'a\r<img src="/auth/logout/">'],
+  ["\\r\\n", 'a\r\n\r\n<div>\r\n<img src="/auth/logout/">\r\n</div>'],
+  ["valla sangrada 4+ espacios (es código indentado, no valla)", '    ```\n<img src="/auth/logout/">\n    ```'],
+  ["``` con backtick en el info string (no es valla)", '```a`b\n<img src="/auth/logout/">\n```'],
+  ["lista anidada con 4 espacios", '- a\n    - b <img src="/auth/logout/">'],
+  ["thematic break ---", "a `x\n---\n<img src=x>`"],
+  ["thematic break ***", "a `x\n***\n<img src=x>`"],
+  ["thematic break _ _ _", "a `x\n_ _ _\nw <img src=x> y`"],
+  ["bloque <div>", "a `x\n<div>\ny` <img src=x>"],
+  ["doble backtick cerrado con uno", '``<img src="/auth/logout/">`'],
+  ["backtick escapado", "\\`<img src=x>`"],
+  ["tabla GFM", "| a | <img src=x> |\n|---|---|\n| `<b>` | <i> |"],
+  ["--- al inicio (no es frontmatter)", "---\n<img src=x>\n---"],
+  ["comentario HTML", "x <!-- <img src=x> --> y"],
+  ["no-BMP antes del HTML (offsets UTF-16)", "😀 ñ `<b>` <img src=x>"],
+  // Escapar un bloque HTML puede hacer que un ``` de dentro abra una valla que se coma el cierre de la siguiente y deje
+  // fuera un HTML que antes era código: hace falta repetir parseo + escape hasta que no quede ningún nodo html.
+  ["valla desplazada al escapar un bloque HTML", "<div>\n```\n</div>\n\n```\n<img src=x>\n```"],
+];
+
+test("A · neutralizeHtml: ningún caso reportado deja nodos html para el parser de Astro (satteri, GFM)", () => {
+  assert.equal(typeof satteri.markdownToMdast, "function", "satteri no se puede importar");
+  for (const [nombre, md] of ATAQUES) {
+    const out = neutralizeHtml(md);
+    const html = nodosDe(out, ["html"]).map((n) => n.value);
+    assert.deepEqual(html, [], `${nombre}: ${JSON.stringify(md)} → ${JSON.stringify(out)}`);
+  }
+});
+
+test("A · neutralizeHtml: el código (en línea, vallado e indentado) sigue literal y sin doble escapado", () => {
+  for (const md of ["`<img src=x>`", "``a ` <img src=x>``", "```\n<img src=x>\n```", "~~~\n<img src=x>\n~~~", "    <img src=x>", "````\n<img src=x>\n```\n````", "a < b y `<c>`", "&lt;b> ya escapado", "<https://x.example> y <a@b.co>"]) {
+    assert.equal(neutralizeHtml(md), md, JSON.stringify(md));
+  }
+  const out = neutralizeHtml("<b> `<img src=x>` <i>\n\n```\n<img src=y>\n```");
+  const codigo = nodosDe(out, ["inlineCode", "code"]).map((n) => n.value);
+  assert.deepEqual(codigo, ["<img src=x>", "<img src=y>"], out);
+});
+
+test("A · neutralizeHtml: es idempotente y solo cambia '<' por '&lt;'", () => {
+  for (const [, md] of ATAQUES) {
+    const una = neutralizeHtml(md);
+    assert.equal(neutralizeHtml(una), una, JSON.stringify(md));
+    assert.equal(una.replace(/&lt;/g, "<"), md, `solo se sustituye '<' por '&lt;': ${JSON.stringify(md)}`);
+  }
+});
+
+test("A · fetch.mjs: statusBadges (HTML del portal) se aplica después de neutralizeHtml", () => {
+  tiene(read("tools/fetch.mjs"), /statusBadges\(neutralizeHtml\(/);
+});
+
+test("A · neutralizar.mjs: neutralizeHtml usa satteri (markdownToMdast, gfm, sin frontmatter) y no outsideCode", () => {
+  const src = read("tools/neutralizar.mjs");
+  tiene(src, /import\s*\{[^}]*\bmarkdownToMdast\b[^}]*\}\s*from\s*"satteri"/);
+  tiene(src, /frontmatter:\s*false/);
+  const cuerpo = src.match(/export function neutralizeHtml\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(cuerpo, "falta export function neutralizeHtml");
+  noTiene(cuerpo, /outsideCode|conSpans/, "neutralizeHtml ya no usa el escaneo hecho a mano");
+});
+
+test("A · package.json: satteri como dependencia directa con la misma versión que trae Astro", () => {
+  const pkg = JSON.parse(read("package.json"));
+  const instalada = JSON.parse(read("node_modules/satteri/package.json")).version;
+  assert.equal(pkg.dependencies?.satteri, instalada, `satteri debe fijarse a ${instalada}`);
+  for (const d of ["mdast-util-from-markdown", "micromark-extension-gfm", "mdast-util-gfm"]) {
+    assert.equal(pkg.dependencies?.[d], undefined, `${d}: Astro 7 no usa remark; un parser distinto daría falsos negativos`);
+  }
+});
+
+// ---------- B. Rutas: solo se decodifican escapes válidos; un '%' literal tras decodificar es válido ----------
+test("B · canAccess: '%25' que deja un '%' literal se permite (regresión 403 en /uuv/100%25/)", async () => {
+  const { canAccess } = await acceso();
+  for (const path of ["/uuv/100%25/", "/uuv/100%25zz/", "/uuv/%25ZZ/", "/uuv/100%25/a%2541/", "/uuv/%252/"]) {
+    assert.equal(canAccess("otro", path), true, path);
+    assert.equal(canAccess(null, path), true, path);
+  }
+});
+
+test("B · canAccess: siguen denegados '..' (aun junto a un '%' literal), escapes mal formados en la original y UTF-8 inválido", async () => {
+  const { canAccess } = await acceso();
+  for (const login of ["otro", null, "cyuxSz"]) {
+    for (const path of ["/%252e%252e/proyecto-x/", "/uuv/%2e%2e/proyecto-x/", "/uuv/100%25/%252e%252e/proyecto-x/", "/uuv/%ZZ/", "/uuv/100%/", "/uuv/%E0%A4/", "/uuv/%25E0%25A4/"]) {
+      assert.equal(canAccess(login, path), false, `${login} ${path}`);
+    }
+  }
+  assert.equal(canAccess("otro", "/%25proyecto-x/"), true, "un '%' literal delante no es el proyecto restringido");
+  assert.equal(canAccess("otro", "/proyecto-x%25/"), true);
+});
+
+test("B · rutaValida: '/uuv/100%25/' se acepta; '..' y escapes mal formados se siguen rechazando", () => {
+  for (const route of ["/uuv/100%25/", "/uuv/%25ZZ/", "/uuv/100%25/a%2541/"]) assert.equal(aceptada("uuv", route), true, route);
+  for (const route of ["/uuv/100%25/%252e%252e/x/", "/uuv/100%/", "/uuv/%E0%A4/", "/uuv/%252e%252e/x/"]) assert.equal(aceptada("uuv", route), false, route);
+});
+
+// ---------- C. walk: el directorio raíz recorrido también se valida ----------
+test("C · walk: si el directorio recorrido es un junction (aunque apunte dentro del checkout) devuelve []", (t) => {
+  const raiz = checkout();
+  try {
+    mkdirSync(join(raiz, "docs"));
+    if (!enlazar(t, join(raiz, ".git"), join(raiz, "docs", "arch"), "junction")) return;
+    assert.deepEqual(walk(join(raiz, "docs", "arch"), raiz), [], "no lista .git/config a través de docs/arch");
+  } finally {
+    rmSync(raiz, { recursive: true, force: true });
+  }
+});
+
+test("C · walk: si un componente intermedio de la ruta es un junction, devuelve []", (t) => {
+  const raiz = checkout();
+  try {
+    mkdirSync(join(raiz, ".git", "arch"));
+    writeFileSync(join(raiz, ".git", "arch", "secreto.md"), "ghp_SECRETO\n");
+    if (!enlazar(t, join(raiz, ".git"), join(raiz, "docs"), "junction")) return;
+    assert.deepEqual(walk(join(raiz, "docs", "arch"), raiz), []);
+  } finally {
+    rmSync(raiz, { recursive: true, force: true });
+  }
+});
+
+test("C · walk: si el directorio recorrido es un junction fuera del checkout, devuelve []", (t) => {
+  const raiz = checkout();
+  const fuera = mkdtempSync(join(tmpdir(), "fuera-"));
+  try {
+    writeFileSync(join(fuera, "x.md"), "# X\n");
+    rmSync(join(raiz, "openwiki"), { recursive: true, force: true });
+    if (!enlazar(t, fuera, join(raiz, "openwiki"), "junction")) return;
+    assert.deepEqual(walk(join(raiz, "openwiki"), raiz), []);
+  } finally {
+    rmSync(raiz, { recursive: true, force: true });
+    rmSync(fuera, { recursive: true, force: true });
+  }
+});
+
+// ---------- D. Markdown exportado sin autolinks GFM ----------
+test("D · limpiezaMarkdown: URLs, www. y correos en texto plano no se vuelven enlaces (render GFM de satteri)", async () => {
+  assert.equal(typeof satteri.markdownToHtml, "function", "satteri no se puede importar");
+  const ros = {
+    configs: [{ id: "c", label: "ver https://evil.example y WWW.evil.example", launch: "x.launch.py", legado: true }],
+    launches: [],
+    nodes: [
+      nodo("p/a", { file: "src/https://evil.example/a.cpp" }),
+      nodo("p/b", { file: "src/www.evil.example/b.cpp" }),
+      nodo("p/c", { file: "src/yo@evil.example.cpp" }),
+      nodo("p/d", { status: "legado", configs: ["c"], file: "src/HTTP://evil.example/d.cpp" }),
+    ],
+  };
+  const md = limpiezaMarkdown("uuv https://evil.example www.evil.example", filasLimpieza(ros, "no-es-github", SHA), new Set());
+  const { html } = await satteri.markdownToHtml(md, PARSE);
+  assert.ok(!/<a\s/i.test(html), html);
+  // Lo visible no cambia (salvo caracteres invisibles de corte).
+  const visible = sinZ(md);
+  for (const s of ["https://evil.example/a.cpp", "www.evil.example/b.cpp", "yo@evil.example.cpp", "WWW.evil.example"]) assert.ok(visible.includes(s), s);
+});
+
+test("D · limpiezaMarkdown: los enlaces legítimos a GitHub siguen siendo enlaces", async () => {
+  const md = limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/www.x/a.cpp" })] }, REPO, SHA), new Set());
+  const { html } = await satteri.markdownToHtml(md, PARSE);
+  const hrefs = [...html.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs, [`${REPO}/blob/${SHA}/src/www.x/a.cpp#L10`], html);
 });
