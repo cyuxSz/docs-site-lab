@@ -4,6 +4,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
@@ -412,4 +413,30 @@ test("503: con SESSION_SECRET ausente o corto no acepta ninguna cookie (misma po
     assert.equal(res.status, 503, `secreto ${secreto}`);
     cabecerasJson(res, "503");
   }
+});
+
+// ---------- Auditoría de seguridad: resolver hilos es una decisión intencional ----------
+
+test("resolver (decisión del equipo): cualquier usuario autenticado con acceso resuelve hilos ajenos, pero no edita su texto", async () => {
+  const { handler } = await montar();
+  const raiz = (await crear(handler, "ana")).json.comentario.id;
+  const r = await handler(req("PATCH", { login: "carol", body: { pagina: PAG, id: raiz, resuelto: true } }));
+  assert.equal(r.status, 200, "un tercero (ni autor ni quien respondió) puede resolver");
+  let [c] = await listar(handler);
+  assert.equal(c.resuelto, true);
+  assert.equal(c.resueltoPor, "carol");
+  assert.equal((await handler(req("PATCH", { login: "dani", body: { pagina: PAG, id: raiz, resuelto: false } }))).status, 200, "y otro puede reabrirlo");
+  [c] = await listar(handler);
+  assert.equal(c.resuelto, false);
+  assert.equal((await handler(req("PATCH", { login: "carol", body: { pagina: PAG, id: raiz, texto: "hackeado" } }))).status, 403, "editar sigue siendo solo del autor");
+});
+
+test("comentarios-core.mjs: la rama PATCH de 'resuelto' documenta que sin chequeo de autor es intencional", () => {
+  const src = readFileSync(new URL("../lib/comentarios-core.mjs", import.meta.url), "utf8");
+  const i = src.indexOf("actual.resuelto = resuelto;");
+  assert.ok(i > 0, "la asignación de resuelto sigue en su sitio");
+  const antes = src.slice(src.lastIndexOf("} else {", i), i);
+  assert.match(antes, /\/\/[^\n]*intencional/i, "comentario en español que diga que es intencional");
+  assert.match(antes, /\/\/[^\n]*(cualquier usuario|cualquiera)[^\n]*/i, "y que cualquier usuario autenticado puede resolver");
+  assert.doesNotMatch(antes, /esAutor/, "el comportamiento no cambia: sin chequeo de autor");
 });

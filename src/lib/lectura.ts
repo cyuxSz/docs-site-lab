@@ -225,3 +225,15 @@ export function decodificarAncla(hash: unknown): string {
     return "";
   }
 }
+
+// URL del enlace "Ver glosario" (viene de un atributo data-*, no confiable): solo http(s) absoluta o ruta interna "/x".
+export function enlaceGlosario(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw || /[\s\u0000-\u001f\u007f-\u009f]/u.test(raw)) return null;
+  if (raw.startsWith("/")) return raw[1] === "/" || raw[1] === "\\" ? null : raw;
+  try {
+    const u = new URL(raw);
+    return (u.protocol === "http:" || u.protocol === "https:") && u.hostname ? raw : null;
+  } catch {
+    return null;
+  }
+}

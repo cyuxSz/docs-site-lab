@@ -20,10 +20,11 @@ jobs:
       - name: Sintaxis
         run: for f in middleware.js tools/*.mjs; do node --check "$f"; done
       - name: Build
-        # Sin el secret, los repos privados solo avisan; los públicos sí deben construirse.
+        # El secret solo se pasa en push a main. En un PR no hay token: los repos privados solo avisan
+        # (DOCS_STRICT lo permite); los públicos sí deben construirse.
         env:
           DOCS_STRICT: "1"
-          DOCS_GITHUB_TOKEN: ${{ secrets.DOCS_GITHUB_TOKEN }}
+          DOCS_GITHUB_TOKEN: ${{ github.event_name == 'push' && secrets.DOCS_GITHUB_TOKEN || '' }}
         run: npm run build
       - name: Resumen
         if: always()

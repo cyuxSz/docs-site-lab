@@ -1,6 +1,7 @@
 // QoL de navegación personal: última visita, favoritos y aviso de cambios. Puro: el almacén se inyecta y nunca lanza.
 // Todo lo que se lee del almacén se trata como no confiable: las rutas deben ser internas del proyecto.
 import type { Almacen } from "./rutas.ts";
+import { decodificar } from "../../lib/decodificar-ruta.mjs";
 
 export interface Visita {
   route: string;
@@ -18,9 +19,14 @@ export const claveUltima = (p: string) => `personal:${p}:ultima`;
 export const claveFavoritos = (p: string) => `personal:${p}:favoritos`;
 export const claveVisto = (p: string, route: string) => `personal:${p}:visto:${route}`;
 
-// Ruta interna del proyecto: "/<p>/..." sin "//", sin esquemas ni barras invertidas ni caracteres de control.
-const rutaValida = (p: string, route: unknown): route is string =>
-  typeof route === "string" && route.startsWith(`/${p}/`) && !route.startsWith("//") && !/[\\\u0000-\u001f]/u.test(route);
+// Ruta interna del proyecto: "/<p>/..." sin "//", sin esquemas ni barras invertidas ni caracteres de control, y que
+// tampoco los tenga (ni ".." ni "//") una vez decodificada.
+const rutaValida = (p: string, route: unknown): route is string => {
+  if (typeof route !== "string" || !route.startsWith(`/${p}/`) || route.startsWith("//") || /[\\\u0000-\u001f]/u.test(route)) return false;
+  const d = decodificar(route);
+  if (d === null || d.includes("//") || /[\\\u0000-\u001f]/u.test(d)) return false;
+  return !d.split("/").includes("..");
+};
 
 const parsear = (s: string | null): unknown => {
   if (s === null) return null;
