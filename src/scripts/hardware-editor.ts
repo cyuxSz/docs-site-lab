@@ -33,6 +33,16 @@ interface Respuesta {
   json: any;
 }
 
+// Inicialización idempotente: una sola instancia viva por carga de página. Si el script vuelve a ejecutarse (o la
+// página se reemplaza), la anterior se limpia por completo (listeners, preguntas pendientes, subidas).
+const w = window as unknown as { __hwCtl?: AbortController };
+w.__hwCtl?.abort();
+const ctlPagina = new AbortController();
+w.__hwCtl = ctlPagina;
+const senal = ctlPagina.signal;
+for (const ev of ["astro:before-swap", "pagehide"]) document.addEventListener(ev, () => ctlPagina.abort(), { once: true });
+const escuchar = (el: EventTarget, tipo: string, fn: (e: any) => unknown) => el.addEventListener(tipo, fn, { signal: senal });
+
 const raiz = document.querySelector<HTMLElement>("[data-hw-proyecto][data-hw-disciplina]");
 if (raiz) void iniciar(raiz);
 
@@ -169,7 +179,7 @@ async function iniciar(root: HTMLElement) {
     if (foco) listaIndice.querySelector<HTMLElement>(`button[data-slug="${foco.slug}"][data-dir="${foco.dir}"]`)?.focus();
   }
 
-  listaIndice.addEventListener("click", async (e) => {
+  escuchar(listaIndice, "click", async (e) => {
     const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-mover-btn");
     if (!b || b.getAttribute("aria-disabled") === "true") return;
     const slug = b.dataset.slug!;
@@ -180,6 +190,7 @@ async function iniciar(root: HTMLElement) {
       dir,
     );
     mostrarError("");
+    mostrarEstado("");
     const r = await api("POST", { cuerpo: { accion: "reordenar", orden } });
     if (r.status !== 200 || !Array.isArray(r.json?.paginas)) {
       mostrarError(msg(r.status));
@@ -285,7 +296,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   // ---------- vacío: inicializar ----------
-  btnInicializar.addEventListener("click", async () => {
+  escuchar(btnInicializar, "click", async () => {
     btnInicializar.disabled = true;
     mostrarError("");
     mostrarEstado("Creando páginas desde la plantilla…");
@@ -303,25 +314,36 @@ async function iniciar(root: HTMLElement) {
   });
 
   // ---------- diálogos ----------
+  // Siempre se resuelve: con clic, con Escape/cierre, si el diálogo no puede abrirse o si la página se limpia.
   function preguntar(dlg: HTMLDialogElement): Promise<boolean> {
     return new Promise((resolver) => {
       const ctl = new AbortController();
-      const cerrar = (valor: string) => {
-        dlg.returnValue = valor;
-        dlg.close();
+      let hecho = false;
+      const fin = (valor: boolean) => {
+        if (hecho) return;
+        hecho = true;
+        ctl.abort();
+        if (dlg.open) dlg.close();
+        resolver(valor);
       };
-      dlg.querySelector("[data-hw-ok]")!.addEventListener("click", () => cerrar("ok"), { signal: ctl.signal });
-      dlg.querySelector("[data-hw-no]")!.addEventListener("click", () => cerrar("no"), { signal: ctl.signal });
-      dlg.addEventListener(
-        "close",
+      dlg.querySelector("[data-hw-ok]")!.addEventListener(
+        "click",
         () => {
-          ctl.abort();
-          resolver(dlg.returnValue === "ok");
+          dlg.returnValue = "ok";
+          fin(true);
         },
-        { once: true },
+        { signal: ctl.signal },
       );
+      dlg.querySelector("[data-hw-no]")!.addEventListener("click", () => fin(false), { signal: ctl.signal });
+      dlg.addEventListener("close", () => (dlg.open ? undefined : fin(dlg.returnValue === "ok")), { signal: ctl.signal });
+      if (senal.aborted) return fin(false);
+      senal.addEventListener("abort", () => fin(false), { signal: ctl.signal });
       dlg.returnValue = "no";
-      dlg.showModal();
+      try {
+        if (!dlg.open) dlg.showModal();
+      } catch {
+        fin(false);
+      }
     });
   }
 
@@ -374,8 +396,9 @@ async function iniciar(root: HTMLElement) {
     btnEditar.focus();
   }
 
-  btnEditar.addEventListener("click", abrirEditor);
-  btnCancelar.addEventListener("click", async () => {
+  escuchar(btnEditar, "click", abrirEditor);
+  escuchar(btnCancelar, "click", async () => {
+    mostrarEstado("");
     if (hayCambios() && !(await preguntar(dlgDescartar))) {
       textarea.focus();
       return;
@@ -384,8 +407,8 @@ async function iniciar(root: HTMLElement) {
   });
 
   for (const t of pestanas) {
-    t.addEventListener("click", () => (t.dataset.hwTab === "previa" ? void mostrarPrevia() : (modoEditor("escribir"), textarea.focus())));
-    t.addEventListener("keydown", (e) => {
+    escuchar(t, "click", () => (t.dataset.hwTab === "previa" ? void mostrarPrevia() : (modoEditor("escribir"), textarea.focus())));
+    escuchar(t, "keydown", (e) => {
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
       e.preventDefault();
       const otra = pestanas.find((x) => x !== t)!;
@@ -394,10 +417,11 @@ async function iniciar(root: HTMLElement) {
     });
   }
 
-  form.addEventListener("submit", async (e) => {
+  escuchar(form, "submit", async (e) => {
     e.preventDefault();
     if (!pagina) return;
     errorEditor("");
+    mostrarEstado("");
     btnGuardar.disabled = true;
     const r = await api("PUT", { cuerpo: { pagina: pagina.slug, md: textarea.value, version: pagina.version } });
     btnGuardar.disabled = false;
@@ -416,14 +440,15 @@ async function iniciar(root: HTMLElement) {
   const formNueva = dlgNueva.querySelector<HTMLFormElement>("[data-hw-nueva-form]")!;
   const inputNueva = $<HTMLInputElement>("#hw-nueva-nombre");
   const errNueva = $("[data-hw-nueva-error]");
-  btnNueva.addEventListener("click", () => {
+  escuchar(btnNueva, "click", () => {
+    mostrarEstado("");
     inputNueva.value = "";
     errNueva.hidden = true;
     dlgNueva.showModal();
     inputNueva.focus();
   });
-  dlgNueva.querySelector("[data-hw-no]")!.addEventListener("click", () => dlgNueva.close());
-  formNueva.addEventListener("submit", async (e) => {
+  escuchar(dlgNueva.querySelector("[data-hw-no]")!, "click", () => dlgNueva.close());
+  escuchar(formNueva, "submit", async (e) => {
     e.preventDefault();
     const titulo = inputNueva.value.trim();
     const base = slugDeTitulo(titulo);
@@ -448,12 +473,13 @@ async function iniciar(root: HTMLElement) {
   });
 
   // ---------- borrar ----------
-  btnBorrar.addEventListener("click", async () => {
+  escuchar(btnBorrar, "click", async () => {
     if (!pagina) return;
     const { slug, titulo } = pagina;
     $("[data-hw-borrar-texto]").textContent = `«${titulo}» irá a la papelera.`;
-    if (!(await preguntar(dlgBorrar))) return;
+    mostrarEstado("");
     mostrarError("");
+    if (!(await preguntar(dlgBorrar))) return;
     const r = await api("DELETE", { cuerpo: { pagina: slug } });
     if (r.status !== 200) {
       mostrarError(msg(r.status));
@@ -502,13 +528,15 @@ async function iniciar(root: HTMLElement) {
       }),
     );
   }
-  historial.addEventListener("toggle", () => {
+  escuchar(historial, "toggle", () => {
     if (historial.open) void cargarHistorial();
   });
-  listaRevisiones.addEventListener("click", async (e) => {
+  escuchar(listaRevisiones, "click", async (e) => {
     const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-restaurar");
     if (!b || !pagina) return;
     b.disabled = true;
+    mostrarEstado("");
+    mostrarError("");
     historialEstado.textContent = "";
     const r = await api("POST", { cuerpo: { accion: "restaurar", pagina: pagina.slug, revision: Number(b.dataset.n), version: pagina.version } });
     b.disabled = false;
@@ -528,34 +556,61 @@ async function iniciar(root: HTMLElement) {
     textarea.setSelectionRange(r.cursor, r.cursor);
   }
 
+  // Sin avance durante este tiempo se aborta: el SDK reintenta en silencio los fallos de red y, sin esto, la barra
+  // se quedaría en 0 sin decir nada.
+  const SIN_AVANCE_MS = 45_000;
+
   async function subir(archivo: File) {
     errorEditor("");
-    const v = validarArchivo(archivo);
-    if (!v.ok) {
-      errorEditor(`${archivo.name}: ${v.error}`);
-      return;
-    }
-    const id = crypto.randomUUID();
-    lblSubiendo.textContent = `Subiendo ${archivo.name}…`;
-    progreso.value = 0;
-    progreso.hidden = false;
+    mostrarEstado("");
+    const nombre = String(archivo?.name ?? "archivo");
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
     try {
-      await upload(rutaBlob(proyecto, disciplina, id, archivo.name), archivo, {
-        access: "private",
-        handleUploadUrl: "/api/archivos/",
-        clientPayload: JSON.stringify({ proyecto, disciplina, nombre: archivo.name, tamano: archivo.size }),
-        onUploadProgress: ({ loaded, total }) => {
-          progreso.value = porcentaje(loaded, total);
-        },
-      });
+      const v = validarArchivo(archivo);
+      if (!v.ok) {
+        errorEditor(`${nombre}: ${v.error}`);
+        return;
+      }
+      const id = crypto.randomUUID();
+      lblSubiendo.textContent = `Subiendo ${nombre}…`;
+      progreso.value = 0;
+      progreso.hidden = false;
+      const corte = new AbortController();
+      let sinAvance = false;
+      const armar = () => {
+        clearTimeout(temporizador);
+        temporizador = setTimeout(() => {
+          sinAvance = true;
+          corte.abort();
+        }, SIN_AVANCE_MS);
+      };
+      armar();
+      escuchar(senal, "abort", () => corte.abort());
+      try {
+        await upload(rutaBlob(proyecto, disciplina, id, archivo.name), archivo, {
+          access: "private",
+          handleUploadUrl: "/api/archivos/",
+          clientPayload: JSON.stringify({ proyecto, disciplina, nombre: archivo.name, tamano: archivo.size }),
+          abortSignal: corte.signal,
+          onUploadProgress: ({ loaded, total }) => {
+            armar();
+            progreso.value = porcentaje(loaded, total);
+          },
+        });
+      } catch (err) {
+        if (sinAvance) throw new TypeError("sin avance");
+        throw err;
+      }
       insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
-      lblSubiendo.textContent = `${archivo.name} subido`;
+      lblSubiendo.textContent = `${nombre} subido`;
     } catch (err) {
       // El SDK no expone el estado HTTP del token (400, 403, 413 o 429): se da una causa general.
       const red = err instanceof TypeError;
       lblSubiendo.textContent = "";
-      errorEditor(red ? mensajeError("red") : `No se pudo subir ${archivo.name}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`);
+      errorEditor(red ? `${nombre}: ${mensajeError("red")}` : `No se pudo subir ${nombre}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`);
     } finally {
+      clearTimeout(temporizador);
+      progreso.value = 0;
       progreso.hidden = true;
     }
   }
@@ -564,29 +619,29 @@ async function iniciar(root: HTMLElement) {
     for (const a of [...archivos]) await subir(a);
   }
 
-  inputArchivo.addEventListener("change", async () => {
+  escuchar(inputArchivo, "change", async () => {
     const archivos = [...(inputArchivo.files ?? [])];
     inputArchivo.value = "";
     await subirVarios(archivos);
     textarea.focus();
   });
-  textarea.addEventListener("paste", (e) => {
+  escuchar(textarea, "paste", (e) => {
     const archivos = [...(e.clipboardData?.files ?? [])];
     if (!archivos.length) return;
     e.preventDefault();
     void subirVarios(archivos);
   });
-  textarea.addEventListener("dragover", (e) => {
+  escuchar(textarea, "dragover", (e) => {
     if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
   });
-  textarea.addEventListener("drop", (e) => {
+  escuchar(textarea, "drop", (e) => {
     const archivos = [...(e.dataTransfer?.files ?? [])];
     if (!archivos.length) return;
     e.preventDefault();
     void subirVarios(archivos);
   });
 
-  addEventListener("beforeunload", (e) => {
+  escuchar(globalThis, "beforeunload", (e) => {
     if (hayCambios()) e.preventDefault();
   });
 

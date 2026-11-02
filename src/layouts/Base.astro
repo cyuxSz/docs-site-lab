@@ -20,6 +20,8 @@ interface Props {
 }
 const { title, description = "Documentación de los proyectos de software de VantTec.", project, current } = Astro.props;
 const sugerencias = project?.sugerencias ?? [];
+// Electrónica y Mecánica se editan en la propia web (no viven en openwiki/ del repo).
+const esDisciplina = current === "electronica" || current === "mecanica";
 ---
 <!doctype html>
 <html lang="es">
@@ -66,11 +68,19 @@ const sugerencias = project?.sugerencias ?? [];
 
     <footer class="footer">
       <h3>¿Cómo se actualiza?</h3>
-      <ol>
-        <li>Cada repo guarda su documentación en <code>openwiki/</code> y <code>docs/arch/</code>, junto al código.</li>
-        <li>El CI confirma que las citas y el grafo ROS siguen coincidiendo con el código.</li>
-        <li>Al hacer merge a <code>main</code>, el repo avisa a este portal y se reconstruye solo.</li>
-      </ol>
+      {esDisciplina ? (
+        <ol>
+          <li>Esta documentación se edita en la propia web: quien tiene permiso de escritura usa «Editar» en cada página.</li>
+          <li>Cada cambio guarda una versión nueva y el historial permite restaurar las anteriores.</li>
+          <li>No hace falta hacer merge ni reconstruir el portal: los cambios se ven al guardar.</li>
+        </ol>
+      ) : (
+        <ol>
+          <li>Cada repo guarda su documentación en <code>openwiki/</code> y <code>docs/arch/</code>, junto al código.</li>
+          <li>El CI confirma que las citas y el grafo ROS siguen coincidiendo con el código.</li>
+          <li>Al hacer merge a <code>main</code>, el repo avisa a este portal y se reconstruye solo.</li>
+        </ol>
+      )}
       <slot name="footer" />
     </footer>
 
@@ -112,6 +122,12 @@ const sugerencias = project?.sugerencias ?? [];
       import "../scripts/atajos";
       // Buscador (Pagefind UI, recientes y ?q=): carga diferida, Ctrl/Cmd+K y "/".
       import "../scripts/busqueda";
+      // En pantallas estrechas las pestañas desbordan: la activa se acerca a la vista (sin animar si se pidió menos movimiento).
+      document.querySelector(".ptabs a[aria-current]")?.scrollIntoView({
+        inline: "nearest",
+        block: "nearest",
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
       // Enlaces a otros sitios (GitHub, papers) en otra pestaña, para que el portal siga abierto. Se decide al hacer
       // clic, así cubre también los enlaces que crean los componentes (panel del grafo, resultados de búsqueda).
       const external = (a: HTMLAnchorElement) => /^https?:$/.test(a.protocol) && a.host !== location.host;

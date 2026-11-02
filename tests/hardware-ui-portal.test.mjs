@@ -141,3 +141,46 @@ test("tests/fixtures/servidor-hardware.mjs: sirve dist/ y monta los handlers rea
   assert.match(src, /__blob/, "endpoint local que imita la API de Blob para probar la subida");
   assert.doesNotMatch(src, /0\.0\.0\.0/);
 });
+
+// ---------- correcciones de la verificación en navegador ----------
+test("script: inicialización idempotente, listeners con señal de aborto y preguntar() siempre se resuelve", () => {
+  const src = leer(SCRIPT);
+  assert.match(src, /__hwCtl\?\.abort\(\)/, "la instancia anterior se limpia");
+  assert.match(src, /astro:before-swap/);
+  const fuera = src.split(/\r?\n/).filter((l) => !/const escuchar|astro:before-swap/.test(l)).join("\n").replace(/function preguntar[^]*?\r?\n  \}\r?\n/, "");
+  assert.doesNotMatch(fuera, /\.addEventListener\(/, "fuera de preguntar() todo listener pasa por escuchar()");
+  const preg = /function preguntar[^]*?\r?\n  \}\r?\n/.exec(src)?.[0] ?? "";
+  assert.match(preg, /fin\(true\)/);
+  assert.match(preg, /senal\.aborted/);
+  assert.match(preg, /catch\s*\{\s*fin\(false\)/, "showModal que falla no deja la promesa colgada");
+});
+
+test("script: cada acción limpia el estado aria-live al empezar", () => {
+  const src = leer(SCRIPT);
+  for (const ancla of ['escuchar(form, "submit"', "escuchar(btnBorrar", 'accion: "reordenar"', "async function subir"]) {
+    const i = src.indexOf(ancla);
+    assert.ok(i > 0, ancla);
+    assert.match(src.slice(Math.max(0, i - 200), i + 400), /mostrarEstado\(""\)/, `${ancla} limpia el estado`);
+  }
+});
+
+test("script: la subida nunca falla en silencio (todo en try/catch, aborta sin avance, limpia progreso)", () => {
+  const src = leer(SCRIPT);
+  const sub = /async function subir\(archivo[^]*?\r?\n  \}\r?\n/.exec(src)?.[0] ?? "";
+  assert.match(sub, /try \{[^]*validarArchivo[^]*upload\([^]*catch \(err\)[^]*errorEditor\([^]*finally/);
+  assert.match(sub, /abortSignal/);
+  assert.match(sub, /progreso\.value = 0;\s*progreso\.hidden = true/);
+});
+
+test("Base: el pie de disciplina no dice que todo vive en openwiki/; las pestañas llevan la activa a la vista", () => {
+  const base = leer("src/layouts/Base.astro");
+  assert.match(base, /esDisciplina/);
+  assert.match(base, /se edita en la propia web/);
+  assert.match(base, /\.ptabs a\[aria-current\]"\)\?\.scrollIntoView\(\{[^}]*inline: "nearest"[^}]*prefers-reduced-motion/);
+});
+
+test("servidor de prueba: reescribe la URL de Blob al servir .js y lo documenta en la cabecera", () => {
+  const srv = leer("tests/fixtures/servidor-hardware.mjs");
+  assert.match(srv, /replaceAll\("https:\/\/vercel\.com\/api\/blob"/);
+  assert.match(srv.split("import {")[0], /reescribe/);
+});
