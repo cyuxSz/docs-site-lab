@@ -468,6 +468,53 @@ test("DELETE exige version entera válida (400); versión vieja → 409 sin borr
   assert.equal((await pagina(handler, "pcb")).status, 404);
 });
 
+test("versión monótona: crear→PUT→borrar→crear nace en ≥3 y las peticiones atrasadas (v1/v2) dan 409 sin tocarla", async () => {
+  const { handler } = await montar();
+  const ver = async () => (await (await pagina(handler, "nueva")).json()).pagina.version;
+  assert.equal((await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" })).status, 201);
+  assert.equal(await ver(), 1, "sin historial empieza en 1");
+  assert.equal((await put(handler, { pagina: "nueva", md: "# v2", version: 1 })).status, 200);
+  assert.equal((await del(handler, { pagina: "nueva", version: 2 })).status, 200);
+  assert.equal((await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" })).status, 201);
+  const vn = await ver(); assert.ok(vn >= 3, `versión ${vn}`);
+  const antes = await (await pagina(handler, "nueva")).json();
+  for (const version of [1, 2]) {
+    assert.equal((await put(handler, { pagina: "nueva", md: "# pisada", version })).status, 409, `PUT v${version}`);
+    assert.equal((await del(handler, { pagina: "nueva", version })).status, 409, `DELETE v${version}`);
+    assert.equal((await post(handler, { accion: "restaurar", pagina: "nueva", revision: 0, version })).status, 409, `restaurar v${version}`);
+  }
+  assert.deepEqual(await (await pagina(handler, "nueva")).json(), antes, "la página nueva no se tocó");
+});
+
+test("versión monótona: inicializar tras borrar una página de plantilla no reutiliza versiones", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# x", version: 1 });
+  assert.equal((await del(handler, { pagina: "pcb", version: 2 })).status, 200);
+  redis.data.delete("hw:uuv:electronica:indice");
+  assert.equal((await post(handler, { accion: "inicializar" })).status, 201);
+  const p = (await (await pagina(handler, "pcb")).json()).pagina;
+  assert.ok(p.version >= 3, `pcb recreada con versión ${p.version}`);
+  assert.equal((await put(handler, { pagina: "pcb", md: "# pisada", version: 2 })).status, 409);
+  assert.equal((await (await pagina(handler, "arquitectura")).json()).pagina.version, 1, "las no borradas siguen en 1");
+});
+
+test("DELETE: las revisiones van a la papelera y se borran; un slug recreado no las hereda ni se restauran", async () => {
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  await put(handler, { pagina: "nueva", md: "# dos", version: 1 });
+  await put(handler, { pagina: "nueva", md: "# tres", version: 2 });
+  assert.equal((await del(handler, { pagina: "nueva", version: 3 })).status, 200);
+  assert.ok(!redis.data.has("hw:rev:uuv:electronica:nueva"), "la lista de revisiones se borra");
+  const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.equal(entrada.revisiones.length, 2);
+  assert.deepEqual(entrada.revisiones.map((r) => r.version), [2, 1]);
+  assert.equal(typeof entrada.revisiones[0].md, "string");
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  const v = (await (await pagina(handler, "nueva")).json()).pagina.version;
+  assert.deepEqual(await (await pagina(handler, "nueva", "ana", { revisiones: "1" })).json(), { revisiones: [] });
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "nueva", revision: 0, version: v })).status, 404);
+});
+
 // ---------- Fencing del candado ----------
 
 const sinLocks = (r) => JSON.stringify(JSON.parse(instantanea(r)).filter(([k]) => !k.includes(":lock:")));
