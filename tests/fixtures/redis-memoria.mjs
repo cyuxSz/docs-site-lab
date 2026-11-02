@@ -22,6 +22,7 @@ export function fakeRedis() {
   // Expiración real: ttl guarda el instante de caducidad (ms); relojMs es sustituible desde los tests.
   const reloj = { ahora: () => Date.now() };
   const purgar = () => { for (const [k, t] of ttl) if (t <= reloj.ahora()) { data.delete(k); ttl.delete(k); } };
+  const comandos = [];
   const run = ([cmd, ...a]) => {
     switch (String(cmd).toUpperCase()) {
       case "GET": return typeof data.get(a[0]) === "string" ? data.get(a[0]) : null;
@@ -62,12 +63,29 @@ export function fakeRedis() {
       case "EXPIRE": if (!data.has(a[0])) return 0; if (String(a[2] ?? "").toUpperCase() === "NX" && ttl.has(a[0])) return 0; ttl.set(a[0], reloj.ahora() + Number(a[1]) * 1000); return 1;
       case "TTL": return data.has(a[0]) ? (ttl.has(a[0]) ? Math.ceil((ttl.get(a[0]) - reloj.ahora()) / 1000) : -1) : -2;
       case "EVAL": {
-        // Solo el compare-and-del del candado: EVAL script numkeys key valor.
+        const sc = String(a[0]);
+        const nk = Number(a[1]);
+        const keys = a.slice(2, 2 + nk);
+        const argv = a.slice(2 + nk).map(String);
+        // Fencing: comprueba todos los candados y ejecuta los comandos codificados (n, y por cada uno argc + args).
+        if (sc.includes("FENCED")) {
+          for (let i = 0; i < nk; i++) if (data.get(keys[i]) !== argv[i]) return "FENCED";
+          let p = nk;
+          const n = Number(argv[p++]);
+          for (let c = 0; c < n; c++) { const k = Number(argv[p++]); const sub = argv.slice(p, p + k); comandos.push(sub); run(sub); p += k; }
+          return "APLICADO";
+        }
+        // Lápida + inserción atómicas de archivos: KEYS arch, borrados; ARGV id, meta.
+        if (/sismember/i.test(sc) && /hsetnx/i.test(sc)) {
+          if (data.get(keys[1]) instanceof Set && data.get(keys[1]).has(argv[0])) return 0;
+          return run(["HSETNX", keys[0], argv[0], argv[1]]);
+        }
+        // Compare-and-del del candado: EVAL script numkeys key valor.
         if (!/redis\.call\(['"]get['"]/i.test(String(a[0])) || !/del/i.test(String(a[0]))) throw new Error("fake: EVAL no soportado");
         return data.get(a[2]) === String(a[3]) ? (data.delete(a[2]), ttl.delete(a[2]), 1) : 0;
       }
       default: throw new Error(`fake: comando no soportado ${cmd}`);
     }
   };
-  return { data, ttl, reloj, comandos: [], async exec(cmds) { this.comandos.push(...cmds); return cmds.map((c) => { purgar(); return run(c); }); } };
+  return { data, ttl, reloj, comandos, async exec(cmds) { comandos.push(...cmds); return cmds.map((c) => { purgar(); return run(c); }); } };
 }

@@ -148,6 +148,18 @@ test("clienteRedis: null sin variables; acepta KV_REST_API_* o UPSTASH_REDIS_RES
   }
 });
 
+test("clienteRedis: el fetch lleva un AbortSignal y un timeout da el mismo error 'Almacén no disponible'", async () => {
+  const { clienteRedis } = await core();
+  let signal;
+  globalThis.fetch = async (_u, init = {}) => {
+    signal = init.signal;
+    throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+  };
+  const err = await clienteRedis({ KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "TOKEN-SECRETO" }).exec([["GET", "k"]]).then(() => null, (e) => e);
+  assert.ok(signal instanceof AbortSignal, "pasa un AbortSignal");
+  assert.equal(err?.message, "Almacén no disponible");
+});
+
 test("clienteRedis: un error de Upstash lanza sin incluir el token; la API responde 503 genérico", async () => {
   const { clienteRedis, crearHandler } = await core();
   const env = { UPSTASH_REDIS_REST_URL: "https://x.upstash.io", UPSTASH_REDIS_REST_TOKEN: "TOKEN-SECRETO" };
