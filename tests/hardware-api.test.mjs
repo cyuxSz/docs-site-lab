@@ -524,6 +524,66 @@ test("fencing: la escritura final es un solo EVAL con los dos candados (slug e �
   assert.deepEqual([ev[3], ev[4]].sort(), ["hw:lock:uuv:electronica:__indice", "hw:lock:uuv:electronica:pcb"]);
 });
 
+test("tenencias por petición: dos peticiones concurrentes en distintas disciplinas no se interfieren", { timeout: 10000 }, async () => {
+  const proyectos = [{ id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR] }, mecanica: { plantilla: "mecanica", editores: [EDITOR] } } }];
+  const { handler, redis } = await montar({ proyectos });
+  assert.equal((await post(handler, { accion: "inicializar" })).status, 201);
+  assert.equal((await post(handler, { accion: "inicializar", disciplina: "mecanica" })).status, 201);
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  const evals = [];
+  let aEnPunto, bEnPunto;
+  const aListo = new Promise((r) => (aEnPunto = r));
+  const bListo = new Promise((r) => (bEnPunto = r));
+  let liberarA, liberarB;
+  const puertaA = new Promise((r) => (liberarA = r));
+  const puertaB = new Promise((r) => (liberarB = r));
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    if (cmds.some((c) => c[0] === "HGETALL" && c[1] === "hw:pag:uuv:electronica:pcb")) { aEnPunto(); await puertaA; }
+    const ev = cmds.find((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"));
+    if (ev) {
+      evals.push(ev);
+      if (ev[3].includes(":mecanica:")) { bEnPunto(); await puertaB; }
+    }
+    return orig(cmds);
+  };
+  const a = put(handler, { pagina: "pcb", md: "# a", version: 1 });
+  await aListo; // A retiene sus candados
+  const b = put(handler, { disciplina: "mecanica", pagina: "ensamble", md: "# b", version: 1 });
+  await bListo; // B ya construyó su EVAL mientras A retiene los suyos
+  liberarA();
+  assert.equal((await a).status, 200); // A termina y suelta sus candados
+  liberarB();
+  assert.equal((await b).status, 200, "B no da 409 espurio por candados de A ya liberados");
+  assert.equal(evals.length, 2);
+  for (const ev of evals) {
+    assert.equal(ev[2], 2, "cada EVAL lleva solo sus 2 candados");
+    const disc = ev[3].includes(":mecanica:") ? "mecanica" : "electronica";
+    assert.ok(ev.slice(3, 5).every((k) => k.startsWith(`hw:lock:uuv:${disc}:`)), `claves de ${disc}`);
+  }
+});
+
+test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente en el mismo handler", async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  const orig = redis.exec.bind(redis);
+  let colgar = true;
+  redis.exec = async (cmds) => {
+    if (colgar && cmds.some((c) => c[0] === "HGETALL" && c[1] === "hw:pag:uuv:electronica:pcb")) {
+      colgar = false;
+      return new Promise(() => {}); // la invocación muere: nunca ejecuta su finally
+    }
+    return orig(cmds);
+  };
+  void put(handler, { pagina: "pcb", md: "# muerta", version: 1 });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(colgar, false, "la petición muerta llegó a retener sus candados");
+  redis.reloj.ahora = () => Date.now() + 11_000; // el lease huérfano caduca
+  const res = await put(handler, { pagina: "pcb", md: "# viva", version: 1 });
+  assert.equal(res.status, 200);
+  assert.equal((await (await pagina(handler, "pcb")).json()).pagina.md, "# viva");
+});
+
 // ---------- Límite de tasa ----------
 
 test("límite de tasa igual que comentarios: 10 escrituras por minuto y la 11.ª → 429 con Retry-After; las lecturas no cuentan", async () => {
