@@ -19,6 +19,9 @@ export function fakeRedis() {
     if (j < 0) j = n + j;
     return arr.slice(i, Math.min(j, n - 1) + 1);
   };
+  // Expiración real: ttl guarda el instante de caducidad (ms); relojMs es sustituible desde los tests.
+  const reloj = { ahora: () => Date.now() };
+  const purgar = () => { for (const [k, t] of ttl) if (t <= reloj.ahora()) { data.delete(k); ttl.delete(k); } };
   const run = ([cmd, ...a]) => {
     switch (String(cmd).toUpperCase()) {
       case "GET": return typeof data.get(a[0]) === "string" ? data.get(a[0]) : null;
@@ -28,7 +31,7 @@ export function fakeRedis() {
         if (opts.includes("XX") && !data.has(a[0])) return null;
         data.set(a[0], String(a[1]));
         const ex = opts.indexOf("EX");
-        if (ex >= 0) ttl.set(a[0], Number(a[2 + ex + 1]));
+        if (ex >= 0) ttl.set(a[0], reloj.ahora() + Number(a[2 + ex + 1]) * 1000);
         else ttl.delete(a[0]);
         return "OK";
       }
@@ -56,10 +59,15 @@ export function fakeRedis() {
       case "LLEN": return Array.isArray(data.get(a[0])) ? data.get(a[0]).length : 0;
       case "LTRIM": { const l = data.get(a[0]); if (!Array.isArray(l)) return "OK"; const r = rango(l, a[1], a[2]); if (r.length) data.set(a[0], r); else data.delete(a[0]); return "OK"; }
       case "INCR": { const v = Number(data.get(a[0]) ?? 0) + 1; data.set(a[0], String(v)); return v; }
-      case "EXPIRE": if (!data.has(a[0])) return 0; if (String(a[2] ?? "").toUpperCase() === "NX" && ttl.has(a[0])) return 0; ttl.set(a[0], Number(a[1])); return 1;
-      case "TTL": return data.has(a[0]) ? (ttl.get(a[0]) ?? -1) : -2;
+      case "EXPIRE": if (!data.has(a[0])) return 0; if (String(a[2] ?? "").toUpperCase() === "NX" && ttl.has(a[0])) return 0; ttl.set(a[0], reloj.ahora() + Number(a[1]) * 1000); return 1;
+      case "TTL": return data.has(a[0]) ? (ttl.has(a[0]) ? Math.ceil((ttl.get(a[0]) - reloj.ahora()) / 1000) : -1) : -2;
+      case "EVAL": {
+        // Solo el compare-and-del del candado: EVAL script numkeys key valor.
+        if (!/redis\.call\(['"]get['"]/i.test(String(a[0])) || !/del/i.test(String(a[0]))) throw new Error("fake: EVAL no soportado");
+        return data.get(a[2]) === String(a[3]) ? (data.delete(a[2]), ttl.delete(a[2]), 1) : 0;
+      }
       default: throw new Error(`fake: comando no soportado ${cmd}`);
     }
   };
-  return { data, ttl, comandos: [], async exec(cmds) { this.comandos.push(...cmds); return cmds.map(run); } };
+  return { data, ttl, reloj, comandos: [], async exec(cmds) { this.comandos.push(...cmds); return cmds.map((c) => { purgar(); return run(c); }); } };
 }

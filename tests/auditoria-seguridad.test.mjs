@@ -302,8 +302,8 @@ test("limpiezaMarkdown: los paréntesis del destino del enlace van como %28/%29"
 test("limpiezaMarkdown: sin URL, la ruta va como code span (delimitador más largo que sus backticks)", () => {
   const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, "no-es-github", SHA), new Set()));
   assert.ok(md.includes("`src/a](https://evil.example)`"), md);
-  const md2 = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/[x]\y`z.cpp" })] }, "no-es-github", SHA), new Set()));
-  assert.ok(md2.includes("``src/[x]\y`z.cpp``"), md2);
+  const md2 = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/[x]\\y`z.cpp" })] }, "no-es-github", SHA), new Set()));
+  assert.ok(md2.includes("``src/[x]\\y`z.cpp``"), md2);
 });
 
 test("limpiezaMarkdown: el nombre del proyecto se escapa y las configs a retirar van como code span", () => {
