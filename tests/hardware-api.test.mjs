@@ -305,7 +305,7 @@ test("html sanitizado: bypasses de esquema y atributos on* no dejan href/src pel
     const { html } = (await (await pagina(handler, "pcb")).json()).pagina;
     for (const [, valor] of html.matchAll(/\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi).map((m) => [0, m[1] ?? m[2] ?? m[3]])) {
       // como lo interpreta el navegador: entidades numéricas y tab/salto/control se descartan antes del esquema
-      const real = valor.replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d))).replace(/[ - ]/g, "");
+      const real = valor.replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d))).replace(/[\u0000-\u0020]/g, "");
       assert.doesNotMatch(real, /^(javascript|vbscript|data):/i, `esquema peligroso (${valor}): ${caso}`);
     }
     assert.doesNotMatch(html, /<[^>]+\son\w+\s*=/i, `atributo on*: ${caso}`);
@@ -437,7 +437,7 @@ test("DELETE manda la página a la papelera hw:papelera:<proy>:<disc>: sale del 
   assert.equal((await pagina(handler, "pcb")).status, 404);
   assert.ok(!redis.data.has("hw:pag:uuv:electronica:pcb"), "el hash de la página ya no está");
   const papelera = redis.data.get("hw:papelera:uuv:electronica");
-  assert.ok(papelera instanceof Map, "la papelera es un hash slug → JSON");
+  assert.ok(papelera instanceof Map, "la papelera es un hash <slug>:<timestamp> → JSON (no se pierden entradas al re-borrar)");
   const claves = [...papelera.keys()];
   assert.equal(claves.length, 1);
   assert.match(claves[0], /^pcb:\d+$/, "clave <slug>:<timestamp>");
@@ -501,5 +501,22 @@ test("PUT con cambio de título toma el candado del índice", async () => {
     return orig(cmds);
   };
   assert.equal((await put(handler, { pagina: "pcb", md: "# PCB", version: 1, titulo: "PCB nueva" })).status, 200);
-  assert.ok(claves.some((k) => k.endsWith(":indice")), `candados tomados: ${claves.join(",")}`);
+  assert.ok(claves.some((k) => k.endsWith(":__indice")), `candados tomados: ${claves.join(",")}`);
+});
+
+test("la clave de candado del índice no colisiona con una página de slug `indice`", async () => {
+  const { handler } = await inicializado();
+  assert.equal((await post(handler, { accion: "crear", pagina: "indice", titulo: "Índice" })).status, 201);
+  assert.equal((await put(handler, { pagina: "indice", md: "# i", version: 1 })).status, 200);
+  assert.equal((await del(handler, { pagina: "indice" })).status, 200);
+});
+
+test("inicializar tras perder el índice conserva el título guardado de las páginas con hash", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", titulo: "PCB renombrada", md: "# x", version: 1 })).status, 200);
+  redis.data.delete("hw:uuv:electronica:indice");
+  const res = await post(handler, { accion: "inicializar" });
+  assert.equal(res.status, 201);
+  const pcb = (await res.json()).paginas.find((p) => p.slug === "pcb");
+  assert.equal(pcb.titulo, "PCB renombrada");
 });
