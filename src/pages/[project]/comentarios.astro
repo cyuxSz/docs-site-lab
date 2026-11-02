@@ -27,7 +27,7 @@ const route = `/${p.id}/comentarios/`;
           <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}</p>
           <h1>Comentarios abiertos</h1>
           <p class="hint">Hilos sin resolver de todas las páginas de la wiki.</p>
-          <div class="panel-comentarios" data-panel-comentarios data-proyecto={p.id}>
+          <div class="panel-comentarios" data-panel-comentarios data-proyecto={p.id} data-disciplinas={Object.keys(p.disciplinas ?? {}).join(",")}>
             <div class="panel-filtros">
               <div class="campo">
                 <label for="panel-tipo">Tipo</label>

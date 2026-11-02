@@ -167,7 +167,17 @@ export const STATUS_LABEL: Record<string, string> = {
 export const themeStyle = (t?: ProjectTheme) => (t ? `--p-accent:${t.accent};--p-deep:${t.deep};--p-warm:${t.warm}` : undefined);
 
 // Lo que necesitan la barra de pestañas y los colores del proyecto en Base.astro.
+const ETIQUETA_DISCIPLINA: Record<string, string> = { electronica: "Electrónica", mecanica: "Mecánica" };
+const ORDEN_DISCIPLINAS = ["electronica", "mecanica"];
+
+// Pestañas de hardware de un proyecto: solo las disciplinas configuradas, en orden fijo; nunca editores ni plantilla.
+function disciplinasNav(p: ProjectData): { id: string; etiqueta: string; href: string }[] {
+  const ids = Object.keys(p.disciplinas ?? {});
+  const orden = [...ORDEN_DISCIPLINAS.filter((d) => ids.includes(d)), ...ids.filter((d) => !ORDEN_DISCIPLINAS.includes(d))];
+  return orden.map((id) => ({ id, etiqueta: ETIQUETA_DISCIPLINA[id] ?? id.charAt(0).toUpperCase() + id.slice(1), href: `/${p.id}/${id}/` }));
+}
+
 export function projectNav(p: ProjectData) {
   const first = p.pageList.find((x) => x.path === "quickstart.md") ?? p.pageList.find((x) => x.type !== "index" && x.type !== "meta");
-  return { id: p.id, name: p.name, theme: p.theme, wiki: first?.route, diagrams: p.diagramList.length > 0, repoUrl: p.repoUrl, sugerencias: sugerenciasBusqueda(p.pageList) };
+  return { id: p.id, name: p.name, theme: p.theme, wiki: first?.route, diagrams: p.diagramList.length > 0, repoUrl: p.repoUrl, sugerencias: sugerenciasBusqueda(p.pageList), disciplinas: disciplinasNav(p) };
 }
