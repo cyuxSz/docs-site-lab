@@ -148,10 +148,11 @@ test("clienteRedis: null sin variables; acepta KV_REST_API_* o UPSTASH_REDIS_RES
   }
 });
 
-test("TIMEOUT_MS vale 5000 y es menor que el lease de 10 s de los candados", async () => {
+test("TIMEOUT_MS vale 5000 y es menor que el lease de los candados", async () => {
   const { TIMEOUT_MS } = await import("../lib/api-comun.mjs");
+  const { LEASE_S } = await import("../lib/hardware-core.mjs");
   assert.equal(TIMEOUT_MS, 5000);
-  assert.ok(TIMEOUT_MS < 10_000);
+  assert.ok(TIMEOUT_MS < LEASE_S * 1000, "un acceso a Redis no puede durar más que el lease del candado");
 });
 
 test("clienteRedis: el fetch lleva un AbortSignal y un timeout da el mismo error 'Almacén no disponible'", async () => {
