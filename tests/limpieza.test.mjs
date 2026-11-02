@@ -148,7 +148,7 @@ test("limpiezaMarkdown: el texto del repo no rompe el Markdown (backticks y salt
   const raro = { ...ROS, nodes: [n("p/a`b", "sin_uso", { label: "a`b\n# titulo falso" })] };
   const md = limpiezaMarkdown("X", filasLimpieza(raro, REPO, SHA), new Set());
   assert.doesNotMatch(md, /^# titulo falso/m);
-  assert.ok(!md.includes("a`b"), "los backticks del dato no cierran el código en línea");
+  assert.ok(md.includes("``src/p/a`b.cpp``"), "los backticks del dato van en un code span con delimitador más largo");
 });
 
 test("nombreArchivoMd: nombre seguro por proyecto", () => {

@@ -16,6 +16,7 @@ if (dialogo) {
       escribiendo: Boolean((e.target as Element | null)?.closest?.("input, textarea, select, [contenteditable]")),
       dialogoAbierto: document.querySelector("dialog[open]") !== null,
       t: e.timeStamp,
+      repetida: e.repeat,
     });
     pendiente = r.pendiente;
     if (!r.accion) return;

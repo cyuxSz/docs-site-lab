@@ -44,17 +44,36 @@ export function almacenSeguro(getStorage: () => Storage | null | undefined): Alm
 }
 
 export const claveRol = (p: string) => `rutas:${p}:rol`;
-export const clavePaso = (p: string, rol: string, i: number) => `rutas:${p}:${rol}:${i}`;
+export const clavePaso = (p: string, rol: string, page: string) => `rutas:${p}:${rol}:pagina:${page}`;
+export const clavePasoIndice = (p: string, rol: string, i: number) => `rutas:${p}:${rol}:${i}`;
 
-export const leidos = (alm: Almacen, p: string, ruta: Ruta): boolean[] => ruta.pasos.map((_, i) => alm.get(clavePaso(p, ruta.id, i)) === "1");
+// Lee un paso; si solo existe la clave vieja por índice con "1", la migra a la clave por página.
+function leido(alm: Almacen, p: string, rol: string, i: number, page: string): boolean {
+  try {
+    const nueva = clavePaso(p, rol, page);
+    const v = alm.get(nueva);
+    if (v === "1") return true;
+    if (v === null && alm.get(clavePasoIndice(p, rol, i)) === "1") {
+      alm.set(nueva, "1");
+      alm.remove(clavePasoIndice(p, rol, i));
+      return true;
+    }
+  } catch {}
+  return false;
+}
 
-export function marcar(alm: Almacen, p: string, rol: string, i: number, hecho: boolean) {
-  if (hecho) alm.set(clavePaso(p, rol, i), "1");
-  else alm.remove(clavePaso(p, rol, i));
+export const leidos = (alm: Almacen, p: string, ruta: Ruta): boolean[] => ruta.pasos.map((s, i) => leido(alm, p, ruta.id, i, s.page));
+
+export function marcar(alm: Almacen, p: string, rol: string, page: string, hecho: boolean) {
+  if (hecho) alm.set(clavePaso(p, rol, page), "1");
+  else alm.remove(clavePaso(p, rol, page));
 }
 
 export function reiniciar(alm: Almacen, p: string, ruta: Ruta) {
-  ruta.pasos.forEach((_, i) => alm.remove(clavePaso(p, ruta.id, i)));
+  ruta.pasos.forEach((s, i) => {
+    alm.remove(clavePaso(p, ruta.id, s.page));
+    alm.remove(clavePasoIndice(p, ruta.id, i));
+  });
 }
 
 export function progreso(l: boolean[]) {

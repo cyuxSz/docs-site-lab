@@ -313,7 +313,7 @@ test("limpiezaMarkdown: el nombre del proyecto se escapa y las configs a retirar
     nodes: [nodo("p/a", { status: "legado", configs: ["c"] })],
   };
   const md = sinZ(limpiezaMarkdown("uuv](https://evil.example)", filasLimpieza(ros, REPO, SHA), new Set()));
-  assert.match(md, /^# Limpieza del repo · uuv\\]\\(https:\/\/evil\.example\\)$/m);
+  assert.match(md, /^# Limpieza del repo · uuv\\\]\\\(https:\/\/evil\.example\\\)$/m);
   assert.ok(md.includes("Configs a retirar: `[clic](https://evil.example)`"), md);
 });
 
@@ -343,7 +343,7 @@ test("walk: un directorio inexistente da [] (repo sin openwiki/ o docs/arch/)", 
 
 test("limpiezaMarkdown: el texto exportado escapa < y >", () => {
   const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/<img src=x>.cpp" })] }, "", SHA), new Set()));
-  assert.ok(md.includes("\\<img src=x\\>"), md);
+  assert.ok(md.includes("`src/<img src=x>.cpp`"), md);
 });
 
 // ==================== Vuelta 2: hallazgos de cubic y CodeRabbit en #31 ====================

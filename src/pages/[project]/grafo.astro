@@ -35,7 +35,7 @@ const rows = (ros?.nodes ?? [])
 const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label ?? id;
 ---
 <Base title={`Grafo · ${p.name}`} description={`Nodos, topics y hardware de ${p.name}.`} project={projectNav(p)} current="grafo">
-  <main class="container" id="contenido">
+  <main class="container" id="contenido" tabindex="-1">
     <section class="hero" style="padding-bottom: 12px">
       <p class="eyebrow">Grafo</p>
       <h1>{p.ros ? "Nodos, topics y hardware" : "Mapa de la wiki"}</h1>
