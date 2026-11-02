@@ -22,14 +22,15 @@ export const claveVisto = (p: string, route: string) => `personal:${p}:visto:${r
 // Copia de la lógica de access.config.js (canAccess). No se importa de allí: este archivo va al bundle del cliente y
 // expondría los logins de RESTRICTED. Si cambia una, cambia la otra.
 function decodificar(ruta: string): string | null {
+  if (/%(?![0-9A-Fa-f]{2})/.test(ruta)) return null;
   let actual = ruta;
   try {
     for (let i = 0; i < 5; i++) {
-      const sig = decodeURIComponent(actual);
+      const sig = actual.replace(/(?:%[0-9A-Fa-f]{2})+/g, (r: string) => decodeURIComponent(r));
       if (sig === actual) return actual;
       actual = sig;
     }
-    return decodeURIComponent(actual) === actual ? actual : null;
+    return /%[0-9A-Fa-f]{2}/.test(actual) ? null : actual;
   } catch {
     return null;
   }

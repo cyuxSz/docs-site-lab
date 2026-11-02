@@ -16,14 +16,15 @@ export const isRestricted = (id) => Object.keys(RESTRICTED).some((k) => lower(k)
 // Copia local en src/lib/personal.ts (no se importa de aquí: este archivo lista logins y no debe ir al bundle del cliente).
 const MAX_RONDAS = 5;
 function decodificar(path) {
+  if (/%(?![0-9A-Fa-f]{2})/.test(path)) return null;
   let actual = path;
   try {
     for (let i = 0; i < MAX_RONDAS; i++) {
-      const sig = decodeURIComponent(actual);
+      const sig = actual.replace(/(?:%[0-9A-Fa-f]{2})+/g, (r) => decodeURIComponent(r));
       if (sig === actual) return actual;
       actual = sig;
     }
-    return decodeURIComponent(actual) === actual ? actual : null;
+    return /%[0-9A-Fa-f]{2}/.test(actual) ? null : actual;
   } catch {
     return null;
   }
