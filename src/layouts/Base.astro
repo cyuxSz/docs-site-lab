@@ -15,8 +15,8 @@ interface Props {
   title: string;
   description?: string;
   // Con proyecto: pestañas Resumen / Wiki / Grafo / Diagramas y sus colores (projectNav en lib/data.ts).
-  project?: { id: string; name: string; theme?: ProjectTheme; wiki?: string; diagrams?: boolean; repoUrl?: string; sugerencias?: Sugerencia[] };
-  current?: "resumen" | "wiki" | "grafo";
+  project?: { id: string; name: string; theme?: ProjectTheme; wiki?: string; diagrams?: boolean; repoUrl?: string; sugerencias?: Sugerencia[]; disciplinas?: { id: string; etiqueta: string; href: string }[] };
+  current?: "resumen" | "wiki" | "grafo" | "electronica" | "mecanica";
 }
 const { title, description = "Documentación de los proyectos de software de VantTec.", project, current } = Astro.props;
 const sugerencias = project?.sugerencias ?? [];
@@ -57,6 +57,7 @@ const sugerencias = project?.sugerencias ?? [];
         {project.wiki && <a href={project.wiki} data-astro-prefetch aria-current={current === "wiki" ? "page" : undefined}>Wiki</a>}
         <a href={`/${project.id}/grafo/`} data-astro-prefetch aria-current={current === "grafo" ? "page" : undefined}>Grafo</a>
         {project.diagrams && <a href={`/${project.id}/#diagramas`} data-astro-prefetch>Diagramas</a>}
+        {project.disciplinas?.map((d) => <a href={d.href} data-astro-prefetch aria-current={current === d.id ? "page" : undefined}>{d.etiqueta}</a>)}
         {project.repoUrl && <a href={project.repoUrl} class="ptab-ext">Código</a>}
       </nav>
     )}

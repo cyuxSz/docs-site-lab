@@ -7,6 +7,7 @@ if (raiz) void iniciar(raiz);
 
 async function iniciar(root: HTMLElement) {
   const proyecto = root.dataset.proyecto ?? "";
+  const disciplinas = (root.dataset.disciplinas ?? "").split(",").filter(Boolean);
   const estado = root.querySelector<HTMLElement>("[data-panel-estado]")!;
   const lista = root.querySelector<HTMLElement>("[data-panel-lista]")!;
   const filtroTipo = root.querySelector<HTMLSelectElement>("#panel-tipo")!;
@@ -47,7 +48,7 @@ async function iniciar(root: HTMLElement) {
         const extracto = el("p", "comentario-texto");
         for (const trozo of partirMenciones(h.extracto)) extracto.append(trozo.mencion ? el("span", "mencion", trozo.texto) : document.createTextNode(trozo.texto));
         const a = document.createElement("a");
-        a.href = enlaceHilo(p.pagina, h.id);
+        a.href = enlaceHilo(p.pagina, h.id, disciplinas);
         a.textContent = "Ver en la página";
         li.append(cab, extracto, a);
         ol.append(li);
