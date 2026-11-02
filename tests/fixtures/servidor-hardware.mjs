@@ -6,8 +6,11 @@
 //
 // Blob falso: handleUpload devuelve un clientToken de prueba tras llamar a onBeforeGenerateToken (así se ejercita la
 // validación real del pathname); PUT /__blob/?pathname=… guarda el cuerpo en memoria, ejecuta onUploadCompleted y
-// responde el JSON de PutBlobResult. Para que upload() use este Blob, en la consola del navegador antes de subir:
-//   window.process = { env: { VERCEL_BLOB_API_URL: location.origin + "/__blob" } }
+// responde el JSON de PutBlobResult. Vite deja el SDK de @vercel/blob dentro del bundle con process.env sustituido por
+// {}, así que no se puede redirigir desde el navegador. Para que upload() use este Blob, este servidor (y solo él)
+// reescribe al servir dist/_astro/*.js la URL por defecto "https://vercel.com/api/blob" por <origen>/__blob. Producción
+// y dist/ no cambian. Uso: abrir /uuv/electronica/ como editor, Editar, Adjuntar un .png o .step; debe aparecer el
+// enlace en el textarea y verse "[blob] guardado …" aquí. Si no avanza en 45 s el cliente muestra un error.
 import { createServer } from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
@@ -115,6 +118,10 @@ function servirEstatico(req, res, url) {
   const cab = { "content-type": MIME[extname(archivo)] ?? "application/octet-stream" };
   for (const h of cabecerasVercel) cab[h.key.toLowerCase()] = h.value;
   res.writeHead(200, cab);
+  if (extname(archivo) === ".js") {
+    const origen = `http://${req.headers.host ?? `127.0.0.1:${PUERTO}`}`;
+    return res.end(readFileSync(archivo, "utf8").replaceAll("https://vercel.com/api/blob", `${origen}/__blob`));
+  }
   res.end(readFileSync(archivo));
 }
 
@@ -166,5 +173,5 @@ if (!existsSync(dist)) console.warn("Aviso: no existe dist/. Ejecuta `npm run bu
 servidor.listen(PUERTO, "127.0.0.1", () => {
   console.log(`Servidor de hardware en http://127.0.0.1:${PUERTO}/  (usuario: ${LOGIN}; cambia con ?como=<login>)`);
   console.log(`Prueba: http://127.0.0.1:${PUERTO}/uuv/electronica/`);
-  console.log('Para subir con el Blob falso, en la consola: window.process = { env: { VERCEL_BLOB_API_URL: location.origin + "/__blob" } }');
+  console.log("Blob falso activo: los .js servidos apuntan la API de Blob a /__blob (solo en este servidor).");
 });
