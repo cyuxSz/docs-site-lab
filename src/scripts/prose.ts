@@ -3,7 +3,7 @@
 // Todo sale del HTML que ya trae la página: no hay peticiones a GitHub ni innerHTML con texto del repo.
 import { urlReportar } from "../lib/acciones.ts";
 import { haceDias } from "../lib/novedades.ts";
-import { decodificarAncla } from "../lib/lectura.ts";
+import { decodificarAncla, enlaceGlosario } from "../lib/lectura.ts";
 
 const prose = document.querySelector<HTMLElement>(".prose");
 
@@ -212,7 +212,7 @@ prose?.querySelectorAll<HTMLAnchorElement>("a[href*='/blob/']").forEach((a) => {
 });
 
 // --- Glosario: <abbr class="glosa" data-def> con la definición en un tooltip ---
-const glosarioUrl = prose?.dataset.glosario;
+const glosarioUrl = enlaceGlosario(prose?.dataset.glosario);
 function showGlosa(el: HTMLElement) {
   show(el, (box) => {
     const def = document.createElement("p");

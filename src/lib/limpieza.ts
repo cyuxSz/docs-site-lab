@@ -92,11 +92,24 @@ export const filasVisibles = (filas: FilaLimpieza[], revisados: Set<string>, ocu
 
 const linea = (s: string) => String(s).replace(/[\r\n]+/g, " ").replace(/`/g, "'").trim();
 
+// Texto fuera de código en línea: escapa con "\" la sintaxis de enlaces y de código (y aplana saltos de línea).
+// Los autolinks GFM (http(s)://, www., correos) se rompen con U+200B: el escape con "\" no sirve, el parser lo des-escapa antes.
+const texto = (s: string) =>
+  String(s)
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .replace(/[\\`\[\]()<>]/g, "\\$&")
+    .replace(/(https?)(:\/\/)/gi, "$1​$2")
+    .replace(/(www)(\.)/gi, "$1​$2")
+    .replace(/@/g, "​@");
+// Destino de enlace: los paréntesis cerrarían el destino; solo en el Markdown exportado.
+const destino = (u: string) => u.replace(/\(/g, "%28").replace(/\)/g, "%29");
+
 function itemMd(f: FilaLimpieza, rev: Set<string>): string {
   const partes = [`- [${rev.has(f.id) ? "x" : " "}] \`${linea(f.paquete)}/${linea(f.ejecutable)}\``];
-  if (f.archivo) partes.push(f.url ? `[${linea(f.archivo)}](${f.url})` : linea(f.archivo));
-  let s = partes.join(" · ") + ` — ${linea(f.motivo)}`;
-  if (f.configs.length) s += `\n  - Configs a retirar: ${f.configs.map(linea).join(", ")}`;
+  if (f.archivo) partes.push(f.url ? `[${texto(f.archivo)}](${destino(f.url)})` : texto(f.archivo));
+  let s = partes.join(" · ") + ` — ${texto(f.motivo)}`;
+  if (f.configs.length) s += `\n  - Configs a retirar: ${f.configs.map(texto).join(", ")}`;
   if (f.launches.length) s += `\n  - Launches a retirar: ${f.launches.map((l) => `\`${linea(l)}\``).join(", ")}`;
   return s;
 }
@@ -105,7 +118,7 @@ export function limpiezaMarkdown(nombre: string, f: { sinUso: FilaLimpieza[]; le
   const p = progreso([...f.sinUso, ...f.legado], rev);
   const seccion = (t: string, fs: FilaLimpieza[]) => `## ${t}\n\n${fs.length ? fs.map((x) => itemMd(x, rev)).join("\n") : "_Nada por revisar._"}\n`;
   return [
-    `# Limpieza del repo · ${linea(nombre)}`,
+    `# Limpieza del repo · ${texto(nombre)}`,
     "",
     p.texto,
     "",

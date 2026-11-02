@@ -8,13 +8,15 @@
 // No llama a ningún LLM. Para repos privados necesita DOCS_GITHUB_TOKEN con permiso de lectura de contenido.
 // DOCS_STRICT=1 (CI) termina con error si algún proyecto falla, salvo repos privados cuando no hay token.
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { walk, leerDentro } from "./archivos.mjs";
 import { citasDe, extraerLineas } from "./citas.mjs";
 import { clasificarError, limpiarControl } from "./estado.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 import { historial } from "./historial.mjs";
+import { neutralizeHtml, statusBadges } from "./neutralizar.mjs";
 import { pageRoute, parseRutas } from "./rutas.mjs";
 import { corregirH1, tituloPagina } from "./titulos.mjs";
 
@@ -35,13 +37,6 @@ function git(args) {
   } catch (err) {
     throw new Error(hideToken(String(err.stderr || "").trim() || err.message));
   }
-}
-
-function walk(dir) {
-  return readdirSync(dir).flatMap((name) => {
-    const p = join(dir, name);
-    return statSync(p).isDirectory() ? walk(p) : [p];
-  });
 }
 
 // Los tokens fine-grained traen su fecha de caducidad en un header; avisa si faltan 14 días o menos.
@@ -95,45 +90,6 @@ function splitFrontmatter(text) {
   return { fields, body: text.slice(m[0].length) };
 }
 
-// Las wikis son Markdown puro (la auditoría no encontró HTML incrustado). Cualquier etiqueta HTML fuera de bloques de
-// código se escapa y se muestra como texto: así nadie mete <script>, <iframe> o formularios en el portal desde un repo.
-// La CSP del sitio es la segunda barrera.
-export function neutralizeHtml(body) {
-  // Fuera de `código en línea`, "<" seguido de letra, "/", "!" o "?" abre HTML: se escapa.
-  return outsideCode(body, (text) => text.replace(/<(?=[A-Za-z\/!?])/g, "&lt;"));
-}
-
-// Aplica fn solo al texto que no está en bloques ``` ni en `código en línea`.
-function outsideCode(body, fn) {
-  let fence = null;
-  return body
-    .split("\n")
-    .map((line) => {
-      const f = line.match(/^\s*(`{3,}|~{3,})/);
-      if (f) {
-        if (!fence) fence = f[1][0];
-        else if (f[1][0] === fence) fence = null;
-        return line;
-      }
-      if (fence) return line;
-      return line
-        .split(/(`+[^`]*`+)/)
-        .map((part, i) => (i % 2 ? part : fn(part)))
-        .join("");
-    })
-    .join("\n");
-}
-
-// Los emojis de estado de las tablas de la wiki se vuelven íconos del portal (mismos colores que el grafo); el texto
-// que sigue al emoji ya explica el estado, así que el ícono solo lleva el nombre para lectores de pantalla.
-// Va después de neutralizeHtml: este HTML lo genera el portal, no el repo.
-const STATUS_EMOJI = { "✅": ["en_uso", "En uso"], "🟡": ["legado", "Legado"], "⚪": ["sin_uso", "Sin uso"], "❌": ["roto", "Roto"] };
-export function statusBadges(body) {
-  return outsideCode(body, (text) =>
-    text.replace(/(✅|🟡|⚪|❌)️?/gu, (_, e) => `<span class="st st-${STATUS_EMOJI[e][0]}" role="img" aria-label="${STATUS_EMOJI[e][1]}" title="${STATUS_EMOJI[e][1]}"></span>`),
-  );
-}
-
 // Vista previa de citas: lee cada archivo citado una sola vez con `git show <sha>:<ruta>` (en el clon parcial baja el
 // blob bajo demanda) y guarda solo las líneas citadas. Un archivo que no se puede leer deja su cita sin vista previa.
 const MAX_BYTES = 512 * 1024;
@@ -182,20 +138,23 @@ function buildProject(project) {
   const repoUrl = `https://github.com/${project.repo}`;
   const wikiRoot = join(dir, "openwiki");
 
-  const claimsFile = join(wikiRoot, ".claims", "claims.json");
-  const claims = existsSync(claimsFile) ? JSON.parse(readFileSync(claimsFile, "utf8")).claims : [];
+  // Toda lectura del checkout pasa por leerDentro(dir, ...): ignora symlinks y rutas que se salgan del clon.
+  const claimsTxt = leerDentro(dir, join(wikiRoot, ".claims", "claims.json"));
+  const claims = claimsTxt !== null ? JSON.parse(claimsTxt).claims : [];
   const claimsByPage = {};
   for (const c of claims) claimsByPage[c.page] = (claimsByPage[c.page] || 0) + 1;
 
-  const glosarioFile = join(wikiRoot, "glosario.md");
-  const glosario = existsSync(glosarioFile) ? parseGlosario(splitFrontmatter(readFileSync(glosarioFile, "utf8")).body) : [];
+  const glosarioTxt = leerDentro(dir, join(wikiRoot, "glosario.md"));
+  const glosario = glosarioTxt !== null ? parseGlosario(splitFrontmatter(glosarioTxt).body) : [];
   const pages = [];
   const edges = [];
   const citas = [];
-  for (const file of existsSync(wikiRoot) ? walk(wikiRoot) : []) {
+  for (const file of walk(wikiRoot, dir)) {
     const rel = toPosix(relative(wikiRoot, file));
     if (rel.startsWith(".") || !rel.endsWith(".md")) continue;
-    const { fields, body } = splitFrontmatter(readFileSync(file, "utf8"));
+    const contenido = leerDentro(dir, file);
+    if (contenido === null) continue;
+    const { fields, body } = splitFrontmatter(contenido);
     const links = new Set();
     const title = tituloPagina(fields, body, rel);
     const linked = rewriteLinks(statusBadges(neutralizeHtml(corregirH1(body, title, rel))), project.id, rel, repoUrl, sha, links);
@@ -229,14 +188,15 @@ function buildProject(project) {
 
   const diagrams = [];
   const archDir = join(dir, "docs", "arch");
-  if (existsSync(archDir)) {
-    for (const name of readdirSync(archDir).filter((n) => n.endsWith(".html"))) {
-      const html = readFileSync(join(archDir, name), "utf8");
-      const title = ((html.match(/<title>([^<]*)<\/title>/) || [])[1] || name).replace(/\s*·\s*Diagrama$/, "");
-      mkdirSync(join(OUT, "arch", project.id), { recursive: true });
-      cpSync(join(archDir, name), join(OUT, "arch", project.id, name));
-      diagrams.push({ file: `/${project.id}/arch/${name}`, title, kb: Math.round(html.length / 1024) });
-    }
+  for (const file of walk(archDir, dir)) {
+    const name = relative(archDir, file);
+    if (name.includes(sep) || !name.endsWith(".html")) continue;
+    const html = leerDentro(dir, file);
+    if (html === null) continue;
+    const title = ((html.match(/<title>([^<]*)<\/title>/) || [])[1] || name).replace(/\s*·\s*Diagrama$/, "");
+    mkdirSync(join(OUT, "arch", project.id), { recursive: true });
+    writeFileSync(join(OUT, "arch", project.id, name), html);
+    diagrams.push({ file: `/${project.id}/arch/${name}`, title, kb: Math.round(html.length / 1024) });
   }
 
   if (!pages.length && !diagrams.length) {
@@ -248,14 +208,15 @@ function buildProject(project) {
     return { ...project, empty: true, causa: "vacio", ramas: pending };
   }
 
-  const rosFile = join(wikiRoot, ".graph", "ros.json");
-  const ros = existsSync(rosFile) ? JSON.parse(readFileSync(rosFile, "utf8")) : null;
-  const lastUpdate = existsSync(join(wikiRoot, ".last-update.json")) ? JSON.parse(readFileSync(join(wikiRoot, ".last-update.json"), "utf8")) : null;
+  const rosTxt = leerDentro(dir, join(wikiRoot, ".graph", "ros.json"));
+  const ros = rosTxt !== null ? JSON.parse(rosTxt) : null;
+  const lastTxt = leerDentro(dir, join(wikiRoot, ".last-update.json"));
+  const lastUpdate = lastTxt !== null ? JSON.parse(lastTxt) : null;
   const known = new Set(pages.map((p) => p.path));
   // Rutas por rol: solo si la wiki trae rutas.md con pasos válidos; los pasos inválidos avisan y se ignoran.
-  const rutasFile = join(wikiRoot, "rutas.md");
-  const { rutas, avisos } = existsSync(rutasFile)
-    ? parseRutas(splitFrontmatter(readFileSync(rutasFile, "utf8")).body, { project: project.id, pages: pages.map((p) => p.path) })
+  const rutasTxt = leerDentro(dir, join(wikiRoot, "rutas.md"));
+  const { rutas, avisos } = rutasTxt !== null
+    ? parseRutas(splitFrontmatter(rutasTxt).body, { project: project.id, pages: pages.map((p) => p.path) })
     : { rutas: [], avisos: [] };
   for (const a of avisos) console.warn(`⚠ ${project.id}: ${limpiarControl(a)}`);
   const summary = {
