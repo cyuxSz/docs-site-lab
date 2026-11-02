@@ -14,6 +14,7 @@ import {
   moverEnOrden,
   paginaActual,
   porcentaje,
+  resultadoBorrado,
   resultadoGuardado,
   rutaBlob,
   slugDeTitulo,
@@ -500,9 +501,10 @@ async function iniciar(root: HTMLElement) {
     mostrarEstado("");
     mostrarError("");
     if (!(await preguntar(dlgBorrar))) return;
-    const r = await api("DELETE", { cuerpo: { pagina: slug } });
-    if (r.status !== 200) {
-      mostrarError(msg(r.status));
+    const r = await api("DELETE", { cuerpo: { pagina: slug, version: pagina.version } });
+    const res = resultadoBorrado(r.status);
+    if (!res.quitarDelIndice) {
+      mostrarError(res.mensaje);
       return;
     }
     indice = indice.filter((p) => p.slug !== slug);

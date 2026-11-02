@@ -182,3 +182,9 @@ test("servidor de prueba: reescribe la URL de Blob al servir .js y lo documenta 
   assert.match(srv, /replaceAll\("https:\/\/vercel\.com\/api\/blob"/);
   assert.match(srv.split("import {")[0], /reescribe/);
 });
+
+test("hardware-editor.ts: el DELETE envía { pagina, version } y decide con resultadoBorrado", () => {
+  const js = leer(SCRIPT);
+  assert.match(js, /api\("DELETE",\s*\{\s*cuerpo:\s*\{\s*pagina:\s*slug,\s*version:\s*pagina\.version\s*\}\s*\}\)/);
+  assert.match(js, /resultadoBorrado\(r\.status\)/);
+});
