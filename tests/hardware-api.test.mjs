@@ -25,6 +25,10 @@ const PROYECTOS = [
   { id: "usv" },
 ];
 
+// Instantánea comparable del almacén: los Map/Set se serializan por entradas (JSON.stringify los daría como {}).
+const instantanea = (redis) =>
+  JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:")).map(([k, v]) => [k, v instanceof Map ? [...v] : v instanceof Set ? [...v] : v]));
+
 const core = () => import("../lib/hardware-core.mjs");
 
 beforeEach(() => {
@@ -156,7 +160,7 @@ test("lectura: cualquier sesión con acceso ve el índice; editable solo es true
 
 test("403: un no editor no puede escribir (inicializar, crear, reordenar, restaurar, PUT, DELETE)", async () => {
   const { handler, redis } = await inicializado();
-  const antes = JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:")));
+  const antes = instantanea(redis);
   const intentos = [
     () => post(handler, { accion: "inicializar" }, "ana"),
     () => post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" }, "ana"),
@@ -172,7 +176,7 @@ test("403: un no editor no puede escribir (inicializar, crear, reordenar, restau
   }
   // mecanica no tiene editores: nadie escribe ahí.
   assert.equal((await post(handler, { disciplina: "mecanica", accion: "inicializar" }, EDITOR)).status, 403);
-  assert.equal(JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:"))), antes, "nada cambió en el almacén");
+  assert.equal(instantanea(redis), antes, "nada cambió en el almacén");
 });
 
 test("escrituras: solo JSON (415) y mismo origen (403), como en comentarios", async () => {
@@ -291,7 +295,29 @@ test("html sanitizado: <script>, onerror, <iframe> y enlaces javascript: no lleg
   assert.match(html, /<code>&lt;b&gt;código&lt;\/b&gt;<\/code>/, "el código en línea sale escapado");
 });
 
-test("renderizarMd reutiliza el pipeline de la wiki (neutralizeHtml de tools/neutralizar.mjs + satteri), sin reimplementarlo", async () => {
+test("html sanitizado: bypasses de esquema y atributos on* no dejan href/src peligrosos", async () => {
+  const { handler } = await inicializado();
+  const casos = [
+    "[x](&#x6a;avascript:alert(1))", "[x](JaVaScRiPt:alert(1))", "[x](java	script:alert(1))", "[x](java&#9;script:alert(1))",
+    "[x](data:text/html,<script>alert(1)</script>)", "![x](vbscript:msgbox)", "<img src=x onerror=alert(1)>", "<svg onload=alert(1)>",
+  ];
+  let v = 1;
+  for (const caso of casos) {
+    const r = await put(handler, { pagina: "pcb", md: caso, version: v });
+    assert.equal(r.status, 200, caso);
+    v++;
+    const { html } = (await (await pagina(handler, "pcb")).json()).pagina;
+    for (const [, valor] of html.matchAll(/\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi).map((m) => [0, m[1] ?? m[2] ?? m[3]])) {
+      // como lo interpreta el navegador: entidades numéricas y tab/salto/control se descartan antes del esquema
+      const real = valor.replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d))).replace(/[\u0000-\u0020]/g, "");
+      assert.doesNotMatch(real, /^(javascript|vbscript|data):/i, `esquema peligroso (${valor}): ${caso}`);
+    }
+    assert.doesNotMatch(html, /<[^>]+\son\w+\s*=/i, `atributo on*: ${caso}`);
+    assert.doesNotMatch(html, /<(script|svg|iframe)/i, `etiqueta activa: ${caso}`);
+  }
+});
+
+test("estructura: renderizarMd reutiliza el pipeline de la wiki (neutralizeHtml de tools/neutralizar.mjs + satteri), sin reimplementarlo", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../lib/hardware-core.mjs", import.meta.url), "utf8");
   assert.match(src, /from\s+["']\.\.\/tools\/neutralizar\.mjs["']/, "importa tools/neutralizar.mjs");
@@ -415,8 +441,11 @@ test("DELETE manda la página a la papelera hw:papelera:<proy>:<disc>: sale del 
   assert.equal((await pagina(handler, "pcb")).status, 404);
   assert.ok(!redis.data.has("hw:pag:uuv:electronica:pcb"), "el hash de la página ya no está");
   const papelera = redis.data.get("hw:papelera:uuv:electronica");
-  assert.ok(papelera instanceof Map, "la papelera es un hash slug → JSON");
-  const guardada = JSON.parse(papelera.get("pcb"));
+  assert.ok(papelera instanceof Map, "la papelera es un hash <slug>:<timestamp> → JSON (no se pierden entradas al re-borrar)");
+  const claves = [...papelera.keys()];
+  assert.equal(claves.length, 1);
+  assert.match(claves[0], /^pcb:\d+$/, "clave <slug>:<timestamp>");
+  const guardada = JSON.parse(papelera.get(claves[0]));
   assert.equal(guardada.md, "# a la papelera");
   assert.equal(guardada.borradoPor, EDITOR);
   assert.equal((await del(handler, { pagina: "pcb" })).status, 404, "borrar dos veces → 404");
@@ -436,7 +465,7 @@ test("límite de tasa igual que comentarios: 10 escrituras por minuto y la 11.ª
 
 // ---------- Módulo compartido (sin duplicar el cliente Redis ni la sesión) ----------
 
-test("hardware-core no duplica clienteRedis ni la verificación de sesión: los toma de un módulo compartido", async () => {
+test("estructura: hardware-core no duplica clienteRedis ni la verificación de sesión: los toma de un módulo compartido", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../lib/hardware-core.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(src, /\/pipeline/, "sin otra copia del cliente REST de Upstash");
@@ -447,7 +476,7 @@ test("hardware-core no duplica clienteRedis ni la verificación de sesión: los 
   assert.equal(com.clienteRedis, comun.clienteRedis, "comentarios-core reexporta el mismo clienteRedis");
 });
 
-test("api/hardware.js delega en lib/hardware-core.mjs con projects.json y las plantillas importadas como JSON", async () => {
+test("estructura: api/hardware.js delega en lib/hardware-core.mjs con projects.json y las plantillas importadas como JSON", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../api/hardware.js", import.meta.url), "utf8");
   assert.match(src, /from\s+["']\.\.\/lib\/hardware-core\.mjs["']/);
@@ -476,5 +505,62 @@ test("PUT con cambio de título toma el candado del índice", async () => {
     return orig(cmds);
   };
   assert.equal((await put(handler, { pagina: "pcb", md: "# PCB", version: 1, titulo: "PCB nueva" })).status, 200);
-  assert.ok(claves.some((k) => k.endsWith(":indice")), `candados tomados: ${claves.join(",")}`);
+  assert.ok(claves.some((k) => k.endsWith(":__indice")), `candados tomados: ${claves.join(",")}`);
+});
+
+test("la clave de candado del índice no colisiona con una página de slug `indice`", async () => {
+  const { handler } = await inicializado();
+  assert.equal((await post(handler, { accion: "crear", pagina: "indice", titulo: "Índice" })).status, 201);
+  assert.equal((await put(handler, { pagina: "indice", md: "# i", version: 1 })).status, 200);
+  assert.equal((await del(handler, { pagina: "indice" })).status, 200);
+});
+
+test("inicializar tras perder el índice conserva el título guardado de las páginas con hash", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", titulo: "PCB renombrada", md: "# x", version: 1 })).status, 200);
+  redis.data.delete("hw:uuv:electronica:indice");
+  const res = await post(handler, { accion: "inicializar" });
+  assert.equal(res.status, 201);
+  const pcb = (await res.json()).paginas.find((p) => p.slug === "pcb");
+  assert.equal(pcb.titulo, "PCB renombrada");
+});
+
+test("restaurar con título distinto toma el candado del índice y actualiza el índice", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# buena", version: 1 });
+  await put(handler, { pagina: "pcb", md: "# otra", version: 2, titulo: "PCB nueva" });
+  // revisiones[0] guarda el título anterior ("PCB").
+  const orig = redis.exec.bind(redis);
+  const claves = [];
+  redis.exec = async (cmds) => {
+    for (const c of cmds) if (c[0] === "SET" && String(c[1]).includes(":lock:")) claves.push(c[1]);
+    return orig(cmds);
+  };
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "pcb", revision: 0, version: 3 })).status, 200);
+  assert.ok(claves.some((k) => k.endsWith(":__indice")), "toma el candado del índice");
+  const j = await (await indice(handler, "ana")).json();
+  assert.equal(j.paginas.find((p) => p.slug === "pcb").titulo, "PCB");
+});
+
+test("el candado solo lo libera su dueño: si el lease expiró y otro lo tomó, no se borra", async () => {
+  const { handler, redis } = await inicializado();
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    // Simula expiración + readquisición por otro justo antes de liberar.
+    for (const c of cmds) if (c[0] === "EVAL") redis.data.set("hw:lock:uuv:electronica:pcb", "de-otro");
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.equal(redis.data.get("hw:lock:uuv:electronica:pcb"), "de-otro");
+});
+
+test("el candado propio sí se libera y el fake caduca el lease a los 10 s", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.ok(!redis.data.has("hw:lock:uuv:electronica:pcb"));
+  await redis.exec([["SET", "k", "v", "NX", "EX", 10]]);
+  { const ttl = (await redis.exec([["TTL", "k"]]))[0]; assert.ok(ttl > 0 && ttl <= 10, `TTL fuera de rango: ${ttl}`); }
+  const t = Date.now();
+  redis.reloj.ahora = () => t + 11000;
+  assert.equal((await redis.exec([["GET", "k"]]))[0], null);
 });
