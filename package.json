@@ -17,6 +17,7 @@
     "@fontsource-variable/nunito": "5.3.0",
     "@fontsource-variable/raleway": "5.3.0",
     "@fontsource-variable/urbanist": "5.3.0",
+    "@vercel/blob": "2.8.2",
     "@vercel/functions": "3.3.0",
     "astro": "7.3.8",
     "graphology": "0.26.0",
