@@ -78,7 +78,7 @@ if (root) {
     panel.addEventListener("change", (e) => {
       const c = e.target as HTMLInputElement;
       if (c.type !== "checkbox") return;
-      marcar(alm, proyecto, ruta.id, ruta.pasos[Number(c.dataset.i)].page, c.checked);
+      marcar(alm, proyecto, ruta.id, ruta.pasos[Number(c.dataset.i)], c.checked, Number(c.dataset.i));
       pintar(ruta, panel);
     });
     panel.querySelector("[data-continuar]")?.addEventListener("click", () => {
@@ -120,7 +120,7 @@ if (pie) {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.checked = l[i];
-      box.addEventListener("change", () => marcar(alm, proyecto, ruta.id, ruta.pasos[i].page, box.checked));
+      box.addEventListener("change", () => marcar(alm, proyecto, ruta.id, ruta.pasos[i], box.checked, i));
       label.append(box, document.createTextNode(" Marcar como leído"));
 
       const nav = document.createElement("a");
