@@ -55,7 +55,8 @@ function leido(alm: Almacen, p: string, rol: string, i: number, page: string): b
     if (v === "1") return true;
     if (v === null && alm.get(clavePasoIndice(p, rol, i)) === "1") {
       alm.set(nueva, "1");
-      alm.remove(clavePasoIndice(p, rol, i));
+      // Solo borrar la clave vieja si la nueva quedó realmente escrita (el almacén traga errores de cuota).
+      if (alm.get(nueva) === "1") alm.remove(clavePasoIndice(p, rol, i));
       return true;
     }
   } catch {}
