@@ -5,30 +5,13 @@
 // en /pagefind/), así que el usuario autorizado tampoco puede buscar dentro de ese proyecto.
 // La exclusión es explícita: Base.astro pone data-pagefind-ignore="all" en el <body> de toda página de un proyecto
 // restringido (además de no usar data-pagefind-body), para que un cambio futuro en una página no filtre contenido.
+import { decodificar } from "./lib/decodificar-ruta.mjs";
+
 export const RESTRICTED = { "proyecto-x": ["cyuxSz"] };
 
 const lower = (s) => String(s).toLowerCase();
 
 export const isRestricted = (id) => Object.keys(RESTRICTED).some((k) => lower(k) === lower(id ?? ""));
-
-// Decodifica en rondas hasta que la ruta deja de cambiar (tope de 5). Devuelve null si un escape está mal formado o
-// si tras 5 rondas todavía cambiaría: quien llama deniega (fail-closed).
-// Copia local en src/lib/personal.ts (no se importa de aquí: este archivo lista logins y no debe ir al bundle del cliente).
-const MAX_RONDAS = 5;
-function decodificar(path) {
-  if (/%(?![0-9A-Fa-f]{2})/.test(path)) return null;
-  let actual = path;
-  try {
-    for (let i = 0; i < MAX_RONDAS; i++) {
-      const sig = actual.replace(/(?:%[0-9A-Fa-f]{2})+/g, (r) => decodeURIComponent(r));
-      if (sig === actual) return actual;
-      actual = sig;
-    }
-    return /%[0-9A-Fa-f]{2}/.test(actual) ? null : actual;
-  } catch {
-    return null;
-  }
-}
 
 // Función pura: ¿puede este login ver esta ruta? Decodifica la ruta en rondas, separa por / y \, descarta segmentos
 // vacíos y ".", y restringe según el primer segmento. Falla cerrado (false para todos): escape mal formado, ruta que no
