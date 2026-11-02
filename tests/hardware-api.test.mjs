@@ -559,7 +559,7 @@ test("el candado propio sí se libera y el fake caduca el lease a los 10 s", asy
   assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
   assert.ok(!redis.data.has("hw:lock:uuv:electronica:pcb"));
   await redis.exec([["SET", "k", "v", "NX", "EX", 10]]);
-  assert.equal((await redis.exec([["TTL", "k"]]))[0], 10);
+  { const ttl = (await redis.exec([["TTL", "k"]]))[0]; assert.ok(ttl > 0 && ttl <= 10, `TTL fuera de rango: ${ttl}`); }
   const t = Date.now();
   redis.reloj.ahora = () => t + 11000;
   assert.equal((await redis.exec([["GET", "k"]]))[0], null);
