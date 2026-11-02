@@ -46,7 +46,8 @@ function fakeBlob() {
       if (body?.type === "blob.generate-client-token") {
         const { pathname, clientPayload, multipart } = body.payload;
         const opciones = await onBeforeGenerateToken(pathname, clientPayload, multipart);
-        this.tokens.push({ pathname, opciones });
+        // Como el SDK real: callbackUrl solo viaja en el token si el servidor pasó onUploadCompleted.
+        this.tokens.push({ pathname, opciones, callbackUrl: onUploadCompleted ? "https://docs.example/api/archivos/" : undefined });
         return { type: "blob.generate-client-token", clientToken: "vercel_blob_client_falso" };
       }
       if (body?.type === "blob.upload-completed") {
@@ -240,6 +241,12 @@ test("callback firmado guarda metadatos en hw:arch:<proy> (id → JSON) sin cook
   assert.equal(meta.disciplina, "electronica");
 });
 
+test("el token incluye callbackUrl (handleUpload recibe onUploadCompleted al generarlo); sin él Vercel nunca llamaría al callback", async () => {
+  const m = await montar();
+  await pedirToken(m.handler);
+  assert.ok(m.blob.tokens.at(-1).callbackUrl, "token con callbackUrl");
+});
+
 test("callback sin firma válida o con pathname distinto al del token → error y no guarda nada", async () => {
   const m = await montar();
   await pedirToken(m.handler);
@@ -282,8 +289,7 @@ test("proxy: GET ?proyecto&id sirve los bytes con Content-Type de la lista blanc
   assert.equal(res.headers.get("content-type"), "image/png");
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   assert.match(res.headers.get("content-disposition") ?? "", /^inline;/);
-  assert.match(res.headers.get("cache-control") ?? "", /private/);
-  assert.doesNotMatch(res.headers.get("cache-control") ?? "", /public/);
+  assert.equal(res.headers.get("cache-control"), "no-store");
   assert.equal(res.headers.get("location"), null);
   for (const [k, v] of res.headers) assert.ok(!v.includes(url) && !v.includes("blob.vercel-storage.com"), `cabecera ${k} expone el Blob`);
   assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytes);
