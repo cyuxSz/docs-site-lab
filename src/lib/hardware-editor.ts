@@ -44,6 +44,11 @@ export const urlPagina = (proyecto: string, disciplina: string, slug: string): s
 // Clave de comentarios de la página (la acepta validarPagina del servidor).
 export const clavePagina = (proyecto: string, disciplina: string, slug: string): string => `/${proyecto}/${disciplina}/${slug}/`;
 
+// Índice con el título de la página actualizado (sin mutar); si el slug no está, devuelve una copia igual.
+export function actualizarTituloIndice(indice: PaginaIndice[], pagina: { slug: string; titulo: string }): PaginaIndice[] {
+  return indice.map((p) => (p.slug === pagina.slug ? { ...p, titulo: pagina.titulo } : p));
+}
+
 export function moverEnOrden(orden: string[], slug: string, delta: -1 | 1): string[] {
   const i = orden.indexOf(slug);
   const j = i + delta;

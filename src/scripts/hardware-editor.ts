@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
 import {
+  actualizarTituloIndice,
   clavePagina,
   enlaceArchivo,
   insertarEnTexto,
@@ -449,6 +450,7 @@ async function iniciar(root: HTMLElement) {
       return;
     }
     cerrarEditor();
+    indice = actualizarTituloIndice(indice, r.json.pagina);
     pintarPagina(r.json.pagina);
     mostrarEstado("Guardado");
     if (historial.open) void cargarHistorial();
@@ -562,6 +564,7 @@ async function iniciar(root: HTMLElement) {
       historialEstado.textContent = msg(r.status);
       return;
     }
+    indice = actualizarTituloIndice(indice, r.json.pagina);
     pintarPagina(r.json.pagina);
     mostrarEstado("Versión restaurada");
     await cargarHistorial();

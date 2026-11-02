@@ -91,6 +91,21 @@ test("enlaceHilo: hilos de páginas de hardware van a /<p>/<disc>/?p=<slug>; los
   assert.equal(enlaceHilo("/uuv/electronica/", UUID, ["electronica"]), `/uuv/electronica/#comentario-${UUID}`);
 });
 
+// ---------- título en el índice ----------
+test("actualizarTituloIndice: cambia solo el título de esa página sin mutar", () => {
+  const { actualizarTituloIndice } = L();
+  const indice = [
+    { slug: "a", titulo: "A" },
+    { slug: "b", titulo: "Viejo" },
+  ];
+  assert.deepEqual(actualizarTituloIndice(indice, { slug: "b", titulo: "Nuevo" }), [
+    { slug: "a", titulo: "A" },
+    { slug: "b", titulo: "Nuevo" },
+  ]);
+  assert.deepEqual(actualizarTituloIndice(indice, { slug: "z", titulo: "X" }), indice);
+  assert.equal(indice[1].titulo, "Viejo", "no muta la entrada");
+});
+
 // ---------- reordenar ----------
 test("moverEnOrden: sube o baja un slug sin mutar; en los extremos no cambia", () => {
   const { moverEnOrden } = L();
