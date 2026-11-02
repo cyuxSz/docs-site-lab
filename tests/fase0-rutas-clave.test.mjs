@@ -91,5 +91,35 @@ test("scripts/rutas.ts: marcar recibe la página del paso, no el índice", () =>
   const src = readFileSync(new URL("../src/scripts/rutas.ts", import.meta.url), "utf8");
   const llamadas = [...src.matchAll(/\bmarcar\(([^\n]*)\)/g)].map((m) => m[1]);
   assert.ok(llamadas.length >= 2, "las dos llamadas (checklist y pie del paso)");
-  for (const c of llamadas) assert.match(c, /\.page\b/, c);
+  for (const c of llamadas) assert.ok(c.includes(".page") || c.includes("pasos["), c);
+});
+
+test("pasos de la misma página con distinto anchor tienen claves distintas", () => {
+  const ls = memoria();
+  const a = almacenSeguro(() => ls);
+  const R2 = { id: "control", nombre: "C", pasos: [{ ...paso("operations/hardware.md"), route: "/uuv/operations/hardware/#banco" }, { ...paso("operations/hardware.md"), route: "/uuv/operations/hardware/#motores" }] };
+  marcar(a, "uuv", "control", R2.pasos[0], true, 0);
+  assert.deepEqual(leidos(a, "uuv", R2), [true, false]);
+});
+
+test("con la clave nueva en '1' se borra la vieja; marcar(false) con índice borra la vieja", () => {
+  const ls = memoria({ "rutas:uuv:control:1": "1" });
+  const a = almacenSeguro(() => ls);
+  marcar(a, "uuv", "control", RUTA.pasos[1], true, 1);
+  leidos(a, "uuv", RUTA);
+  assert.equal(ls.getItem("rutas:uuv:control:1"), null);
+  ls.setItem("rutas:uuv:control:2", "1");
+  marcar(a, "uuv", "control", RUTA.pasos[2], false, 2);
+  assert.equal(ls.getItem("rutas:uuv:control:2"), null);
+});
+
+test("reiniciar borra todas las claves viejas numéricas del rol, aun fuera de la longitud actual", () => {
+  const ls = memoria({ "rutas:uuv:control:7": "1", "rutas:uuv:control:12": "1", "rutas:uuv:vision:7": "1", "rutas:uuv:control:rol": "x" });
+  ls.length = 0;
+  const m = new Map(Object.entries({ "rutas:uuv:control:7": "1", "rutas:uuv:control:12": "1", "rutas:uuv:vision:7": "1" }));
+  const st = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k), get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null };
+  reiniciar(almacenSeguro(() => st), "uuv", RUTA);
+  assert.equal(m.has("rutas:uuv:control:7"), false);
+  assert.equal(m.has("rutas:uuv:control:12"), false);
+  assert.equal(m.has("rutas:uuv:vision:7"), true);
 });
