@@ -167,7 +167,7 @@ test("403: un no editor no puede escribir (inicializar, crear, reordenar, restau
     () => post(handler, { accion: "reordenar", orden: ["pcb", "potencia", "arquitectura"] }, "ana"),
     () => post(handler, { accion: "restaurar", pagina: "pcb", revision: 0, version: 1 }, "ana"),
     () => put(handler, { pagina: "pcb", md: "# hackeado", version: 1 }, "ana"),
-    () => del(handler, { pagina: "pcb" }, "ana"),
+    () => del(handler, { pagina: "pcb", version: 1 }, "ana"),
   ];
   for (const f of intentos) {
     const res = await f();
@@ -434,7 +434,7 @@ test("restaurar revision n: el md vuelve, la versión sube y el estado anterior 
 test("DELETE manda la página a la papelera hw:papelera:<proy>:<disc>: sale del índice y GET da 404", async () => {
   const { handler, redis } = await inicializado();
   await put(handler, { pagina: "pcb", md: "# a la papelera", version: 1 });
-  const res = await del(handler, { pagina: "pcb" });
+  const res = await del(handler, { pagina: "pcb", version: 2 });
   assert.equal(res.status, 200);
   cabecerasJson(res, "DELETE");
   assert.deepEqual((await (await indice(handler)).json()).paginas.map((p) => p.slug), ["arquitectura", "potencia"]);
@@ -448,7 +448,80 @@ test("DELETE manda la página a la papelera hw:papelera:<proy>:<disc>: sale del 
   const guardada = JSON.parse(papelera.get(claves[0]));
   assert.equal(guardada.md, "# a la papelera");
   assert.equal(guardada.borradoPor, EDITOR);
-  assert.equal((await del(handler, { pagina: "pcb" })).status, 404, "borrar dos veces → 404");
+  assert.equal((await del(handler, { pagina: "pcb", version: 2 })).status, 404, "borrar dos veces → 404");
+});
+
+test("DELETE exige version entera válida (400); versión vieja → 409 sin borrar; versión actual → 200", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# nueva", version: 1 });
+  for (const version of [undefined, 0, -1, "2", 1.5, null]) {
+    assert.equal((await del(handler, { pagina: "pcb", version })).status, 400, `version ${version}`);
+  }
+  const res = await del(handler, { pagina: "pcb", version: 1 });
+  assert.equal(res.status, 409);
+  const j = await res.json();
+  assert.match(j.error, /recárgala antes de borrar/);
+  assert.equal(j.version, 2);
+  assert.equal((await pagina(handler, "pcb")).status, 200, "la página sigue");
+  assert.ok(!redis.data.has("hw:papelera:uuv:electronica"), "nada en la papelera");
+  assert.equal((await del(handler, { pagina: "pcb", version: 2 })).status, 200);
+  assert.equal((await pagina(handler, "pcb")).status, 404);
+});
+
+// ---------- Fencing del candado ----------
+
+const sinLocks = (r) => JSON.stringify(JSON.parse(instantanea(r)).filter(([k]) => !k.includes(":lock:")));
+
+test("fencing: si el candado ya no es nuestro al escribir, no se aplica nada y responde 409 (PUT, restaurar, borrar, crear, reordenar, inicializar)", async () => {
+  const casos = [
+    ["PUT", (h) => put(h, { pagina: "pcb", md: "# tarde", version: 1 }), true, false],
+    ["restaurar", (h) => post(h, { accion: "restaurar", pagina: "pcb", revision: 0, version: 2 }), true, true],
+    ["borrar", (h) => del(h, { pagina: "pcb", version: 1 }), true, false],
+    ["crear", (h) => post(h, { accion: "crear", pagina: "nueva", titulo: "Nueva" }), true, false],
+    ["reordenar", (h) => post(h, { accion: "reordenar", orden: ["pcb", "potencia", "arquitectura"] }), true, false],
+    ["inicializar", (h) => post(h, { accion: "inicializar" }), false, false],
+  ];
+  for (const [nombre, accion, init, previo] of casos) {
+    const { handler, redis } = init ? await inicializado() : await montar();
+    if (previo) await put(handler, { pagina: "pcb", md: "# a", version: 1 });
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+    const antes = sinLocks(redis);
+    const orig = redis.exec.bind(redis);
+    redis.exec = async (cmds) => {
+      // Simula la expiración del lease y que otro tomó el candado, justo antes de la escritura final.
+      if (cmds.some((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"))) {
+        for (const k of [...redis.data.keys()]) if (k.includes(":lock:")) redis.data.set(k, "de-otro");
+      }
+      return orig(cmds);
+    };
+    const res = await accion(handler);
+    assert.equal(res.status, 409, nombre);
+    assert.match((await res.json()).error, /otro guardado en curso/, nombre);
+    assert.equal(sinLocks(redis), antes, `${nombre}: no se escribió nada`);
+  }
+});
+
+test("fencing con candados anidados: perder solo el del índice basta para que no se escriba", async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    if (cmds.some((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"))) redis.data.delete("hw:lock:uuv:electronica:__indice");
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# tarde", version: 1 })).status, 409);
+  assert.equal((await (await pagina(handler, "pcb")).json()).pagina.version, 1);
+});
+
+test("fencing: la escritura final es un solo EVAL con los dos candados (slug e índice) en KEYS", async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  redis.comandos.length = 0;
+  assert.equal((await put(handler, { pagina: "pcb", md: "# ok", version: 1 })).status, 200);
+  const ev = redis.comandos.find((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"));
+  assert.ok(ev, "hay EVAL de fencing");
+  assert.equal(ev[2], 2);
+  assert.deepEqual([ev[3], ev[4]].sort(), ["hw:lock:uuv:electronica:__indice", "hw:lock:uuv:electronica:pcb"]);
 });
 
 // ---------- Límite de tasa ----------
@@ -512,7 +585,7 @@ test("la clave de candado del índice no colisiona con una página de slug `indi
   const { handler } = await inicializado();
   assert.equal((await post(handler, { accion: "crear", pagina: "indice", titulo: "Índice" })).status, 201);
   assert.equal((await put(handler, { pagina: "indice", md: "# i", version: 1 })).status, 200);
-  assert.equal((await del(handler, { pagina: "indice" })).status, 200);
+  assert.equal((await del(handler, { pagina: "indice", version: 2 })).status, 200);
 });
 
 test("inicializar tras perder el índice conserva el título guardado de las páginas con hash", async () => {
@@ -547,7 +620,7 @@ test("el candado solo lo libera su dueño: si el lease expiró y otro lo tomó, 
   const orig = redis.exec.bind(redis);
   redis.exec = async (cmds) => {
     // Simula expiración + readquisición por otro justo antes de liberar.
-    for (const c of cmds) if (c[0] === "EVAL") redis.data.set("hw:lock:uuv:electronica:pcb", "de-otro");
+    for (const c of cmds) if (c[0] === "EVAL" && String(c[1]).includes("'del'")) redis.data.set("hw:lock:uuv:electronica:pcb", "de-otro");
     return orig(cmds);
   };
   assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
