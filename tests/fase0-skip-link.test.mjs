@@ -44,6 +44,7 @@ const PAGINAS = {
   "src/pages/[project]/grafo.astro": 1,
   "src/pages/[project]/[...slug].astro": 1,
   "src/pages/[project]/index.astro": 2,
+  "src/pages/[project]/[disciplina].astro": 1,
   "src/pages/[project]/comentarios.astro": 1,
   "src/pages/[project]/limpieza.astro": 1,
   "src/pages/[project]/novedades.astro": 1,

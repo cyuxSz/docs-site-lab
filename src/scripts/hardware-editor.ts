@@ -7,10 +7,13 @@ import {
   clavePagina,
   enlaceArchivo,
   insertarEnTexto,
+  AVISO_SUBIDAS,
+  estadoGuardar,
   mensajeError,
   moverEnOrden,
   paginaActual,
   porcentaje,
+  resultadoGuardado,
   rutaBlob,
   slugDeTitulo,
   slugUnico,
@@ -91,6 +94,15 @@ async function iniciar(root: HTMLElement) {
   let pagina: PaginaHw | null = null;
   let baseMd = "";
   let editando = false;
+  let subidasActivas = 0;
+  let guardando = false;
+  function actualizarGuardar(avisar = false) {
+    const e = estadoGuardar(subidasActivas, guardando);
+    btnGuardar.disabled = e.deshabilitado;
+    btnGuardar.title = e.aviso;
+    if (e.aviso && avisar) mostrarEstado(e.aviso);
+    else if (!e.aviso && lblEstado.textContent === AVISO_SUBIDAS) mostrarEstado("");
+  }
   let comentariosListos = false;
 
   // ---------- red ----------
@@ -370,7 +382,7 @@ async function iniciar(root: HTMLElement) {
       errorEditor(msg(r.status));
       return;
     }
-    pintarHtml(previa, r.json.html);
+    pintarHtml(previa, r.json.html, pagina?.titulo);
   }
 
   function abrirEditor() {
@@ -421,13 +433,19 @@ async function iniciar(root: HTMLElement) {
     e.preventDefault();
     if (!pagina) return;
     errorEditor("");
+    if (subidasActivas > 0) {
+      actualizarGuardar(true);
+      return;
+    }
     mostrarEstado("");
-    btnGuardar.disabled = true;
+    guardando = true;
+    actualizarGuardar();
     const r = await api("PUT", { cuerpo: { pagina: pagina.slug, md: textarea.value, version: pagina.version } });
-    btnGuardar.disabled = false;
+    guardando = false;
+    actualizarGuardar();
     if (r.status !== 200 || !r.json?.pagina) {
       // Con 409 (u otro error) el textarea conserva lo escrito.
-      errorEditor(msg(r.status));
+      errorEditor(resultadoGuardado(r.status).mensaje);
       return;
     }
     cerrarEditor();
@@ -616,7 +634,17 @@ async function iniciar(root: HTMLElement) {
   }
 
   async function subirVarios(archivos: FileList | File[]) {
-    for (const a of [...archivos]) await subir(a);
+    const lista = [...archivos];
+    subidasActivas += lista.length;
+    actualizarGuardar();
+    for (const a of lista) {
+      try {
+        await subir(a);
+      } finally {
+        subidasActivas--;
+        actualizarGuardar();
+      }
+    }
   }
 
   escuchar(inputArchivo, "change", async () => {

@@ -79,6 +79,18 @@ export function insertarEnTexto(texto: string, inicio: number, fin: number, inse
   return { texto: texto.slice(0, inicio) + insertar + texto.slice(fin), cursor: inicio + insertar.length };
 }
 
+// Subidas activas: mientras haya alguna, Guardar queda deshabilitado (el enlace aún no está en el Markdown).
+export const AVISO_SUBIDAS = "Espera a que terminen las subidas";
+export function estadoGuardar(subidasActivas: number, guardando: boolean): { deshabilitado: boolean; aviso: string } {
+  const subiendo = subidasActivas > 0;
+  return { deshabilitado: subiendo || guardando, aviso: subiendo ? AVISO_SUBIDAS : "" };
+}
+
+// Ante un 409 se conserva el texto del editor y se muestra el mensaje de conflicto.
+export function resultadoGuardado(status: number): { conservarTexto: boolean; mensaje: string } {
+  return { conservarTexto: status !== 200, mensaje: status === 200 ? "" : mensajeError(status === 0 ? "red" : status) };
+}
+
 export function porcentaje(cargado: number, total: number): number {
   if (!(total > 0) || !(cargado > 0)) return 0;
   return Math.min(100, Math.round((cargado / total) * 100));
