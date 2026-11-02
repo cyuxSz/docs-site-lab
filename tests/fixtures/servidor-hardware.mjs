@@ -33,7 +33,10 @@ process.env.SESSION_SECRET = SECRET;
 const leerJson = (ruta) => JSON.parse(readFileSync(join(raiz, ruta), "utf8"));
 const proyectos = leerJson("projects.json");
 const plantillas = { electronica: leerJson("plantillas/electronica.json"), mecanica: leerJson("plantillas/mecanica.json") };
-const cabecerasVercel = (leerJson("vercel.json").headers ?? [])[0]?.headers ?? [];
+const reglasVercel = leerJson("vercel.json").headers ?? [];
+// Patrón "source" de vercel.json -> RegExp (solo lo que usa el repo: (.*), :param y :param*). Las reglas se aplican en orden.
+const origenARegex = (src) => new RegExp("^" + src.replace(/:[A-Za-z]+[*]/g, "(.*)").replace(/:[A-Za-z]+/g, "[^/]+") + "$");
+const cabecerasDe = (pathname) => reglasVercel.filter((r) => origenARegex(r.source).test(pathname)).flatMap((r) => r.headers);
 
 const redis = fakeRedis();
 
@@ -116,7 +119,7 @@ function servirEstatico(req, res, url) {
     return;
   }
   const cab = { "content-type": MIME[extname(archivo)] ?? "application/octet-stream" };
-  for (const h of cabecerasVercel) cab[h.key.toLowerCase()] = h.value;
+  for (const h of cabecerasDe(url.pathname)) cab[h.key.toLowerCase()] = h.value;
   res.writeHead(200, cab);
   if (extname(archivo) === ".js") {
     const origen = `http://${req.headers.host ?? `127.0.0.1:${PUERTO}`}`;

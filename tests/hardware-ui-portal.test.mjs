@@ -89,10 +89,8 @@ test("hardware-editor.ts: DOM seguro; el html del API entra solo por DOMParser e
   assert.match(js, /textContent/);
 });
 
-test("hardware-editor.ts: 409 conserva el texto del editor y avisa", () => {
-  const js = leer(SCRIPT);
-  assert.match(js, /409/);
-  assert.match(js, /mensajeError\(/);
+test("hardware-editor.ts: el error de guardado sale de resultadoGuardado (409 conserva el texto; ver fase1b-cubic.test.mjs)", () => {
+  assert.match(leer(SCRIPT), /resultadoGuardado\(r\.status\)\.mensaje/);
 });
 
 test("hardware-editor.ts: subida con upload() de @vercel/blob/client, privada, a /api/archivos/ con pathname canónico", () => {
@@ -176,7 +174,7 @@ test("Base: el pie de disciplina no dice que todo vive en openwiki/; las pestañ
   const base = leer("src/layouts/Base.astro");
   assert.match(base, /esDisciplina/);
   assert.match(base, /se edita en la propia web/);
-  assert.match(base, /\.ptabs a\[aria-current\]"\)\?\.scrollIntoView\(\{[^}]*inline: "nearest"[^}]*prefers-reduced-motion/);
+  assert.match(base, /\.ptabs a\[aria-current\]"\)[^]*scrollLeft[^]*prefers-reduced-motion/);
 });
 
 test("servidor de prueba: reescribe la URL de Blob al servir .js y lo documenta en la cabecera", () => {

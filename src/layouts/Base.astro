@@ -123,11 +123,15 @@ const esDisciplina = current === "electronica" || current === "mecanica";
       // Buscador (Pagefind UI, recientes y ?q=): carga diferida, Ctrl/Cmd+K y "/".
       import "../scripts/busqueda";
       // En pantallas estrechas las pestañas desbordan: la activa se acerca a la vista (sin animar si se pidió menos movimiento).
-      document.querySelector(".ptabs a[aria-current]")?.scrollIntoView({
-        inline: "nearest",
-        block: "nearest",
-        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-      });
+      // Solo se desplaza .ptabs en horizontal (scrollIntoView podía mover también ancestros verticales).
+      const activa = document.querySelector<HTMLElement>(".ptabs a[aria-current]");
+      const tabs = activa?.closest<HTMLElement>(".ptabs");
+      if (activa && tabs) {
+        const a = activa.getBoundingClientRect();
+        const t = tabs.getBoundingClientRect();
+        const dx = a.left < t.left ? a.left - t.left : a.right > t.right ? a.right - t.right : 0;
+        if (dx) tabs.scrollTo({ left: tabs.scrollLeft + dx, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      }
       // Enlaces a otros sitios (GitHub, papers) en otra pestaña, para que el portal siga abierto. Se decide al hacer
       // clic, así cubre también los enlaces que crean los componentes (panel del grafo, resultados de búsqueda).
       const external = (a: HTMLAnchorElement) => /^https?:$/.test(a.protocol) && a.host !== location.host;
