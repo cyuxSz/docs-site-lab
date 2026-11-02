@@ -1,6 +1,7 @@
 // QoL de navegación personal: última visita, favoritos y aviso de cambios. Puro: el almacén se inyecta y nunca lanza.
 // Todo lo que se lee del almacén se trata como no confiable: las rutas deben ser internas del proyecto.
 import type { Almacen } from "./rutas.ts";
+import { decodificar } from "../../lib/decodificar-ruta.mjs";
 
 export interface Visita {
   route: string;
@@ -17,24 +18,6 @@ export const MAX_FAVORITOS = 50;
 export const claveUltima = (p: string) => `personal:${p}:ultima`;
 export const claveFavoritos = (p: string) => `personal:${p}:favoritos`;
 export const claveVisto = (p: string, route: string) => `personal:${p}:visto:${route}`;
-
-// Decodifica en rondas (tope 5) hasta estabilizar; null si hay escape mal formado o no se estabiliza.
-// Copia de la lógica de access.config.js (canAccess). No se importa de allí: este archivo va al bundle del cliente y
-// expondría los logins de RESTRICTED. Si cambia una, cambia la otra.
-function decodificar(ruta: string): string | null {
-  if (/%(?![0-9A-Fa-f]{2})/.test(ruta)) return null;
-  let actual = ruta;
-  try {
-    for (let i = 0; i < 5; i++) {
-      const sig = actual.replace(/(?:%[0-9A-Fa-f]{2})+/g, (r: string) => decodeURIComponent(r));
-      if (sig === actual) return actual;
-      actual = sig;
-    }
-    return /%[0-9A-Fa-f]{2}/.test(actual) ? null : actual;
-  } catch {
-    return null;
-  }
-}
 
 // Ruta interna del proyecto: "/<p>/..." sin "//", sin esquemas ni barras invertidas ni caracteres de control, y que
 // tampoco los tenga (ni ".." ni "//") una vez decodificada.
