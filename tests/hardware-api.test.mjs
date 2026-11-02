@@ -456,3 +456,25 @@ test("api/hardware.js delega en lib/hardware-core.mjs con projects.json y las pl
   assert.match(src, /plantillas\/mecanica\.json["']\s+with/);
   for (const m of ["GET", "POST", "PUT", "DELETE"]) assert.match(src, new RegExp(`export const ${m}\\b`));
 });
+
+test("entidad numérica de sustituto (&#xd800;) no rompe el render y no deja javascript:", async () => {
+  const { handler } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "[x](&#xd800;javascript:alert(1)) [y](&#55296;javascript:alert(2))", version: 1 })).status, 200);
+  const res = await pagina(handler, "pcb");
+  assert.equal(res.status, 200);
+  const { html } = (await res.json()).pagina;
+  assert.doesNotMatch(html, /href\s*=\s*["']?\s*javascript:/i);
+});
+
+test("PUT con cambio de título toma el candado del índice", async () => {
+  const m = await inicializado();
+  const { handler, redis } = m;
+  const orig = redis.exec.bind(redis);
+  const claves = [];
+  redis.exec = async (cmds) => {
+    for (const c of cmds) if (c[0] === "SET" && String(c[1]).includes(":lock:")) claves.push(c[1]);
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# PCB", version: 1, titulo: "PCB nueva" })).status, 200);
+  assert.ok(claves.some((k) => k.endsWith(":indice")), `candados tomados: ${claves.join(",")}`);
+});

@@ -47,6 +47,7 @@ export function fakeRedis() {
       case "HDEL": { const h = data.get(a[0]); let n = 0; for (const f of a.slice(1)) if (h instanceof Map && h.delete(f)) n++; if (h instanceof Map && h.size === 0) data.delete(a[0]); return n; }
       case "SADD": { if (!(data.get(a[0]) instanceof Set)) data.set(a[0], new Set()); let n = 0; for (const m of a.slice(1)) if (!data.get(a[0]).has(String(m))) { data.get(a[0]).add(String(m)); n++; } return n; }
       case "SREM": { const s = data.get(a[0]); let n = 0; for (const m of a.slice(1)) if (s instanceof Set && s.delete(String(m))) n++; if (s instanceof Set && s.size === 0) data.delete(a[0]); return n; }
+      case "SISMEMBER": return data.get(a[0]) instanceof Set && data.get(a[0]).has(String(a[1])) ? 1 : 0;
       case "SMEMBERS": return data.get(a[0]) instanceof Set ? [...data.get(a[0])] : [];
       case "LPUSH": { const l = lista(a[0]); for (const v of a.slice(1)) l.unshift(String(v)); return l.length; }
       case "RPUSH": { const l = lista(a[0]); for (const v of a.slice(1)) l.push(String(v)); return l.length; }

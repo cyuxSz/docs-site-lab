@@ -370,3 +370,37 @@ test("api/archivos.js delega en lib/archivos-core.mjs y usa @vercel/blob (handle
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.match(pkg.dependencies?.["@vercel/blob"] ?? "", /^\d+\.\d+\.\d+$/, "@vercel/blob fijada a versión exacta");
 });
+
+// ---------- Unicidad de id y replay ----------
+
+test("un editor de mecanica no puede pisar el id de un archivo de electronica (409) y los metadatos no cambian", async () => {
+  const m = await montar();
+  await subir(m);
+  const antes = m.redis.data.get("hw:arch:uuv").get(ID);
+  const cp = payload({ disciplina: "mecanica" });
+  const res = await pedirToken(m.handler, { login: "meca", pathname: `hw/uuv/mecanica/${ID}-placa.png`, cp });
+  assert.equal(res.status, 409);
+  // Callback directo con tokenPayload propio: HSETNX no sobrescribe.
+  const tokenPayload = JSON.stringify({ proyecto: "uuv", disciplina: "mecanica", id: ID, nombre: "placa.png", tipo: "png", tamano: 5, subidoPor: "meca", pathname: `hw/uuv/mecanica/${ID}-placa.png` });
+  const fin = await completar(m.handler, { tokenPayload, pathname: `hw/uuv/mecanica/${ID}-placa.png`, url: `${BLOB_HOST}/otro` });
+  assert.equal(fin.status, 200);
+  assert.equal(m.redis.data.get("hw:arch:uuv").get(ID), antes);
+});
+
+test("replay del callback tras DELETE no reinserta el archivo", async () => {
+  const m = await montar();
+  const { url, pathname } = await subir(m);
+  const { opciones } = m.blob.tokens.at(-1);
+  assert.equal((await m.handler(req("DELETE", { login: EDITOR, body: { proyecto: "uuv", id: ID } }))).status, 200);
+  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url });
+  assert.equal(fin.status, 200);
+  assert.ok(!m.redis.data.get("hw:arch:uuv")?.has(ID));
+  assert.equal((await pedirToken(m.handler, { pathname: `hw/uuv/electronica/${ID}-placa.png` })).status, 409);
+});
+
+test("sin acceso al proyecto el 403 va antes del 404 de disciplina", async () => {
+  const m = await montar();
+  const cp = payload({ proyecto: "proyecto-x", disciplina: "inexistente" });
+  const res = await pedirToken(m.handler, { login: "ana", pathname: `hw/proyecto-x/inexistente/${ID}-placa.png`, cp });
+  assert.equal(res.status, 403);
+});
