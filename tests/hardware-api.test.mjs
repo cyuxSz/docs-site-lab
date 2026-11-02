@@ -561,7 +561,7 @@ test("tenencias por petición: dos peticiones concurrentes en distintas discipli
     const disc = ev[3].includes(":mecanica:") ? "mecanica" : "electronica";
     assert.ok(ev.slice(3, 5).every((k) => k.startsWith(`hw:lock:uuv:${disc}:`)), `claves de ${disc}`);
   }
-});
+}, { timeout: 10000 }); // si una regresión deja las peticiones esperándose, falla en vez de colgar el CI
 
 test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente en el mismo handler", async () => {
   const { handler, redis } = await inicializado();
