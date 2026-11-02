@@ -93,23 +93,27 @@ export const filasVisibles = (filas: FilaLimpieza[], revisados: Set<string>, ocu
 const linea = (s: string) => String(s).replace(/[\r\n]+/g, " ").replace(/`/g, "'").trim();
 
 // Texto fuera de código en línea: escapa con "\" la sintaxis de enlaces y de código (y aplana saltos de línea).
-// Los autolinks GFM (http(s)://, www., correos) se rompen con U+200B: el escape con "\" no sirve, el parser lo des-escapa antes.
+// Code span: delimitador una racha más largo que la más larga del contenido; relleno si toca un borde.
+const codigo = (s: string) => {
+  const c = String(s).replace(/[\r\n]+/g, " ").trim();
+  const max = Math.max(0, ...(c.match(/`+/g) ?? []).map((r) => r.length));
+  const d = "`".repeat(max + 1);
+  const pad = c.startsWith("`") || c.endsWith("`") ? " " : "";
+  return `${d}${pad}${c}${pad}${d}`;
+};
 const texto = (s: string) =>
   String(s)
     .replace(/[\r\n]+/g, " ")
     .trim()
-    .replace(/[\\`\[\]()<>]/g, "\\$&")
-    .replace(/(https?)(:\/\/)/gi, "$1​$2")
-    .replace(/(www)(\.)/gi, "$1​$2")
-    .replace(/@/g, "​@");
+    .replace(/[\\`\[\]()<>]/g, "\\$&");
 // Destino de enlace: los paréntesis cerrarían el destino; solo en el Markdown exportado.
 const destino = (u: string) => u.replace(/\(/g, "%28").replace(/\)/g, "%29");
 
 function itemMd(f: FilaLimpieza, rev: Set<string>): string {
   const partes = [`- [${rev.has(f.id) ? "x" : " "}] \`${linea(f.paquete)}/${linea(f.ejecutable)}\``];
-  if (f.archivo) partes.push(f.url ? `[${texto(f.archivo)}](${destino(f.url)})` : texto(f.archivo));
+  if (f.archivo) partes.push(f.url ? `[${codigo(f.archivo)}](${destino(f.url)})` : codigo(f.archivo));
   let s = partes.join(" · ") + ` — ${texto(f.motivo)}`;
-  if (f.configs.length) s += `\n  - Configs a retirar: ${f.configs.map(texto).join(", ")}`;
+  if (f.configs.length) s += `\n  - Configs a retirar: ${f.configs.map(codigo).join(", ")}`;
   if (f.launches.length) s += `\n  - Launches a retirar: ${f.launches.map((l) => `\`${linea(l)}\``).join(", ")}`;
   return s;
 }
