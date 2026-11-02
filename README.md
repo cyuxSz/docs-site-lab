@@ -58,6 +58,8 @@ Cada proyecto puede documentar disciplinas de hardware con contenido guardado so
 
 - **Páginas** (`/api/hardware/`): Markdown con versiones, revisiones y papelera. Usan el mismo Upstash Redis que los comentarios; no requieren nada más.
 - **Archivos** (`/api/archivos/`): suben directo a Vercel Blob. Para activarlos: Vercel → Storage → crear un **Blob store privado** y conectarlo al proyecto (esto crea `BLOB_READ_WRITE_TOKEN`); después, volver a desplegar. Con un store público las URLs serían accesibles sin login: debe ser privado. Los archivos se sirven por el portal (con sesión), nunca por la URL del Blob.
+- **Interfaz**: cada disciplina configurada añade una pestaña (`/<proyecto>/electronica/?p=<pagina>`). Los editores ven Editar, Nueva página, Subir/Bajar, Borrar, Historial y Adjuntar; el resto solo lee.
+- **Probar en un navegador**: `npm run build` y `node tests/fixtures/servidor-hardware.mjs` (127.0.0.1:4330, Redis y Blob en memoria; `?como=ana` cambia de usuario). Para subir con el Blob falso: `window.process = { env: { VERCEL_BLOB_API_URL: location.origin + "/__blob" } }` en la consola.
 
 ## Avisos en la portada
 - **Sin documentación aún:** la rama de `projects.json` no tiene `openwiki/` ni `docs/arch/`; si hay ramas `docs/*` sin mergear, las nombra.
