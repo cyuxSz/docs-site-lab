@@ -141,6 +141,9 @@ export default async function middleware(request) {
   const session = await verify(jar[COOKIE]).catch(() => null);
   const noStore = { headers: { "Cache-Control": "private, no-store" } };
   if (!session) {
+    // Único callback sin cookie: Vercel Blob avisa de que terminó una subida. La firma (x-vercel-signature) la valida
+    // handleUpload en api/archivos.js; sin firma válida esa función no guarda nada.
+    if (request.method === "POST" && path === "/api/archivos" && request.headers.get("x-vercel-signature")) return next({ headers: { "Cache-Control": "private, no-store" } });
     if (path === "/auth/me") return Response.json({ login: null }, { status: 401, ...noStore });
     // Un fetch no puede seguir el OAuth de GitHub: la API responde 401 JSON en vez de redirigir.
     if (path === "/api" || path.startsWith("/api/")) return Response.json({ error: "Sesión requerida" }, { status: 401, ...noStore });

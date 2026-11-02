@@ -23,6 +23,10 @@
       { "seccion": "control", "titulo": "Control", "texto": "Calcula las fuerzas para mover el sub" },
       { "seccion": "hardware", "titulo": "Thrusters", "texto": "Arduino y los 6 motores que empujan el sub" }
     ],
+    "disciplinas": {
+      "electronica": { "plantilla": "electronica", "editores": ["cyuxSz"] },
+      "mecanica": { "plantilla": "mecanica", "editores": ["cyuxSz"] }
+    },
     "secciones": {
       "vision": {
         "tour": [
