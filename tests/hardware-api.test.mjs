@@ -580,7 +580,7 @@ test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente e
   };
   void put(handler, { pagina: "pcb", md: "# muerta", version: 1 });
   await alPunto; // sincronización por evento, no por tiempo: la petición ya retiene sus candados
-  assert.equal(colgar, false, "la petición muerta llegó a retener sus candados");
+  for (const k of ["hw:lock:uuv:electronica:__indice", "hw:lock:uuv:electronica:pcb"]) assert.ok(redis.data.has(k), `la petición muerta debe retener ${k}`);
   redis.reloj.ahora = () => Date.now() + 11_000; // el lease huérfano caduca
   const res = await put(handler, { pagina: "pcb", md: "# viva", version: 1 });
   assert.equal(res.status, 200);
