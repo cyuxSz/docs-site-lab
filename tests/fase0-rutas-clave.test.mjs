@@ -150,3 +150,36 @@ test("pasoEnPagina / pasoActivo con dos pasos de la misma página prefieren el a
   R.activarRuta(a, "uuv", "control");
   assert.deepEqual(R.pasoActivo(a, "uuv", [R2], "h.md", "#motores"), { ruta: R2, i: 1 });
 });
+
+test("pasoEnPagina: anchor no ASCII percent-encoded en location.hash coincide", () => {
+  const R2 = { id: "c", nombre: "C", pasos: [{ ...paso("h.md"), route: "/uuv/h/#otro" }, { ...paso("h.md"), route: "/uuv/h/#instalación" }] };
+  assert.equal(R.pasoEnPagina(R2, "h.md", [false, false], "#instalaci%C3%B3n"), 1);
+  assert.equal(R.pasoEnPagina(R2, "h.md", [false, false], "#instalación"), 1);
+  assert.equal(R.pasoEnPagina(R2, "h.md", [false, false], "#%E0%A4%A"), 0, "hash mal formado no lanza");
+});
+
+test("pasoActivo se recalcula al cambiar el hash", () => {
+  const R2 = { id: "control", nombre: "C", pasos: [{ ...paso("h.md"), route: "/uuv/h/#banco" }, { ...paso("h.md"), route: "/uuv/h/#motores" }] };
+  const ms = memoria();
+  const a = almacenSeguro(() => ms);
+  R.activarRuta(a, "uuv", "control");
+  assert.equal(R.pasoActivo(a, "uuv", [R2], "h.md", "#banco").i, 0);
+  assert.equal(R.pasoActivo(a, "uuv", [R2], "h.md", "#motores").i, 1);
+  assert.equal(R.pasoActivo(a, "uuv", [R2], "otra.md", ""), null);
+  const src = readFileSync(new URL("../src/scripts/rutas.ts", import.meta.url), "utf8");
+  assert.match(src, /addEventListener\("hashchange"/);
+});
+
+test("reiniciar borra claves pagina:* de pasos eliminados, solo de ese proyecto y rol", () => {
+  const m = new Map(Object.entries({
+    "rutas:uuv:control:pagina:viejo.md": "1",
+    "rutas:uuv:control:pagina:a.b+c.md#x": "1",
+    "rutas:uuv:vision:pagina:viejo.md": "1",
+    "rutas:otro:control:pagina:viejo.md": "1",
+    "rutas:uuv:control:rol": "x",
+    "rutas:uuv:rol": "control",
+  }));
+  const st = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k), get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null };
+  reiniciar(almacenSeguro(() => st), "uuv", RUTA);
+  assert.deepEqual([...m.keys()].sort(), ["rutas:otro:control:pagina:viejo.md", "rutas:uuv:control:rol", "rutas:uuv:rol", "rutas:uuv:vision:pagina:viejo.md"]);
+});
