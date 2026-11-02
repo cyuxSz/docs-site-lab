@@ -28,11 +28,11 @@ test("claves: por proyecto, rol y página; la vieja por índice sigue disponible
 test("marcar usa la página: reordenar los pasos conserva lo leído", () => {
   const ls = memoria();
   const a = almacenSeguro(() => ls);
-  marcar(a, "uuv", "control", "operations/hardware.md", true);
+  marcar(a, "uuv", "control", paso("operations/hardware.md"), true);
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, true, false]);
   const reordenada = { ...RUTA, pasos: [RUTA.pasos[1], RUTA.pasos[2], RUTA.pasos[0]] };
   assert.deepEqual(leidos(a, "uuv", reordenada), [true, false, false]);
-  marcar(a, "uuv", "control", "operations/hardware.md", false);
+  marcar(a, "uuv", "control", paso("operations/hardware.md"), false);
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, false, false]);
 });
 
@@ -42,7 +42,7 @@ test("migración: una clave vieja por índice cuenta como leída, se reescribe c
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, true, false]);
   assert.equal(ls.getItem(clavePaso("uuv", "control", "operations/hardware.md")), "1", "reescrita con la clave nueva");
   assert.equal(ls.getItem("rutas:uuv:control:1"), null, "la clave vieja ya no queda");
-  marcar(a, "uuv", "control", "operations/hardware.md", false);
+  marcar(a, "uuv", "control", paso("operations/hardware.md"), false);
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, false, false], "desmarcar después de migrar no resucita la vieja");
 });
 
@@ -72,7 +72,7 @@ test("migración: solo con valor '1'; no toca otro rol ni proyecto", () => {
 test("reiniciar borra las claves nuevas y también las viejas por índice de esa ruta", () => {
   const ls = memoria({ "rutas:uuv:control:2": "1", "rutas:uuv:vision:0": "1" });
   const a = almacenSeguro(() => ls);
-  marcar(a, "uuv", "control", "quickstart.md", true);
+  marcar(a, "uuv", "control", paso("quickstart.md"), true);
   reiniciar(a, "uuv", RUTA);
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, false, false]);
   assert.equal(ls.getItem("rutas:uuv:control:2"), null);
@@ -84,14 +84,16 @@ test("almacén roto: leer con migración no lanza", () => {
     throw new Error("SecurityError");
   });
   assert.deepEqual(leidos(roto, "uuv", RUTA), [false, false, false]);
-  assert.doesNotThrow(() => marcar(roto, "uuv", "control", "quickstart.md", true));
+  assert.doesNotThrow(() => marcar(roto, "uuv", "control", paso("quickstart.md"), true));
 });
 
-test("scripts/rutas.ts: marcar recibe la página del paso, no el índice", () => {
+test("scripts/rutas.ts: las dos llamadas a marcar pasan el PasoRuta con su índice", () => {
   const src = readFileSync(new URL("../src/scripts/rutas.ts", import.meta.url), "utf8");
   const llamadas = [...src.matchAll(/\bmarcar\(([^\n]*)\)/g)].map((m) => m[1]);
-  assert.ok(llamadas.length >= 2, "las dos llamadas (checklist y pie del paso)");
-  for (const c of llamadas) assert.ok(c.includes(".page") || c.includes("pasos["), c);
+  assert.deepEqual(llamadas, [
+    "alm, proyecto, ruta.id, ruta.pasos[Number(c.dataset.i)], c.checked, Number(c.dataset.i)",
+    "alm, proyecto, ruta.id, ruta.pasos[i], box.checked, i)", // la regex voraz incluye el cierre de addEventListener
+  ]);
 });
 
 test("pasos de la misma página con distinto anchor tienen claves distintas", () => {
@@ -114,12 +116,37 @@ test("con la clave nueva en '1' se borra la vieja; marcar(false) con índice bor
 });
 
 test("reiniciar borra todas las claves viejas numéricas del rol, aun fuera de la longitud actual", () => {
-  const ls = memoria({ "rutas:uuv:control:7": "1", "rutas:uuv:control:12": "1", "rutas:uuv:vision:7": "1", "rutas:uuv:control:rol": "x" });
-  ls.length = 0;
-  const m = new Map(Object.entries({ "rutas:uuv:control:7": "1", "rutas:uuv:control:12": "1", "rutas:uuv:vision:7": "1" }));
+  const m = new Map(Object.entries({ "rutas:uuv:control:7": "1", "rutas:uuv:control:12": "1", "rutas:uuv:vision:7": "1", "rutas:uuv:control:rol": "x" }));
   const st = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k), get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null };
   reiniciar(almacenSeguro(() => st), "uuv", RUTA);
   assert.equal(m.has("rutas:uuv:control:7"), false);
   assert.equal(m.has("rutas:uuv:control:12"), false);
   assert.equal(m.has("rutas:uuv:vision:7"), true);
+  assert.equal(m.get("rutas:uuv:control:rol"), "x", "la clave del rol sobrevive");
+});
+
+test("reiniciar borra también la clave intermedia sin anchor", () => {
+  const p0 = { ...paso("operations/hardware.md"), route: "/uuv/operations/hardware/#banco" };
+  const m = new Map([[clavePaso("uuv", "control", "operations/hardware.md"), "1"], [clavePaso("uuv", "control", "operations/hardware.md#banco"), "1"]]);
+  const st = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };
+  reiniciar(almacenSeguro(() => st), "uuv", { id: "control", nombre: "C", pasos: [p0] });
+  assert.equal(m.size, 0);
+});
+
+test("marcar con string ya no es válido: solo acepta el paso", () => {
+  const ls = memoria();
+  assert.throws(() => R.marcar(almacenSeguro(() => ls), "uuv", "control", "quickstart.md", true));
+});
+
+test("pasoEnPagina / pasoActivo con dos pasos de la misma página prefieren el anchor del hash", () => {
+  const R2 = { id: "control", nombre: "C", pasos: [{ ...paso("h.md"), route: "/uuv/h/#banco" }, { ...paso("h.md"), route: "/uuv/h/#motores" }] };
+  assert.equal(R.pasoEnPagina(R2, "h.md", [false, false], "#motores"), 1);
+  assert.equal(R.pasoEnPagina(R2, "h.md", [false, false], "#banco"), 0);
+  assert.equal(R.pasoEnPagina(R2, "h.md", [false, false], ""), 0, "sin hash: primero no leído");
+  assert.equal(R.pasoEnPagina(R2, "h.md", [true, false], ""), 1);
+  assert.equal(R.pasoEnPagina(R2, "h.md", [true, false], "#otro"), 1, "hash desconocido: primero no leído");
+  const ms = memoria();
+  const a = almacenSeguro(() => ms);
+  R.activarRuta(a, "uuv", "control");
+  assert.deepEqual(R.pasoActivo(a, "uuv", [R2], "h.md", "#motores"), { ruta: R2, i: 1 });
 });
