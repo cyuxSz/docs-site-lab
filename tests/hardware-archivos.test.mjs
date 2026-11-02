@@ -404,6 +404,35 @@ test("replay del callback tras DELETE no reinserta el archivo", async () => {
   assert.equal((await pedirToken(m.handler, { pathname: `hw/uuv/electronica/${ID}-placa.png` })).status, 409);
 });
 
+test("callback: lápida + inserción en un único EVAL; un DELETE justo antes de la inserción no se reinserta", async () => {
+  const m = await montar();
+  const { url, pathname } = await subir(m);
+  const { opciones } = m.blob.tokens.at(-1);
+  m.redis.data.get("hw:arch:uuv").delete(ID); // callback aún en vuelo
+  const orig = m.redis.exec.bind(m.redis);
+  m.redis.exec = async (cmds) => {
+    // El DELETE se cuela justo antes de que llegue el check+insert.
+    if (cmds.some((c) => c[0] === "EVAL")) m.redis.data.set("hw:arch:borrados:uuv", new Set([ID]));
+    return orig(cmds);
+  };
+  m.redis.comandos.length = 0;
+  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url });
+  assert.equal(fin.status, 200);
+  assert.ok(!m.redis.data.get("hw:arch:uuv")?.has(ID), "no se reinserta");
+  assert.ok(!m.redis.comandos.some((c) => ["SISMEMBER", "HSETNX"].includes(String(c[0]).toUpperCase())), "sin SISMEMBER/HSETNX sueltos");
+});
+
+test("callback sin lápida inserta con EVAL y no pisa un existente", async () => {
+  const m = await montar();
+  const { url, pathname } = await subir(m);
+  const { opciones } = m.blob.tokens.at(-1);
+  const antes = m.redis.data.get("hw:arch:uuv").get(ID);
+  assert.ok(antes);
+  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url: `${url}-otro` });
+  assert.equal(fin.status, 200);
+  assert.equal(m.redis.data.get("hw:arch:uuv").get(ID), antes);
+});
+
 test("sin acceso al proyecto el 403 va antes del 404 de disciplina", async () => {
   const m = await montar();
   const cp = payload({ proyecto: "proyecto-x", disciplina: "inexistente" });
