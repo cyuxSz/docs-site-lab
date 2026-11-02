@@ -25,6 +25,10 @@ const PROYECTOS = [
   { id: "usv" },
 ];
 
+// Instantánea comparable del almacén: los Map/Set se serializan por entradas (JSON.stringify los daría como {}).
+const instantanea = (redis) =>
+  JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:")).map(([k, v]) => [k, v instanceof Map ? [...v] : v instanceof Set ? [...v] : v]));
+
 const core = () => import("../lib/hardware-core.mjs");
 
 beforeEach(() => {
@@ -156,7 +160,7 @@ test("lectura: cualquier sesión con acceso ve el índice; editable solo es true
 
 test("403: un no editor no puede escribir (inicializar, crear, reordenar, restaurar, PUT, DELETE)", async () => {
   const { handler, redis } = await inicializado();
-  const antes = JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:")));
+  const antes = instantanea(redis);
   const intentos = [
     () => post(handler, { accion: "inicializar" }, "ana"),
     () => post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" }, "ana"),
@@ -172,7 +176,7 @@ test("403: un no editor no puede escribir (inicializar, crear, reordenar, restau
   }
   // mecanica no tiene editores: nadie escribe ahí.
   assert.equal((await post(handler, { disciplina: "mecanica", accion: "inicializar" }, EDITOR)).status, 403);
-  assert.equal(JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:"))), antes, "nada cambió en el almacén");
+  assert.equal(instantanea(redis), antes, "nada cambió en el almacén");
 });
 
 test("escrituras: solo JSON (415) y mismo origen (403), como en comentarios", async () => {
@@ -519,4 +523,44 @@ test("inicializar tras perder el índice conserva el título guardado de las pá
   assert.equal(res.status, 201);
   const pcb = (await res.json()).paginas.find((p) => p.slug === "pcb");
   assert.equal(pcb.titulo, "PCB renombrada");
+});
+
+test("restaurar con título distinto toma el candado del índice y actualiza el índice", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# buena", version: 1 });
+  await put(handler, { pagina: "pcb", md: "# otra", version: 2, titulo: "PCB nueva" });
+  // revisiones[0] guarda el título anterior ("PCB").
+  const orig = redis.exec.bind(redis);
+  const claves = [];
+  redis.exec = async (cmds) => {
+    for (const c of cmds) if (c[0] === "SET" && String(c[1]).includes(":lock:")) claves.push(c[1]);
+    return orig(cmds);
+  };
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "pcb", revision: 0, version: 3 })).status, 200);
+  assert.ok(claves.some((k) => k.endsWith(":__indice")), "toma el candado del índice");
+  const j = await (await indice(handler, "ana")).json();
+  assert.equal(j.paginas.find((p) => p.slug === "pcb").titulo, "PCB");
+});
+
+test("el candado solo lo libera su dueño: si el lease expiró y otro lo tomó, no se borra", async () => {
+  const { handler, redis } = await inicializado();
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    // Simula expiración + readquisición por otro justo antes de liberar.
+    for (const c of cmds) if (c[0] === "EVAL") redis.data.set("hw:lock:uuv:electronica:pcb", "de-otro");
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.equal(redis.data.get("hw:lock:uuv:electronica:pcb"), "de-otro");
+});
+
+test("el candado propio sí se libera y el fake caduca el lease a los 10 s", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.ok(!redis.data.has("hw:lock:uuv:electronica:pcb"));
+  await redis.exec([["SET", "k", "v", "NX", "EX", 10]]);
+  assert.equal((await redis.exec([["TTL", "k"]]))[0], 10);
+  const t = Date.now();
+  redis.reloj.ahora = () => t + 11000;
+  assert.equal((await redis.exec([["GET", "k"]]))[0], null);
 });
