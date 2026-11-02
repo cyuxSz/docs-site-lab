@@ -563,20 +563,23 @@ test("tenencias por petición: dos peticiones concurrentes en distintas discipli
   }
 });
 
-test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente en el mismo handler", async () => {
+test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente en el mismo handler", { timeout: 10000 }, async () => {
   const { handler, redis } = await inicializado();
   await redis.exec([["DEL", "hw:rl:edi"]]);
   const orig = redis.exec.bind(redis);
   let colgar = true;
+  let llego;
+  const alPunto = new Promise((r) => (llego = r)); // se resuelve cuando la petición muerta llega a su lectura
   redis.exec = async (cmds) => {
     if (colgar && cmds.some((c) => c[0] === "HGETALL" && c[1] === "hw:pag:uuv:electronica:pcb")) {
       colgar = false;
+      llego();
       return new Promise(() => {}); // la invocación muere: nunca ejecuta su finally
     }
     return orig(cmds);
   };
   void put(handler, { pagina: "pcb", md: "# muerta", version: 1 });
-  await new Promise((r) => setTimeout(r, 20));
+  await alPunto; // sincronización por evento, no por tiempo: la petición ya retiene sus candados
   assert.equal(colgar, false, "la petición muerta llegó a retener sus candados");
   redis.reloj.ahora = () => Date.now() + 11_000; // el lease huérfano caduca
   const res = await put(handler, { pagina: "pcb", md: "# viva", version: 1 });
