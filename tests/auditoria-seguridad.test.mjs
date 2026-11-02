@@ -286,12 +286,12 @@ const REPO = "https://github.com/o/r";
 const SHA = "abc123";
 const nodo = (id, extra = {}) => ({ id, label: id.split("/").pop(), category: "ros2_node", package: id.split("/")[0], layer: "control", status: "sin_uso", file: `src/${id}.cpp`, line: 10, configs: [], launches: [], ...extra });
 const EVIL = "src/a](https://evil.example)";
-// Vuelta 2 (D): texto() mete U+200B para cortar autolinks; las aserciones de escapado lo ignoran.
-const sinZ = (s) => s.replace(/​/g, "");
+// Fase 0: sin U+200B; rutas y configs van como code span (CommonMark no interpreta enlaces dentro de un code span).
+const sinZ = (s) => s;
 
-test("limpiezaMarkdown: una ruta con '](' no crea un enlace (texto del enlace escapado)", () => {
+test("limpiezaMarkdown: una ruta con '](' no crea un enlace (va dentro de un code span en el texto del enlace)", () => {
   const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, REPO, SHA), new Set()));
-  assert.ok(md.includes("[src/a\\]\\(https://evil.example\\)]("), md);
+  assert.ok(md.includes("[`src/a](https://evil.example)`]("), md);
 });
 
 test("limpiezaMarkdown: los paréntesis del destino del enlace van como %28/%29", () => {
@@ -299,15 +299,14 @@ test("limpiezaMarkdown: los paréntesis del destino del enlace van como %28/%29"
   assert.ok(md.includes("(https://github.com/o/r/blob/abc123/src/a%5D%28https%3A//evil.example%29#L10)"), md);
 });
 
-test("limpiezaMarkdown: sin URL, la ruta en texto plano también se escapa ([ ] ( ) \\ `)", () => {
+test("limpiezaMarkdown: sin URL, la ruta va como code span (delimitador más largo que sus backticks)", () => {
   const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: EVIL })] }, "no-es-github", SHA), new Set()));
-  assert.ok(md.includes("src/a\\]\\(https://evil.example\\)"), md);
-  assert.doesNotMatch(md, /(?<!\\)\]\(https:\/\/evil/);
-  const md2 = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/[x]\\y`z.cpp" })] }, "no-es-github", SHA), new Set()));
-  assert.ok(md2.includes("src/\\[x\\]\\\\y\\`z.cpp"), md2);
+  assert.ok(md.includes("`src/a](https://evil.example)`"), md);
+  const md2 = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/[x]\y`z.cpp" })] }, "no-es-github", SHA), new Set()));
+  assert.ok(md2.includes("``src/[x]\y`z.cpp``"), md2);
 });
 
-test("limpiezaMarkdown: nombre del proyecto y configs a retirar también se escapan", () => {
+test("limpiezaMarkdown: el nombre del proyecto se escapa y las configs a retirar van como code span", () => {
   const ros = {
     configs: [{ id: "c", label: "[clic](https://evil.example)", launch: "x.launch.py", legado: true }],
     launches: [],
@@ -315,8 +314,7 @@ test("limpiezaMarkdown: nombre del proyecto y configs a retirar también se esca
   };
   const md = sinZ(limpiezaMarkdown("uuv](https://evil.example)", filasLimpieza(ros, REPO, SHA), new Set()));
   assert.match(md, /^# Limpieza del repo · uuv\\\]\\\(https:\/\/evil\.example\\\)$/m);
-  assert.ok(md.includes("\\[clic\\]\\(https://evil.example\\)"), md);
-  assert.doesNotMatch(md, /(?<!\\)\[clic\]/);
+  assert.ok(md.includes("Configs a retirar: `[clic](https://evil.example)`"), md);
 });
 
 test("limpiezaMarkdown: paquete/ejecutable y launches siguen en código en línea (sin barras invertidas visibles)", () => {
@@ -345,7 +343,7 @@ test("walk: un directorio inexistente da [] (repo sin openwiki/ o docs/arch/)", 
 
 test("limpiezaMarkdown: el texto exportado escapa < y >", () => {
   const md = sinZ(limpiezaMarkdown("X", filasLimpieza({ nodes: [nodo("p/a", { file: "src/<img src=x>.cpp" })] }, "", SHA), new Set()));
-  assert.ok(md.includes("\\<img src=x\\>"), md);
+  assert.ok(md.includes("`src/<img src=x>.cpp`"), md);
 });
 
 // ==================== Vuelta 2: hallazgos de cubic y CodeRabbit en #31 ====================
@@ -498,7 +496,7 @@ test("C · walk: si el directorio recorrido es un junction fuera del checkout, d
 });
 
 // ---------- D. Markdown exportado sin autolinks GFM ----------
-test("D · limpiezaMarkdown: URLs, www. y correos en texto plano no se vuelven enlaces (render GFM de satteri)", async () => {
+test("D · limpiezaMarkdown: URLs, www. y correos de los datos del repo no se vuelven enlaces (code spans, render GFM de satteri)", async () => {
   assert.equal(typeof satteri.markdownToHtml, "function", "satteri no se puede importar");
   const ros = {
     configs: [{ id: "c", label: "ver https://evil.example y WWW.evil.example", launch: "x.launch.py", legado: true }],
@@ -510,11 +508,13 @@ test("D · limpiezaMarkdown: URLs, www. y correos en texto plano no se vuelven e
       nodo("p/d", { status: "legado", configs: ["c"], file: "src/HTTP://evil.example/d.cpp" }),
     ],
   };
-  const md = limpiezaMarkdown("uuv https://evil.example www.evil.example", filasLimpieza(ros, "no-es-github", SHA), new Set());
+  // Fase 0: sin U+200B. Archivos y configs (datos del repo) van en code span; el nombre sale de projects.json (confiable).
+  const md = limpiezaMarkdown("uuv", filasLimpieza(ros, "no-es-github", SHA), new Set());
   const { html } = await satteri.markdownToHtml(md, PARSE);
   assert.ok(!/<a\s/i.test(html), html);
-  // Lo visible no cambia (salvo caracteres invisibles de corte).
-  const visible = sinZ(md);
+  // Lo visible es el texto exacto, sin caracteres invisibles de corte.
+  const visible = md;
+  assert.ok(!md.includes("​"), "sin U+200B");
   for (const s of ["https://evil.example/a.cpp", "www.evil.example/b.cpp", "yo@evil.example.cpp", "WWW.evil.example"]) assert.ok(visible.includes(s), s);
 });
 

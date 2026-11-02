@@ -67,7 +67,7 @@ function iniciar() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || document.querySelector("dialog[open]")) return;
+    if (e.repeat || e.key !== "Escape" || document.querySelector("dialog[open]")) return;
     if (despachar({ tipo: "escape" })) e.preventDefault();
   });
 
