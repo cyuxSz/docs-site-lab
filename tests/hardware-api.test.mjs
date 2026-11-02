@@ -524,7 +524,7 @@ test("fencing: la escritura final es un solo EVAL con los dos candados (slug e �
   assert.deepEqual([ev[3], ev[4]].sort(), ["hw:lock:uuv:electronica:__indice", "hw:lock:uuv:electronica:pcb"]);
 });
 
-test("tenencias por petición: dos peticiones concurrentes en distintas disciplinas no se interfieren", async () => {
+test("tenencias por petición: dos peticiones concurrentes en distintas disciplinas no se interfieren", { timeout: 10000 }, async () => {
   const proyectos = [{ id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR] }, mecanica: { plantilla: "mecanica", editores: [EDITOR] } } }];
   const { handler, redis } = await montar({ proyectos });
   assert.equal((await post(handler, { accion: "inicializar" })).status, 201);
@@ -561,7 +561,7 @@ test("tenencias por petición: dos peticiones concurrentes en distintas discipli
     const disc = ev[3].includes(":mecanica:") ? "mecanica" : "electronica";
     assert.ok(ev.slice(3, 5).every((k) => k.startsWith(`hw:lock:uuv:${disc}:`)), `claves de ${disc}`);
   }
-}, { timeout: 10000 }); // si una regresión deja las peticiones esperándose, falla en vez de colgar el CI
+});
 
 test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente en el mismo handler", async () => {
   const { handler, redis } = await inicializado();
