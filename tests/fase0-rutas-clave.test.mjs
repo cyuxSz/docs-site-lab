@@ -46,6 +46,21 @@ test("migración: una clave vieja por índice cuenta como leída, se reescribe c
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, false, false], "desmarcar después de migrar no resucita la vieja");
 });
 
+test("migración: si la escritura de la clave nueva falla, la vieja se conserva y el paso sigue leído", () => {
+  const m = new Map([["rutas:uuv:control:1", "1"]]);
+  const lleno = {
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: () => {
+      throw new Error("QuotaExceededError");
+    },
+    removeItem: (k) => m.delete(k),
+  };
+  const a = almacenSeguro(() => lleno);
+  assert.deepEqual(leidos(a, "uuv", RUTA), [false, true, false]);
+  assert.deepEqual(leidos(a, "uuv", RUTA), [false, true, false], "segunda lectura igual");
+  assert.equal(m.get("rutas:uuv:control:1"), "1", "la clave vieja sigue presente");
+});
+
 test("migración: solo con valor '1'; no toca otro rol ni proyecto", () => {
   const ls = memoria({ "rutas:uuv:control:0": "basura", "rutas:uuv:vision:2": "1", "rutas:proyecto-x:control:2": "1" });
   const a = almacenSeguro(() => ls);
