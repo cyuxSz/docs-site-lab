@@ -48,7 +48,6 @@ Si el repo tiene `openwiki/.graph/ros.json` (lo genera `tools/ros_graph.py` en e
 | `SESSION_SECRET` | 32+ caracteres aleatorios para firmar la cookie de sesión |
 | `ALLOWED_ORG` | Org cuyos miembros pueden entrar (p. ej. `vanttec`) |
 | `ALLOWED_USERS` | Opcional: logins separados por coma, como respaldo |
-| `PRODUCTION_HOST` | Opcional; por defecto `VERCEL_PROJECT_PRODUCTION_URL`. Los Preview mandan a este dominio a iniciar sesión |
 | `BLOB_READ_WRITE_TOKEN` | Lo crea Vercel al conectar un Blob store privado al proyecto; activa la subida de archivos de hardware (`/api/archivos/`) |
 | `PREVIEW_TRUST_VERCEL_AUTH` | `1` para que los Preview no pidan login de GitHub. Solo con Vercel Authentication activo en *Deployment Protection*; si no, los Preview responden 403 |
 
