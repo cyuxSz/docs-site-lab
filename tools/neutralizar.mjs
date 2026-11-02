@@ -1,3 +1,5 @@
+import { markdownToMdast } from "satteri";
+
 // Neutraliza el HTML de las wikis y convierte los emojis de estado en íconos, solo fuera de código. Sin efectos al
 // importarse (lo usa tools/fetch.mjs y lo prueban los tests).
 
@@ -94,12 +96,40 @@ export function outsideCode(body, fn) {
   return out.join("\n");
 }
 
-// Las wikis son Markdown puro (la auditoría no encontró HTML incrustado). Cualquier etiqueta HTML fuera de bloques de
-// código se escapa y se muestra como texto: así nadie mete <script>, <iframe> o formularios en el portal desde un repo.
-// La CSP del sitio es la segunda barrera.
+// Las wikis son Markdown puro (la auditoría no encontró HTML incrustado). Todo nodo HTML (bloque o en línea) que ve el
+// parser de Astro (satteri, GFM) se escapa y se muestra como texto: así nadie mete <script>, <iframe> o formularios en
+// el portal desde un repo. La CSP del sitio es la segunda barrera.
+const PARSE = { features: { gfm: true, frontmatter: false } };
+const MAX_PASADAS = 50;
+
+function rangosHtml(md) {
+  const rangos = [];
+  const rec = (n) => {
+    if (!n || typeof n !== "object") return;
+    if (n.type === "html" && n.position) rangos.push([n.position.start.offset, n.position.end.offset]);
+    if (Array.isArray(n.children)) n.children.forEach(rec);
+  };
+  rec(markdownToMdast(md, PARSE));
+  return rangos;
+}
+
 export function neutralizeHtml(body) {
-  // Fuera de `código en línea`, "<" seguido de letra, "/", "!" o "?" abre HTML: se escapa.
-  return outsideCode(body, (text) => text.replace(/<(?=[A-Za-z\/!?])/g, "&lt;"));
+  let md = String(body);
+  for (let i = 0; i < MAX_PASADAS; i++) {
+    const rangos = rangosHtml(md).sort((a, b) => b[0] - a[0]);
+    if (!rangos.length) return md;
+    let cambio = false;
+    for (const [ini, fin] of rangos) {
+      const trozo = md.slice(ini, fin);
+      const nuevo = trozo.replace(/</g, "&lt;");
+      if (nuevo !== trozo) {
+        md = md.slice(0, ini) + nuevo + md.slice(fin);
+        cambio = true;
+      }
+    }
+    if (!cambio) break;
+  }
+  return md.replace(/</g, "&lt;");
 }
 
 // Los emojis de estado de las tablas de la wiki se vuelven íconos del portal (mismos colores que el grafo); el texto

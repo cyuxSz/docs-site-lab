@@ -93,7 +93,15 @@ export const filasVisibles = (filas: FilaLimpieza[], revisados: Set<string>, ocu
 const linea = (s: string) => String(s).replace(/[\r\n]+/g, " ").replace(/`/g, "'").trim();
 
 // Texto fuera de código en línea: escapa con "\" la sintaxis de enlaces y de código (y aplana saltos de línea).
-const texto = (s: string) => String(s).replace(/[\r\n]+/g, " ").trim().replace(/[\\`\[\]()<>]/g, "\\$&");
+// Los autolinks GFM (http(s)://, www., correos) se rompen con U+200B: el escape con "\" no sirve, el parser lo des-escapa antes.
+const texto = (s: string) =>
+  String(s)
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .replace(/[\\`\[\]()<>]/g, "\\$&")
+    .replace(/(https?)(:\/\/)/gi, "$1​$2")
+    .replace(/(www)(\.)/gi, "$1​$2")
+    .replace(/@/g, "​@");
 // Destino de enlace: los paréntesis cerrarían el destino; solo en el Markdown exportado.
 const destino = (u: string) => u.replace(/\(/g, "%28").replace(/\)/g, "%29");
 

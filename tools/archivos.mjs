@@ -20,6 +20,14 @@ export function walk(dir, raiz = dir) {
   } catch {
     return [];
   }
+  try {
+    if (lstatSync(dir).isSymbolicLink()) return [];
+    const real = realpathSync(dir);
+    if (!dentro(realRaiz, real)) return [];
+    if (norm(real) !== norm(join(realRaiz, relative(resolve(raiz), resolve(dir))))) return [];
+  } catch {
+    return [];
+  }
   const out = [];
   const rec = (d) => {
     for (const name of readdirSync(d)) {
