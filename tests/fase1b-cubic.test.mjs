@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { sanearNombre, extension, TIPOS } from "../lib/archivos-nombre.mjs";
 import { leerCuerpo } from "../lib/api-comun.mjs";
-import { estadoGuardar, resultadoGuardado, AVISO_SUBIDAS, mensajeError } from "../src/lib/hardware-editor.ts";
+import { estadoGuardar, resultadoGuardado, resultadoBorrado, AVISO_SUBIDAS, mensajeError } from "../src/lib/hardware-editor.ts";
 import { atajo } from "../src/lib/atajos.ts";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
@@ -82,4 +82,11 @@ test("servidor-hardware: aplica por pathname todas las reglas de cabeceras (CSP 
   const src = read("tests/fixtures/servidor-hardware.mjs");
   assert.match(src, /cabecerasDe\(url\.pathname\)/);
   assert.doesNotMatch(src, /\.headers \?\? \[\]\)\[0\]/);
+});
+
+test("resultadoBorrado: 409 da su mensaje y no quita nada del índice; otros errores usan el habitual", () => {
+  assert.deepEqual(resultadoBorrado(200), { quitarDelIndice: true, mensaje: "" });
+  assert.deepEqual(resultadoBorrado(409), { quitarDelIndice: false, mensaje: "Alguien cambió la página; recárgala antes de borrar" });
+  assert.deepEqual(resultadoBorrado(403), { quitarDelIndice: false, mensaje: mensajeError(403) });
+  assert.equal(resultadoBorrado(0).mensaje, mensajeError("red"));
 });

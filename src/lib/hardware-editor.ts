@@ -96,6 +96,14 @@ export function resultadoGuardado(status: number): { conservarTexto: boolean; me
   return { conservarTexto: status !== 200, mensaje: status === 200 ? "" : mensajeError(status === 0 ? "red" : status) };
 }
 
+export const MENSAJE_BORRADO_409 = "Alguien cambió la página; recárgala antes de borrar";
+
+// Borrado: solo 200 quita la página del índice local; un 409 muestra su texto propio y no toca nada.
+export function resultadoBorrado(status: number): { quitarDelIndice: boolean; mensaje: string } {
+  if (status === 200) return { quitarDelIndice: true, mensaje: "" };
+  return { quitarDelIndice: false, mensaje: status === 409 ? MENSAJE_BORRADO_409 : mensajeError(status === 0 ? "red" : status) };
+}
+
 export function porcentaje(cargado: number, total: number): number {
   if (!(total > 0) || !(cargado > 0)) return 0;
   return Math.min(100, Math.round((cargado / total) * 100));
