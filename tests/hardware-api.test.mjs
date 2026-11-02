@@ -507,12 +507,31 @@ test("DELETE: las revisiones van a la papelera y se borran; un slug recreado no 
   assert.ok(!redis.data.has("hw:rev:uuv:electronica:nueva"), "la lista de revisiones se borra");
   const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
   assert.equal(entrada.revisiones.length, 2);
+  assert.equal(entrada.revisionesOmitidas, 0);
   assert.deepEqual(entrada.revisiones.map((r) => r.version), [2, 1]);
   assert.equal(typeof entrada.revisiones[0].md, "string");
   await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
   const v = (await (await pagina(handler, "nueva")).json()).pagina.version;
   assert.deepEqual(await (await pagina(handler, "nueva", "ana", { revisiones: "1" })).json(), { revisiones: [] });
   assert.equal((await post(handler, { accion: "restaurar", pagina: "nueva", revision: 0, version: v })).status, 404);
+});
+
+test("DELETE: con revisiones grandes la papelera respeta el presupuesto de bytes, conserva las recientes y cuenta las omitidas", async () => {
+  const { PRESUPUESTO_PAPELERA_BYTES } = await core();
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  for (let v = 1; v <= 20; v++) {
+    const res = await put(handler, { pagina: "nueva", md: `${v}`.padEnd(100 * 1024, "x"), version: v });
+    assert.equal(res.status, 200, `PUT ${v}`);
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+  }
+  assert.equal((await del(handler, { pagina: "nueva", version: 21 })).status, 200);
+  assert.ok(!redis.data.has("hw:rev:uuv:electronica:nueva"), "la lista de revisiones se borra");
+  const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.ok(Buffer.byteLength(JSON.stringify(entrada.revisiones)) <= PRESUPUESTO_PAPELERA_BYTES);
+  assert.ok(entrada.revisiones.length > 0 && entrada.revisiones.length < 20);
+  assert.equal(entrada.revisionesOmitidas, 20 - entrada.revisiones.length);
+  assert.deepEqual(entrada.revisiones.map((r) => r.version), Array.from({ length: entrada.revisiones.length }, (_, i) => 20 - i), "las más recientes");
 });
 
 // ---------- Fencing del candado ----------
