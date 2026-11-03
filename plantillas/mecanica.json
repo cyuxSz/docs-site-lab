@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "ensamble",
+    "titulo": "Ensamble",
+    "md": "# Ensamble\n\n## Vista general\n\nPendiente de documentar.\n\n## Estructura principal\n\nPendiente de documentar.\n\n## Notas de ensamble\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "subensambles",
+    "titulo": "Subensambles",
+    "md": "# Subensambles\n\n## Lista de subensambles\n\nPendiente de documentar.\n\n## Interfaces\n\nPendiente de documentar.\n\n## Revisiones\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "piezas-planos",
+    "titulo": "Piezas y planos",
+    "md": "# Piezas y planos\n\n## Piezas\n\nPendiente de documentar.\n\n## Planos\n\nPendiente de documentar.\n\n## Tolerancias\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "materiales",
+    "titulo": "Materiales",
+    "md": "# Materiales\n\n## Materiales usados\n\nPendiente de documentar.\n\n## Propiedades\n\nPendiente de documentar.\n\n## Tratamientos y acabados\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "sellado",
+    "titulo": "Sellado",
+    "md": "# Sellado\n\n## Juntas y O-rings\n\nPendiente de documentar.\n\n## Penetraciones\n\nPendiente de documentar.\n\n## Pruebas de estanqueidad\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "hidrodinamica",
+    "titulo": "Hidrodinámica",
+    "md": "# Hidrodinámica\n\n## Forma y arrastre\n\nPendiente de documentar.\n\n## Flotabilidad y lastre\n\nPendiente de documentar.\n\n## Simulaciones\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "bom",
+    "titulo": "BOM",
+    "md": "# BOM\n\n## Lista de materiales\n\nPendiente de documentar.\n\n## Proveedores\n\nPendiente de documentar.\n\n## Alternativas\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "montaje",
+    "titulo": "Montaje",
+    "md": "# Montaje\n\n## Herramientas\n\nPendiente de documentar.\n\n## Pasos de montaje\n\nPendiente de documentar.\n\n## Verificación final\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "mantenimiento",
+    "titulo": "Mantenimiento",
+    "md": "# Mantenimiento\n\n## Rutina\n\nPendiente de documentar.\n\n## Piezas de repuesto\n\nPendiente de documentar.\n\n## Problemas frecuentes\n\nPendiente de documentar.\n"
+  }
+]

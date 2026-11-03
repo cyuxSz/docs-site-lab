@@ -1,0 +1,52 @@
+[
+  {
+    "slug": "arquitectura",
+    "titulo": "Arquitectura",
+    "md": "# Arquitectura\n\n## Resumen del sistema\n\nPendiente de documentar.\n\n## Diagrama de bloques\n\nPendiente de documentar.\n\n## Interfaces entre módulos\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "potencia",
+    "titulo": "Potencia",
+    "md": "# Potencia\n\n## Fuentes y baterías\n\nPendiente de documentar.\n\n## Distribución y protecciones\n\nPendiente de documentar.\n\n## Consumo estimado\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "esquematicos",
+    "titulo": "Esquemáticos",
+    "md": "# Esquemáticos\n\n## Hojas y versiones\n\nPendiente de documentar.\n\n## Notas de diseño\n\nPendiente de documentar.\n\n## Archivos fuente\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "pcb",
+    "titulo": "PCB",
+    "md": "# PCB\n\n## Placas y revisiones\n\nPendiente de documentar.\n\n## Capas y stackup\n\nPendiente de documentar.\n\n## Fabricación y ensamblaje\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "cableado",
+    "titulo": "Cableado",
+    "md": "# Cableado\n\n## Arneses\n\nPendiente de documentar.\n\n## Conectores y cables\n\nPendiente de documentar.\n\n## Rutas y sellado\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "pinout",
+    "titulo": "Pinout",
+    "md": "# Pinout\n\n## Controlador principal\n\nPendiente de documentar.\n\n## Conectores externos\n\nPendiente de documentar.\n\n## Tabla de señales\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "sensores-actuadores",
+    "titulo": "Sensores y actuadores",
+    "md": "# Sensores y actuadores\n\n## Sensores\n\nPendiente de documentar.\n\n## Actuadores\n\nPendiente de documentar.\n\n## Calibración\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "bom",
+    "titulo": "BOM",
+    "md": "# BOM\n\n## Lista de materiales\n\nPendiente de documentar.\n\n## Proveedores\n\nPendiente de documentar.\n\n## Alternativas\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "pruebas",
+    "titulo": "Pruebas",
+    "md": "# Pruebas\n\n## Plan de pruebas\n\nPendiente de documentar.\n\n## Resultados\n\nPendiente de documentar.\n\n## Pendientes\n\nPendiente de documentar.\n"
+  },
+  {
+    "slug": "problemas",
+    "titulo": "Problemas",
+    "md": "# Problemas\n\n## Problemas conocidos\n\nPendiente de documentar.\n\n## Causas y soluciones\n\nPendiente de documentar.\n\n## Lecciones aprendidas\n\nPendiente de documentar.\n"
+  }
+]
