@@ -24,6 +24,8 @@ export default defineConfig({
     // CSP en <meta> por página: solo corren los scripts que Astro emite (por hash) y los de este origen,
     // así que un <script> o un onclick metido en el Markdown de una wiki no se ejecuta.
     // Estilos con 'unsafe-inline' porque Mermaid y Shiki los escriben en línea.
+    // connect-src añade solo https://vercel.com/api/blob/ (prefijo de ruta): upload() de @vercel/blob/client sube ahí
+    // los archivos de hardware directo desde el navegador (no usa Workers, así que no hace falta worker-src).
     // frame-ancestors no funciona en <meta>: va como cabecera en vercel.json.
     csp: {
       scriptDirective: { resources: ["'self'", "'wasm-unsafe-eval'"], hashes: [temaHash] },
@@ -31,7 +33,7 @@ export default defineConfig({
       directives: [
         "default-src 'self'",
         "img-src 'self' data:",
-        "connect-src 'self'",
+        "connect-src 'self' https://vercel.com/api/blob/",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
