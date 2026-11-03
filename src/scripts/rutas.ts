@@ -78,7 +78,7 @@ if (root) {
     panel.addEventListener("change", (e) => {
       const c = e.target as HTMLInputElement;
       if (c.type !== "checkbox") return;
-      marcar(alm, proyecto, ruta.id, Number(c.dataset.i), c.checked);
+      marcar(alm, proyecto, ruta.id, ruta.pasos[Number(c.dataset.i)], c.checked, Number(c.dataset.i));
       pintar(ruta, panel);
     });
     panel.querySelector("[data-continuar]")?.addEventListener("click", () => {
@@ -107,8 +107,13 @@ if (pie) {
   const proyecto = pie.dataset.proyecto!;
   const page = pie.dataset.page!;
   const rutas = parse(pie.dataset.rutas);
-  const activo = pasoActivo(alm, proyecto, rutas, page);
-  if (activo) {
+  const pintarPie = () => {
+    const activo = pasoActivo(alm, proyecto, rutas, page, location.hash);
+    if (!activo) {
+      pie.hidden = true;
+      pie.replaceChildren();
+      return;
+    }
     const { ruta, i } = activo;
     const l = leidos(alm, proyecto, ruta);
     {
@@ -120,7 +125,7 @@ if (pie) {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.checked = l[i];
-      box.addEventListener("change", () => marcar(alm, proyecto, ruta.id, i, box.checked));
+      box.addEventListener("change", () => marcar(alm, proyecto, ruta.id, ruta.pasos[i], box.checked, i));
       label.append(box, document.createTextNode(" Marcar como leído"));
 
       const nav = document.createElement("a");
@@ -152,5 +157,8 @@ if (pie) {
       pie.replaceChildren(estado, label, nav, salir);
       pie.hidden = false;
     }
-  }
+  };
+  pintarPie();
+  // El script no usa AbortController ni astro:before-swap: se ejecuta una vez por carga de página.
+  window.addEventListener("hashchange", pintarPie);
 }
