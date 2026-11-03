@@ -5,7 +5,7 @@ import Base from "../../layouts/Base.astro";
 import SideNav from "../../components/SideNav.astro";
 import RutasRol from "../../components/RutasRol.astro";
 import Comentarios from "../../components/Comentarios.astro";
-import { builtProjects, project as load, fmtDate, projectNav, sections, STATUS_LABEL } from "../../lib/data";
+import { builtProjects, project as load, fmtDate, projectNav, sections, slugReservado, STATUS_LABEL } from "../../lib/data";
 import { isRestricted } from "../../../access.config.js";
 import { TYPE_LABEL } from "../../lib/labels";
 import { anteriorSiguiente, migas } from "../../lib/navegacion.ts";
@@ -17,9 +17,15 @@ import { minutosLectura, nivelPagina } from "../../lib/lectura.ts";
 export async function getStaticPaths() {
   const ok = new Set(builtProjects().map((p) => p.id));
   const docs = await getCollection("docs", (d) => ok.has(d.data.project) && d.data.path !== "index.md");
-  return docs.map((entry) => {
+  const disciplinas = new Map(builtProjects().map((p) => [p.id, Object.keys(p.disciplinas ?? {})]));
+  return docs.flatMap((entry) => {
     const slug = entry.data.path.replace(/\.md$/, "").replace(/(^|\/)index$/, "");
-    return { params: { project: entry.data.project, slug }, props: { entry } };
+    // Una página de la wiki no puede ocupar una ruta fija ni una disciplina: se avisa y no se genera.
+    if (slugReservado(slug, disciplinas.get(entry.data.project))) {
+      console.warn(`[${entry.data.project}] la página «${entry.data.path}» choca con una ruta del portal (/${slug}/) y no se genera.`);
+      return [];
+    }
+    return [{ params: { project: entry.data.project, slug }, props: { entry } }];
   });
 }
 

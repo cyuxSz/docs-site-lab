@@ -17,9 +17,9 @@ export function anteriorSiguiente(pages: PageInfo[], route: string): { prev: Enl
   return { prev: lista[i - 1] ?? null, next: lista[i + 1] ?? null };
 }
 
-// Proyecto › sección (enlazada a su índice si existe y no es esta página) › página actual. "Empezar" no aparece.
+// Proyecto (carátula) › Software › sección (enlazada a su índice si existe y no es esta página) › página actual. "Empezar" no aparece.
 export function migas(pages: PageInfo[], route: string, project: { id: string; name: string }): { label: string; href?: string }[] {
-  const out: { label: string; href?: string }[] = [{ label: project.name, href: `/${project.id}/` }];
+  const out: { label: string; href?: string }[] = [{ label: project.name, href: `/${project.id}/` }, { label: "Software", href: `/${project.id}/software/` }];
   for (const g of sections(pages)) {
     const actual = g.pages.find((p) => p.route === route);
     if (!actual) continue;

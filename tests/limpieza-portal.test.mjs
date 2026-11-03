@@ -12,7 +12,7 @@ const read = (p) => (existsSync(join(ROOT, p)) ? readFileSync(join(ROOT, p), "ut
 const TSX = read("src/components/RoboticsGraph.tsx");
 const CSS = read("src/components/RoboticsGraph.css");
 const GRAFO = read("src/pages/[project]/grafo.astro");
-const INDICE = read("src/pages/[project]/index.astro");
+const INDICE = read("src/pages/[project]/software.astro"); // lote carátula: la portada de software vive aquí
 const PAGINA = read("src/pages/[project]/limpieza.astro");
 const SCRIPT = read("src/scripts/limpieza.ts");
 

@@ -43,7 +43,9 @@ const PAGINAS = {
   "src/pages/index.astro": 1,
   "src/pages/[project]/grafo.astro": 1,
   "src/pages/[project]/[...slug].astro": 1,
-  "src/pages/[project]/index.astro": 2,
+  // Carátula: estado (sin construir), redirección (sin disciplinas) y carátula.
+  "src/pages/[project]/index.astro": 3,
+  "src/pages/[project]/software.astro": 1,
   "src/pages/[project]/[disciplina].astro": 1,
   "src/pages/[project]/comentarios.astro": 1,
   "src/pages/[project]/limpieza.astro": 1,

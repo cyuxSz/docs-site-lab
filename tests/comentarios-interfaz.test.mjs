@@ -23,7 +23,7 @@ test("[...slug].astro incluye <Comentarios> con la ruta de la página e importa 
 });
 
 test("solo en la wiki: grafo, novedades e índice del proyecto no tienen comentarios", () => {
-  for (const f of ["src/pages/[project]/grafo.astro", "src/pages/[project]/novedades.astro", "src/pages/[project]/index.astro"]) {
+  for (const f of ["src/pages/[project]/grafo.astro", "src/pages/[project]/novedades.astro", "src/pages/[project]/index.astro", "src/pages/[project]/software.astro"]) {
     assert.doesNotMatch(read(f), /Comentarios|scripts\/comentarios/, f);
   }
 });

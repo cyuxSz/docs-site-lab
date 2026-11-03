@@ -46,23 +46,24 @@ test("anteriorSiguiente: null en los extremos, sin páginas meta y null si la ru
   assert.deepEqual(anteriorSiguiente(PAGES, "/uuv/nada/"), { prev: null, next: null });
 });
 
-test("migas: proyecto › sección › página, con enlace al índice de la sección", () => {
+// Lote carátula: el proyecto enlaza a la carátula y le sigue la miga «Software» (/<id>/software/).
+test("migas: proyecto › Software › sección › página, con enlace al índice de la sección", () => {
   assert.deepEqual(migas(PAGES, "/uuv/packages/uuv_control/", PROJ), [
-    { label: "UUV · uuv_software", href: "/uuv/" },
+    { label: "UUV · uuv_software", href: "/uuv/" }, { label: "Software", href: "/uuv/software/" },
     { label: "Paquetes", href: "/uuv/packages/" },
     { label: "uuv_control" },
   ]);
 });
 
 test("migas: en el índice de la sección, la sección es la página actual (sin enlace)", () => {
-  assert.deepEqual(migas(PAGES, "/uuv/packages/", PROJ), [{ label: "UUV · uuv_software", href: "/uuv/" }, { label: "Paquetes" }]);
+  assert.deepEqual(migas(PAGES, "/uuv/packages/", PROJ), [{ label: "UUV · uuv_software", href: "/uuv/" }, { label: "Software", href: "/uuv/software/" }, { label: "Paquetes" }]);
 });
 
 test("migas: sección sin índice va sin enlace; la sección raíz (Empezar) no aparece", () => {
   assert.deepEqual(migas(PAGES, "/uuv/operations/estado/", PROJ), [
-    { label: "UUV · uuv_software", href: "/uuv/" },
+    { label: "UUV · uuv_software", href: "/uuv/" }, { label: "Software", href: "/uuv/software/" },
     { label: "Operación" },
     { label: "Estado" },
   ]);
-  assert.deepEqual(migas(PAGES, "/uuv/quickstart/", PROJ), [{ label: "UUV · uuv_software", href: "/uuv/" }, { label: "Inicio rápido" }]);
+  assert.deepEqual(migas(PAGES, "/uuv/quickstart/", PROJ), [{ label: "UUV · uuv_software", href: "/uuv/" }, { label: "Software", href: "/uuv/software/" }, { label: "Inicio rápido" }]);
 });

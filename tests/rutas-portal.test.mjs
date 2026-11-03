@@ -65,10 +65,11 @@ test("SideNav y portada: 'Rutas por rol' solo cuando el proyecto tiene rutas, si
   assert.match(nav, /rutas\?:\s*string/, "prop opcional con la ruta de /<id>/rutas/");
   assert.match(nav, /\{rutas\s*&&[^]*Rutas por rol/);
   assert.match(nav, /rutas\.md/, "con rutas, el enlace normal a rutas.md no se repite en la sección");
-  for (const f of ["src/pages/[project]/index.astro", SLUG, "src/pages/[project]/novedades.astro"]) {
+  // Lote carátula: la portada de software vive en software.astro.
+  for (const f of ["src/pages/[project]/software.astro", SLUG, "src/pages/[project]/novedades.astro"]) {
     assert.match(read(f), /<SideNav[^>]*rutas=\{/, `${f} pasa rutas al SideNav`);
   }
-  const portada = read("src/pages/[project]/index.astro");
+  const portada = read("src/pages/[project]/software.astro");
   assert.match(portada, /p\.rutas\?\.length/);
   assert.match(portada, /Rutas por rol/);
 });

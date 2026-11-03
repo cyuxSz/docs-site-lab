@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 import VehicleArt from "../components/VehicleArt.astro";
 import EstadoProyecto from "../components/EstadoProyecto.astro";
 import { isRestricted } from "../../access.config.js";
-import { portal, fmtDate, themeStyle } from "../lib/data";
+import { portal, fmtDate, themeStyle, entradaProyecto } from "../lib/data";
 
 const { builtAt, alerts, projects } = portal();
 const built = new Date(builtAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Monterrey" });
@@ -26,7 +26,7 @@ const first = open[0];
       <h1>Explorando el <span class="grad">código</span> de cada vehículo</h1>
       <p class="lead">Arquitectura, estado real del código, grafo de nodos ROS y wiki de cada repositorio. Todo se genera desde los propios repos: cada afirmación enlaza a la línea de código que la respalda.</p>
       <div class="hero-cta">
-        {first && <a class="btn btn-primary btn-lg" href={`/${first.id}/`}>Explorar {first.name.split(" · ")[0]}</a>}
+        {first && <a class="btn btn-primary btn-lg" href={entradaProyecto(first)}>Explorar {first.name.split(" · ")[0]}</a>}
         <button class="btn btn-lg" type="button" data-search-open>Buscar en la documentación</button>
       </div>
     </section>
@@ -47,7 +47,7 @@ const first = open[0];
           const Tag = live ? "a" : "div";
           if (isRestricted(p.id)) {
             return (
-              <Tag class:list={["vcard", { "is-off": !live }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
+              <Tag class:list={["vcard", { "is-off": !live }]} href={live ? entradaProyecto(p) : undefined} style={themeStyle(p.theme)}>
                 <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
                 <div class="vcard-body">
                   <span class="card-title">{p.name}</span>
@@ -57,7 +57,7 @@ const first = open[0];
             );
           }
           return (
-            <Tag class:list={["vcard", { "is-off": !live, "is-error": p.error }]} href={live ? `/${p.id}/` : undefined} style={themeStyle(p.theme)}>
+            <Tag class:list={["vcard", { "is-off": !live, "is-error": p.error }]} href={live ? entradaProyecto(p) : undefined} style={themeStyle(p.theme)}>
               <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
               <div class="vcard-body">
                 <span class="eyebrow">{p.tagline ?? "Proyecto"}</span>
