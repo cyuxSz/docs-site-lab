@@ -68,7 +68,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
 
     {project && esDisciplina && (
       <nav class="phead" aria-label={`Secciones de ${project.name}`}>
-        <a href={`/${project.id}/`} data-astro-prefetch>← {project.name}</a>
+        <a href={`/${project.id}/`} data-astro-prefetch aria-label={`Volver a ${project.name}: Software, Electrónica y Mecánica`}><span aria-hidden="true">← </span>{project.name}</a>
         <span aria-current="page">{project.disciplinas?.find((d) => d.id === current)?.etiqueta ?? current}</span>
       </nav>
     )}
