@@ -154,7 +154,12 @@ export function filtrarPanel(paginas: PaginaPanel[] | null | undefined, filtros:
 }
 
 export const urlProyecto = (id: string): string => `/api/comentarios/?proyecto=${encodeURIComponent(id)}`;
-export const enlaceHilo = (pagina: string, id: string): string => `${pagina}#comentario-${id}`;
+// Los hilos de páginas de hardware (/<p>/<disc>/<slug>/) viven en /<p>/<disc>/?p=<slug>; el resto va a su propia ruta.
+export function enlaceHilo(pagina: string, id: string, disciplinas: string[] = []): string {
+  const m = /^\/([^/]+)\/([^/]+)\/([^/]+)\/$/.exec(pagina);
+  if (m && disciplinas.includes(m[2])) return `/${m[1]}/${m[2]}/?p=${m[3]}#comentario-${id}`;
+  return `${pagina}#comentario-${id}`;
+}
 
 // { ruta: n } con solo enteros > 0 y rutas string.
 export function contadoresNav(resp: unknown): Record<string, number> {
