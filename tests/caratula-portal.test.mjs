@@ -205,3 +205,15 @@ test("CSS: la carátula se centra con ancho máximo y margen lateral", () => {
   assert.match(r, /margin:\s*0 auto/);
   assert.match(r, /padding:/);
 });
+
+test(".phead: la flecha está oculta a lectores y el enlace tiene nombre accesible claro", () => {
+  const head = read(BASE).match(/<nav class="phead"[^]*?<\/nav>/)?.[0] ?? "";
+  assert.match(head, /<span aria-hidden="true">←/);
+  assert.match(head, /aria-label=\{`Volver a \$\{project\.name\}/);
+});
+
+test("scripts/caratula.ts: valida el id antes de cualquier location.replace", () => {
+  const js = read(SCRIPT);
+  assert.match(js, /\/\^\[\w-\]\+\$\/\.test\(id\)/);
+  assert.match(js, /idValido && document\.querySelector/);
+});

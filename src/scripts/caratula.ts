@@ -4,9 +4,11 @@ import { redirigirAncla, datosTarjeta, textoCifras } from "../lib/caratula";
 const id = location.pathname.split("/")[1] ?? "";
 
 // replace: la carátula no queda en el historial y «atrás» no rebota.
-const destino = redirigirAncla(id, location.hash);
+// El id sale de la URL: si no es un id válido, no se redirige a ninguna parte.
+const idValido = /^[\w-]+$/.test(id);
+const destino = idValido ? redirigirAncla(id, location.hash) : null;
 if (destino) location.replace(destino);
-else if (document.querySelector("[data-caratula-redirige]")) location.replace(`/${id}/software/`);
+else if (idValido && document.querySelector("[data-caratula-redirige]")) location.replace(`/${id}/software/`);
 
 document.querySelectorAll<HTMLElement>("[data-caratula-hw]").forEach(async (tarjeta) => {
   const cifras = tarjeta.querySelector<HTMLElement>("[data-caratula-cifras]");
