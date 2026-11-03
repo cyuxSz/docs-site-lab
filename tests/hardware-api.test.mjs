@@ -766,3 +766,41 @@ test("el candado propio sí se libera y el fake caduca el lease a los 10 s", asy
   redis.reloj.ahora = () => t + 11000;
   assert.equal((await redis.exec([["GET", "k"]]))[0], null);
 });
+
+test("DELETE: lee las revisiones por tramos (LRANGE <= 5 elementos, como mucho 2 lecturas) y omitidas = total - guardadas", async () => {
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  for (let v = 1; v <= 20; v++) {
+    assert.equal((await put(handler, { pagina: "nueva", md: `${v}`.padEnd(100 * 1024, "x"), version: v })).status, 200);
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+  }
+  const antes = redis.comandos.length;
+  assert.equal((await del(handler, { pagina: "nueva", version: 21 })).status, 200);
+  const lr = redis.comandos.slice(antes).filter((c) => c[0] === "LRANGE");
+  assert.ok(lr.length >= 1 && lr.length <= 2, `LRANGE emitidos: ${lr.length}`);
+  for (const c of lr) assert.ok(Number(c[3]) - Number(c[2]) + 1 <= 5, "tramo de 5 como máximo");
+  const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.ok(entrada.revisiones.length > 0);
+  assert.equal(entrada.revisionesOmitidas, 20 - entrada.revisiones.length);
+});
+
+test("DELETE: historial pequeño se lee entero y en orden; sin revisiones, papelera vacía y omitidas 0", async () => {
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  await put(handler, { pagina: "nueva", md: "# dos", version: 1 });
+  await put(handler, { pagina: "nueva", md: "# tres", version: 2 });
+  assert.equal((await del(handler, { pagina: "nueva", version: 3 })).status, 200);
+  let [e] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.deepEqual(e.revisiones.map((r) => r.version), [2, 1]);
+  assert.equal(e.revisionesOmitidas, 0);
+  // Sin revisiones: se vacía la lista antes de borrar.
+  await post(handler, { accion: "crear", pagina: "otra", titulo: "Otra" });
+  await redis.exec([["DEL", "hw:rev:uuv:electronica:otra"]]);
+  const v = (await (await pagina(handler, "otra")).json()).pagina.version;
+  const antes = redis.comandos.length;
+  assert.equal((await del(handler, { pagina: "otra", version: v })).status, 200);
+  assert.ok(redis.comandos.slice(antes).some((c) => c[0] === "LLEN"));
+  e = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((x) => JSON.parse(x)).find((x) => x.titulo === "Otra");
+  assert.deepEqual(e.revisiones, []);
+  assert.equal(e.revisionesOmitidas, 0);
+});
