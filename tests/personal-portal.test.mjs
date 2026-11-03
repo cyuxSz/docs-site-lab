@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const exists = (p) => existsSync(new URL(`../${p}`, import.meta.url));
 const SLUG = "src/pages/[project]/[...slug].astro";
-const PORTADA = "src/pages/[project]/index.astro";
+const PORTADA = "src/pages/[project]/software.astro"; // lote carátula
 // Etiqueta de apertura del primer elemento que lleva la marca (atributo o clase).
 const tag = (src, marca) => src.match(new RegExp(`<[a-z]+[^>]*${marca}[^>]*>`))?.[0] ?? "";
 

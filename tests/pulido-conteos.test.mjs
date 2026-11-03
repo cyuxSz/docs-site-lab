@@ -46,7 +46,7 @@ test("etiquetaNodos y etiquetaVisibles dicen qué cuenta cada número", () => {
 });
 
 test("el índice del proyecto usa conteoNodos (sin rosNodes.length ni filtros propios por estado)", () => {
-  const src = read("src/pages/[project]/index.astro");
+  const src = read("src/pages/[project]/software.astro"); // lote carátula: la portada de software vive aquí
   assert.match(src, /import\s*\{[^}]*conteoNodos[^}]*\}\s*from\s*["']\.\.\/\.\.\/lib\/conteos(\.ts)?["']/);
   assert.doesNotMatch(src, /rosNodes\.length/);
   assert.doesNotMatch(src, /byStatus\(/);

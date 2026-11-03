@@ -47,22 +47,22 @@ test("projectNav: las pestañas de software no cambian (wiki, diagramas, repoUrl
   assert.equal(nav.repoUrl, "https://github.com/x/y");
 });
 
-test("Base.astro: current admite electronica y mecanica, y .ptabs pinta las disciplinas con aria-current", () => {
+// Lote carátula: Electrónica y Mecánica salen de .ptabs; se llega desde la carátula y tienen su cabecera (.phead).
+test("Base.astro: current admite electronica y mecanica; .ptabs ya no pinta disciplinas y .phead marca la actual", () => {
   const src = leer("src/layouts/Base.astro");
   const m = src.match(/current\?:\s*([^;\n]+)/);
   assert.ok(m, "prop current");
   for (const v of ["resumen", "wiki", "grafo", "electronica", "mecanica"]) assert.match(m[1], new RegExp(`"${v}"`), `current incluye "${v}"`);
   assert.match(src, /disciplinas\?:\s*\{\s*id:\s*string;\s*etiqueta:\s*string;\s*href:\s*string;?\s*\}\[\]/, "Props.project.disciplinas tipado");
   const tabs = src.match(/<nav class="ptabs"[^]*?<\/nav>/)?.[0] ?? "";
-  assert.match(tabs, /project\.disciplinas\?\.map\(/);
-  assert.match(tabs, /aria-current=\{current === d\.id \? "page" : undefined\}/);
-  assert.match(tabs, /href=\{d\.href\}/);
-  // Orden: después de Grafo/Diagramas y antes de Código.
-  assert.ok(tabs.indexOf("Grafo") < tabs.indexOf("project.disciplinas") && tabs.indexOf("project.disciplinas") < tabs.indexOf("Código"), "orden de pestañas");
+  assert.doesNotMatch(tabs, /project\.disciplinas/);
+  const head = src.match(/<nav class="phead"[^]*?<\/nav>/)?.[0] ?? "";
+  assert.match(head, /project\.disciplinas\?\.find\(/);
+  assert.match(head, /aria-current="page"/);
 });
 
 test("projects.json: ninguna disciplina choca con rutas fijas de /<proyecto>/", () => {
-  const RESERVADAS = ["grafo", "limpieza", "novedades", "comentarios", "content", "arch", "rutas"];
+  const RESERVADAS = ["software", "grafo", "limpieza", "novedades", "comentarios", "content", "arch", "rutas"];
   for (const p of JSON.parse(leer("projects.json"))) {
     for (const d of Object.keys(p.disciplinas ?? {})) assert.ok(!RESERVADAS.includes(d), `${p.id}: ${d} es una ruta reservada`);
   }
