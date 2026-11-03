@@ -5,6 +5,8 @@ import { posix } from "node:path";
 
 // Ruta de una página en el portal: openwiki/packages/index.md -> /<id>/packages/
 export function pageRoute(id, rel) {
+  // El index.md raíz de la wiki es el resumen de Software (la carátula de /<id>/ no sale de la wiki).
+  if (rel === "index.md") return `/${id}/software/`;
   const slug = rel.replace(/\.md$/, "").replace(/(^|\/)index$/, "");
   return `/${id}/${slug ? `${slug}/` : ""}`;
 }
