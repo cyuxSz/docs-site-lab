@@ -8,7 +8,7 @@ import "../styles/global.css";
 import temaScript from "../scripts/tema-inline.js?raw";
 import { isRestricted } from "../../access.config.js";
 import { ATAJOS } from "../lib/atajos.ts";
-import { themeStyle, type ProjectTheme } from "../lib/data";
+import { themeStyle, nombreCorto, type ProjectTheme } from "../lib/data";
 import type { Sugerencia } from "../lib/lectura.ts";
 
 interface Props {
@@ -41,7 +41,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
     <a class="sr-only skip-link" href="#contenido">Saltar al contenido</a>
     <header class="topbar">
       <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span><span>VantTEC <span class="brand-light">Docs</span></span></a>
-      {project && <a class="crumb" href={`/${project.id}/`}>{project.name}</a>}
+      {project && <a class="crumb" href={`/${project.id}/`}>{nombreCorto(project.name)}</a>}
       <nav class="topnav" aria-label="Principal">
         <button class="search-btn" type="button" data-search-open aria-label="Buscar (Ctrl K o tecla /)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
@@ -57,7 +57,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
     </header>
 
     {project && pestanasSoftware && (
-      <nav class="ptabs" aria-label={`Secciones de ${project.name}`}>
+      <nav class="ptabs" aria-label={`Secciones de ${nombreCorto(project.name)}`}>
         <a href={`/${project.id}/software/`} data-astro-prefetch aria-current={current === "resumen" ? "page" : undefined}>Resumen</a>
         {project.wiki && <a href={project.wiki} data-astro-prefetch aria-current={current === "wiki" ? "page" : undefined}>Wiki</a>}
         <a href={`/${project.id}/grafo/`} data-astro-prefetch aria-current={current === "grafo" ? "page" : undefined}>Grafo</a>
@@ -67,8 +67,8 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
     )}
 
     {project && esDisciplina && (
-      <nav class="phead" aria-label={`Secciones de ${project.name}`}>
-        <a href={`/${project.id}/`} data-astro-prefetch aria-label={`Volver a ${project.name}: Software, Electrónica y Mecánica`}><span aria-hidden="true">← </span>{project.name}</a>
+      <nav class="phead" aria-label={`Secciones de ${nombreCorto(project.name)}`}>
+        <a href={`/${project.id}/`} data-astro-prefetch aria-label={`Volver a ${nombreCorto(project.name)}: Software, Electrónica y Mecánica`}><span aria-hidden="true">← </span>{nombreCorto(project.name)}</a>
         <span aria-current="page">{project.disciplinas?.find((d) => d.id === current)?.etiqueta ?? current}</span>
       </nav>
     )}

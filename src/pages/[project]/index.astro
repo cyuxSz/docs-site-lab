@@ -4,9 +4,8 @@
 import Base from "../../layouts/Base.astro";
 import VehicleArt from "../../components/VehicleArt.astro";
 import EstadoProyecto from "../../components/EstadoProyecto.astro";
-import { portal, project as load, projectNav, tarjetasCaratula, nombreCorto, nombreRepo } from "../../lib/data";
+import { portal, project as load, projectNav, tarjetasCaratula, nombreCorto, nombreRepo, fmtDate } from "../../lib/data";
 import type { ProjectData } from "../../lib/data";
-import { conteoNodos } from "../../lib/conteos.ts";
 
 export function getStaticPaths() {
   return portal().projects.map((p) => ({ params: { project: p.id } }));
@@ -21,7 +20,6 @@ const tarjetas = sinConstruir ? [] : tarjetasCaratula(p);
 const conSoloSoftware = tarjetas.length <= 1;
 const corto = nombreCorto(p.name);
 const repoNombre = nombreRepo(p.name);
-const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
 ---
 {sinConstruir ? (
   <Base title={`${p.name} · VantTec Docs`} description={p.summary}>
@@ -64,12 +62,16 @@ const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
               t.id === "software" ? (
                 <a class="card caratula-card" href={t.href} data-astro-prefetch data-caratula="software">
                   <span class="card-title">{t.titulo}</span>
-                  <span class="card-desc">{t.descripcion}</span>
                   {repoNombre && <span class="card-meta">Repositorio <code>{repoNombre}</code></span>}
                   {p.note && <span class="card-note">{p.note}</span>}
-                  <span class="card-meta caratula-cifras">
-                    {p.pages} páginas · {p.claims} afirmaciones{p.ros ? ` · ${conteo.enUso} nodos ROS en uso` : ""}
+                  <span class="card-desc">{p.summary}</span>
+                  <span class="vcard-chips">
+                    <span>{resumen.pages} páginas</span>
+                    <span>{resumen.claims} afirmaciones</span>
+                    {resumen.rosNodes ? <span>{resumen.rosNodes} elementos ROS</span> : null}
+                    {resumen.diagrams ? <span>{resumen.diagrams} diagrama(s)</span> : null}
                   </span>
+                  <span class="card-meta">Actualizado {fmtDate(resumen.updated)}</span>
                 </a>
               ) : (
                 <a class="card caratula-card" href={t.href} data-astro-prefetch data-caratula-hw={t.id} data-proyecto={p.id}>
