@@ -191,3 +191,17 @@ test("vercel.json: /<id>/content/* redirige a /<id>/software/", () => {
 test("projects.json: ninguna disciplina se llama software", () => {
   for (const p of JSON.parse(read("projects.json"))) assert.ok(!Object.hasOwn(p.disciplinas ?? {}, "software"), p.id);
 });
+
+test("Base.astro: pestanaActiva se importa en el script del navegador (no solo en el frontmatter)", () => {
+  const src = read(BASE);
+  const script = src.slice(src.lastIndexOf("<script>"));
+  assert.match(script, /import\s*\{[^}]*pestanaActiva[^}]*\}\s*from\s*["']\.\.\/lib\/caratula(\.ts)?["']/);
+});
+
+test("CSS: la carátula se centra con ancho máximo y margen lateral", () => {
+  const css = read("src/styles/global.css");
+  const r = css.match(/main\.caratula\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(r, /max-width:/);
+  assert.match(r, /margin:\s*0 auto/);
+  assert.match(r, /padding:/);
+});
