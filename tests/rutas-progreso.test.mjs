@@ -25,12 +25,12 @@ test("claves: separadas por proyecto, rol y página del paso (fase 0)", () => {
 test("marcar / leidos / reiniciar: guarda por paso y reiniciar solo borra ese rol de ese proyecto", () => {
   const ls = memoria();
   const a = almacenSeguro(() => ls);
-  marcar(a, "uuv", "control", "quickstart.md", true);
-  marcar(a, "uuv", "control", "packages/uuv_control.md", true);
-  marcar(a, "uuv", "vision", "quickstart.md", true);
-  marcar(a, "proyecto-x", "control", "operations/hardware.md", true);
+  marcar(a, "uuv", "control", paso("quickstart.md"), true);
+  marcar(a, "uuv", "control", paso("packages/uuv_control.md"), true);
+  marcar(a, "uuv", "vision", paso("quickstart.md"), true);
+  marcar(a, "proyecto-x", "control", paso("operations/hardware.md"), true);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [true, false, true, false, false]);
-  marcar(a, "uuv", "control", "packages/uuv_control.md", false);
+  marcar(a, "uuv", "control", paso("packages/uuv_control.md"), false);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [true, false, false, false, false]);
   reiniciar(a, "uuv", CONTROL);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [false, false, false, false, false]);
@@ -54,7 +54,7 @@ test("almacenSeguro: sin localStorage o si truena, no lanza y simplemente no rec
     },
   }));
   for (const a of [sinLs, roto, almacenSeguro(() => null), almacenSeguro(() => undefined)]) {
-    assert.doesNotThrow(() => marcar(a, "uuv", "control", "quickstart.md", true));
+    assert.doesNotThrow(() => marcar(a, "uuv", "control", paso("quickstart.md"), true));
     assert.doesNotThrow(() => reiniciar(a, "uuv", CONTROL));
     assert.deepEqual(leidos(a, "uuv", CONTROL), [false, false, false, false, false]);
     assert.equal(rolGuardado(a, "uuv", RUTAS), null);
