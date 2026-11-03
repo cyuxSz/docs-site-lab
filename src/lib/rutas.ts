@@ -93,9 +93,9 @@ function leido(alm: Almacen, p: string, rol: string, i: number, id: string): boo
 
 export const leidos = (alm: Almacen, p: string, ruta: Ruta): boolean[] => ruta.pasos.map((s, i) => leido(alm, p, ruta.id, i, idPaso(s)));
 
-// `paso` es el PasoRuta (o su id/página ya resuelto); `i` es su índice para borrar también la clave vieja.
-export function marcar(alm: Almacen, p: string, rol: string, paso: PasoRuta | string, hecho: boolean, i?: number) {
-  const id = typeof paso === "string" ? paso : idPaso(paso);
+// `paso` es el PasoRuta; `i` es su índice para borrar también la clave vieja.
+export function marcar(alm: Almacen, p: string, rol: string, paso: PasoRuta, hecho: boolean, i?: number) {
+  const id = idPaso(paso);
   if (hecho) alm.set(clavePaso(p, rol, id), "1");
   else {
     alm.remove(clavePaso(p, rol, id));
@@ -106,11 +106,14 @@ export function marcar(alm: Almacen, p: string, rol: string, paso: PasoRuta | st
 export function reiniciar(alm: Almacen, p: string, ruta: Ruta) {
   ruta.pasos.forEach((s, i) => {
     alm.remove(clavePaso(p, ruta.id, idPaso(s)));
+    alm.remove(clavePaso(p, ruta.id, s.page)); // clave intermedia, sin anchor
     alm.remove(clavePasoIndice(p, ruta.id, i));
   });
   // Claves viejas por índice más allá de la longitud actual (la ruta pudo encogerse).
   const viejas = new RegExp(`^rutas:${escRe(p)}:${escRe(ruta.id)}:\\d+$`);
-  for (const k of alm.claves?.() ?? []) if (viejas.test(k)) alm.remove(k);
+  // Claves por página de pasos que ya no están en la ruta.
+  const paginas = new RegExp(`^rutas:${escRe(p)}:${escRe(ruta.id)}:pagina:`);
+  for (const k of alm.claves?.() ?? []) if (viejas.test(k) || paginas.test(k)) alm.remove(k);
 }
 const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -120,9 +123,24 @@ export function progreso(l: boolean[]) {
   return { hechos, total: l.length, texto: `${hechos} de ${l.length}`, siguiente: i < 0 ? null : i };
 }
 
-export function pasoEnPagina(ruta: Ruta, page: string, l: boolean[]): number {
+const decodificar = (x: string) => {
+  try {
+    return decodeURIComponent(x);
+  } catch {
+    return x;
+  }
+};
+
+// `hash` es location.hash: si coincide con el anchor de un paso de la página, ese paso; si no, el primero no leído.
+export function pasoEnPagina(ruta: Ruta, page: string, l: boolean[], hash = ""): number {
   const idx = ruta.pasos.flatMap((s, i) => (s.page === page ? [i] : []));
   if (!idx.length) return -1;
+  if (hash) {
+    const h = hash.startsWith("#") ? hash : `#${hash}`;
+    const objetivo = decodificar(page + h);
+    const exacto = idx.find((i) => decodificar(idPaso(ruta.pasos[i])) === objetivo);
+    if (exacto !== undefined) return exacto;
+  }
   return idx.find((i) => !l[i]) ?? idx[0];
 }
 
@@ -148,11 +166,11 @@ export function rutaActiva(alm: Almacen, p: string, rutas: Ruta[]): string | nul
   return id && rutas.some((r) => r.id === id) ? id : null;
 }
 
-export function pasoActivo(alm: Almacen, p: string, rutas: Ruta[], page: string): { ruta: Ruta; i: number } | null {
+export function pasoActivo(alm: Almacen, p: string, rutas: Ruta[], page: string, hash = ""): { ruta: Ruta; i: number } | null {
   const id = rutaActiva(alm, p, rutas);
   const ruta = rutas.find((r) => r.id === id);
   if (!ruta) return null;
-  const i = pasoEnPagina(ruta, page, leidos(alm, p, ruta));
+  const i = pasoEnPagina(ruta, page, leidos(alm, p, ruta), hash);
   return i >= 0 ? { ruta, i } : null;
 }
 
