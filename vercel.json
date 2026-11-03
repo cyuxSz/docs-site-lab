@@ -13,7 +13,7 @@
     },
     {
       "source": "/:project/content/:path*",
-      "destination": "/:project/",
+      "destination": "/:project/software/",
       "permanent": true
     }
   ],

@@ -1,12 +1,11 @@
 ---
+// Carátula del proyecto: título, arte del vehículo y tarjetas Software · Electrónica · Mecánica.
+// La portada de software vive en software.astro. Un proyecto sin disciplinas salta directo a Software.
 import Base from "../../layouts/Base.astro";
-import SideNav from "../../components/SideNav.astro";
 import VehicleArt from "../../components/VehicleArt.astro";
 import EstadoProyecto from "../../components/EstadoProyecto.astro";
-import { portal, project as load, fmtDate, projectNav, STATUS_LABEL } from "../../lib/data";
+import { portal, project as load, projectNav, tarjetasCaratula } from "../../lib/data";
 import type { ProjectData } from "../../lib/data";
-import { isRestricted } from "../../../access.config.js";
-import { novedades } from "../../lib/novedades.ts";
 import { conteoNodos } from "../../lib/conteos.ts";
 
 export function getStaticPaths() {
@@ -18,21 +17,9 @@ const resumen = projects.find((x) => x.id === Astro.params.project)!;
 // Un proyecto con error o vacío no tiene data/<id>.json (y no se llama a load()): solo se muestra su estado.
 const sinConstruir = Boolean(resumen.error || resumen.empty);
 const p = (sinConstruir ? resumen : load(resumen.id)) as ProjectData;
-// Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
-const restricted = isRestricted(p.id);
-const packages = sinConstruir ? [] : p.pageList.filter((x) => x.path.startsWith("packages/") && x.type !== "index");
-const highlight = sinConstruir ? [] : ["quickstart.md", "onboarding.md", "operations/estado.md", "architecture/overview.md"]
-  .map((path) => p.pageList.find((x) => x.path === path))
-  .filter((x) => x !== undefined);
-const recientes = sinConstruir ? [] : novedades(p.pageList, p.repoUrl ?? "", 3);
-const rosNodes = sinConstruir ? [] : p.ros?.nodes.filter((n) => n.category === "ros2_node") ?? [];
+const tarjetas = sinConstruir ? [] : tarjetasCaratula(p);
+const conSoloSoftware = tarjetas.length <= 1;
 const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
-const statusOf = (pkg: string) => {
-  const own = rosNodes.filter((n) => n.package === pkg);
-  return Object.keys(STATUS_LABEL)
-    .map((s) => [s, own.filter((n) => n.status === s).length] as const)
-    .filter(([, c]) => c);
-};
 ---
 {sinConstruir ? (
   <Base title={`${p.name} · VantTec Docs`} description={p.summary}>
@@ -44,18 +31,23 @@ const statusOf = (pkg: string) => {
       </main>
     </div>
   </Base>
+) : conSoloSoftware ? (
+  <Base title={`${p.name} · VantTec Docs`} description={p.summary} project={projectNav(p)} current="caratula">
+    <meta http-equiv="refresh" content={`0; url=/${p.id}/software/`} slot="head" />
+    <div class="container">
+      <main id="contenido" tabindex="-1" data-caratula-redirige data-pagefind-ignore="all">
+        <h1>{p.name}</h1>
+        <p><a class="btn btn-primary" href={`/${p.id}/software/`}>Ir a Software</a></p>
+      </main>
+    </div>
+    <script>
+      import "../../scripts/caratula";
+    </script>
+  </Base>
 ) : (
-<Base title={`${p.name} · VantTec Docs`} description={p.summary} project={projectNav(p)} current="resumen">
-  <div class="container">
-    <div class="doc doc-2">
-      <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} hasDiagrams={p.diagramList.length > 0} />
-      <main id="contenido" tabindex="-1" data-pagefind-body={restricted ? undefined : ""}>
-        {!restricted && <meta data-pagefind-filter="proyecto[content]" content={p.name} />}
-        {!restricted && <meta data-pagefind-filter="tipo[content]" content="Resumen" />}
-        <a class="card continuar" data-continuar-visita data-proyecto={p.id} hidden data-pagefind-ignore href={`/${p.id}/`}></a>
-        <section class="block favoritos" data-favoritos-lista data-proyecto={p.id} data-pagefind-ignore hidden>
-          <div class="block-head"><h2>Favoritos</h2></div>
-        </section>
+  <Base title={`${p.name} · VantTec Docs`} description={p.summary} project={projectNav(p)} current="caratula">
+    <div class="container">
+      <main id="contenido" tabindex="-1" class="caratula" data-pagefind-ignore="all">
         <section class="hero phero">
           <div>
             <p class="eyebrow">{p.tagline ?? "Proyecto"}</p>
@@ -65,135 +57,31 @@ const statusOf = (pkg: string) => {
           </div>
           <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
         </section>
-        <section>
-          <dl class="stats stats-proyecto">
-            <div><dt>Páginas</dt><dd>{p.pages}</dd></div>
-            <div><dt>Afirmaciones verificadas</dt><dd>{p.claims}</dd></div>
-            {p.ros && <div><dt>Nodos ROS en uso</dt><dd>{conteo.enUso}<span class="muted stats-sub">de {conteo.total} nodos del repo</span></dd></div>}
-            {p.ros && <div><dt>Nodos rotos</dt><dd class={conteo.rotos ? "stats-danger" : undefined}>{conteo.rotos}</dd></div>}
-            <div><dt>Actualizado</dt><dd class="stats-fecha">{fmtDate(p.updated)}</dd></div>
-          </dl>
-        </section>
-
-        {(highlight.length > 0 || p.rutas?.length) && (
-          <section class="block">
-            <div class="block-head"><h2>Empieza aquí</h2></div>
-            <div class="cards">
-              {p.rutas?.length ? (
-                <a class="card" href={`/${p.id}/rutas/`} data-astro-prefetch>
-                  <span class="card-title">Rutas por rol</span>
-                  <span class="card-desc">Qué leer, y en qué orden, según tu área: {p.rutas.map((r) => r.nombre).join(", ")}.</span>
-                  <span class="card-link">Elegir mi ruta →</span>
-                </a>
-              ) : null}
-              {highlight.map((x) => (
-                <a class="card" href={x.route} data-astro-prefetch>
-                  <span class="card-title">{x.title}</span>
-                  <span class="card-desc">{x.description}</span>
-                  <span class="card-link">Leer →</span>
-                </a>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {p.ros && (
-          <section class="block" data-pagefind-ignore>
-            <div class="block-head">
-              <h2>Configuraciones</h2>
-              <a class="btn btn-primary" href={`/${p.id}/grafo/`} data-astro-prefetch>Abrir el grafo</a>
-            </div>
-            <p class="hint">Cada configuración es un launch file en uso. El grafo filtrado muestra solo sus nodos, topics y hardware.</p>
-            <p class="hint"><a href={`/${p.id}/limpieza/`} data-astro-prefetch>Limpieza del repo</a>: {conteo.sinUso} sin uso y {conteo.legado} legado por revisar.</p>
-            <div class="cards">
-              {p.ros.configs.map((c) => {
-                const launch = p.ros!.launches.find((l) => l.path === c.launch);
-                return (
-                  <a class="card" href={`/${p.id}/grafo/?config=${c.id}`} data-astro-prefetch>
-                    <span class="card-title">{c.label}</span>
-                    <span class="card-desc"><code>{c.launch.split("/").slice(-2).join("/")}</code></span>
-                    <span class="card-meta">{launch?.nodes.length ?? 0} nodos{launch?.broken.length ? ` · ${launch.broken.length} roto(s)` : ""}</span>
-                  </a>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {packages.length > 0 && (
-          <section class="block">
-            <div class="block-head"><h2>Paquetes</h2></div>
-            <div class="cards">
-              {packages.map((x) => {
-                const pkg = x.path.replace(/^packages\/|\.md$/g, "");
-                return (
-                  <a class="card" href={x.route} data-astro-prefetch>
-                    <span class="card-title mono">{x.title}</span>
-                    <span class="card-desc">{x.description}</span>
-                    {p.ros && statusOf(pkg).length > 0 && (
-                      <span class="card-meta card-badges">
-                        {statusOf(pkg).map(([s, c]) => <span class={`badge badge-${s}`}>{c} {STATUS_LABEL[s].toLowerCase()}</span>)}
-                      </span>
-                    )}
-                    {(x.claims > 0 || x.owner) && <span class="card-meta">{x.claims > 0 && <>{x.claims} afirmaciones{x.owner ? " · " : ""}</>}{x.owner}</span>}
-                  </a>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {p.diagramList.length > 0 && (
-          <section class="block" id="diagramas">
-            <div class="block-head"><h2>Diagramas</h2></div>
-            <p class="hint">Diagramas interactivos de Archify. Se abren aparte porque pesan cientos de KB.</p>
-            <div class="cards">
-              {p.diagramList.map((d) => (
-                <a class="card" href={d.file} target="_blank" rel="noopener">
-                  <span class="card-title">{d.title}</span>
-                  <span class="card-meta">{d.kb} KB</span>
-                  <span class="card-link">Abrir a pantalla completa ↗</span>
-                </a>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {recientes.length > 0 && (
-          <section class="block" data-pagefind-ignore>
-            <div class="block-head">
-              <h2>Novedades</h2>
-              <a class="btn" href={`/${p.id}/novedades/`} data-astro-prefetch>Ver todas</a>
-            </div>
-            <ul class="plain-list">
-              {recientes.map((x) => (
-                <li><a href={x.route} data-astro-prefetch>{x.title}</a> <span class="muted">· {fmtDate(x.updated)}{x.author && ` · ${x.author}`}</span></li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         <section class="block">
-          <p class="hint">
-            Construido desde <a href={`${p.repoUrl}/tree/${p.sha}`}><code>{p.repo}@{p.sha?.slice(0, 7)}</code></a>
-            {p.lastUpdate?.date && <span> · última revisión de la wiki: {fmtDate(p.lastUpdate.date)}</span>}
-          </p>
+          <div class="cards caratula-cards">
+            {tarjetasCaratula(p).map((t) =>
+              t.id === "software" ? (
+                <a class="card caratula-card" href={t.href} data-astro-prefetch data-caratula="software">
+                  <span class="card-title">{t.titulo}</span>
+                  <span class="card-desc">{t.descripcion}</span>
+                  <span class="card-meta caratula-cifras">
+                    {p.pages} páginas · {p.claims} afirmaciones{p.ros ? ` · ${conteo.enUso} nodos ROS en uso` : ""}
+                  </span>
+                </a>
+              ) : (
+                <a class="card caratula-card" href={t.href} data-astro-prefetch data-caratula-hw={t.id} data-proyecto={p.id}>
+                  <span class="card-title">{t.titulo}</span>
+                  <span class="card-desc">{t.descripcion}</span>
+                  <span class="card-meta caratula-cifras" data-caratula-cifras></span>
+                </a>
+              ),
+            )}
+          </div>
         </section>
       </main>
     </div>
-  </div>
-  <script>
-    import "../../scripts/personal";
-  </script>
-  <script>
-    // Enlaces del portal anterior: /<id>/#/p/<ruta>.md -> /<id>/<ruta>/
-    const m = location.hash.match(/^#\/p\/(.+)$/);
-    if (m) {
-      const id = location.pathname.split("/")[1];
-      const slug = decodeURIComponent(m[1]).replace(/\.md$/, "").replace(/(^|\/)index$/, "");
-      // Solo rutas internas: el hash viene de la URL y no debe poder sacar al usuario del sitio.
-      if (/^[\w./-]*$/.test(slug) && !slug.includes("..")) location.replace(`/${id}/${slug ? slug + "/" : ""}`);
-    }
-  </script>
-</Base>
+    <script>
+      import "../../scripts/caratula";
+    </script>
+  </Base>
 )}

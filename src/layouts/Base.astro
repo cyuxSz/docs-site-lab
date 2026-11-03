@@ -10,18 +10,21 @@ import { isRestricted } from "../../access.config.js";
 import { ATAJOS } from "../lib/atajos.ts";
 import { themeStyle, type ProjectTheme } from "../lib/data";
 import type { Sugerencia } from "../lib/lectura.ts";
+import { pestanaActiva } from "../lib/caratula.ts";
 
 interface Props {
   title: string;
   description?: string;
   // Con proyecto: pestañas Resumen / Wiki / Grafo / Diagramas y sus colores (projectNav en lib/data.ts).
   project?: { id: string; name: string; theme?: ProjectTheme; wiki?: string; diagrams?: boolean; repoUrl?: string; sugerencias?: Sugerencia[]; disciplinas?: { id: string; etiqueta: string; href: string }[] };
-  current?: "resumen" | "wiki" | "grafo" | "electronica" | "mecanica";
+  current?: "resumen" | "wiki" | "grafo" | "electronica" | "mecanica" | "caratula";
 }
 const { title, description = "Documentación de los proyectos de software de VantTec.", project, current } = Astro.props;
 const sugerencias = project?.sugerencias ?? [];
 // Electrónica y Mecánica se editan en la propia web (no viven en openwiki/ del repo).
 const esDisciplina = current === "electronica" || current === "mecanica";
+// Las pestañas son de Software: ni la carátula (su navegación son las tarjetas) ni las disciplinas las muestran.
+const pestanasSoftware = !esDisciplina && current !== "caratula";
 ---
 <!doctype html>
 <html lang="es">
@@ -33,6 +36,7 @@ const esDisciplina = current === "electronica" || current === "mecanica";
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script is:inline set:html={temaScript} />
+    <slot name="head" />
   </head>
   <body data-pagefind-ignore={project && isRestricted(project.id) ? "all" : undefined} class:list={{ "has-proj": project?.theme }} style={themeStyle(project?.theme)}>
     <a class="sr-only skip-link" href="#contenido">Saltar al contenido</a>
@@ -53,14 +57,20 @@ const esDisciplina = current === "electronica" || current === "mecanica";
       </nav>
     </header>
 
-    {project && (
+    {project && pestanasSoftware && (
       <nav class="ptabs" aria-label={`Secciones de ${project.name}`}>
-        <a href={`/${project.id}/`} data-astro-prefetch aria-current={current === "resumen" ? "page" : undefined}>Resumen</a>
+        <a href={`/${project.id}/software/`} data-astro-prefetch aria-current={current === "resumen" ? "page" : undefined}>Resumen</a>
         {project.wiki && <a href={project.wiki} data-astro-prefetch aria-current={current === "wiki" ? "page" : undefined}>Wiki</a>}
         <a href={`/${project.id}/grafo/`} data-astro-prefetch aria-current={current === "grafo" ? "page" : undefined}>Grafo</a>
-        {project.diagrams && <a href={`/${project.id}/#diagramas`} data-astro-prefetch>Diagramas</a>}
-        {project.disciplinas?.map((d) => <a href={d.href} data-astro-prefetch aria-current={current === d.id ? "page" : undefined}>{d.etiqueta}</a>)}
+        {project.diagrams && <a href={`/${project.id}/software/#diagramas`} data-astro-prefetch data-ptab-ancla="diagramas">Diagramas</a>}
         {project.repoUrl && <a href={project.repoUrl} class="ptab-ext">Código</a>}
+      </nav>
+    )}
+
+    {project && esDisciplina && (
+      <nav class="phead" aria-label={`Secciones de ${project.name}`}>
+        <a href={`/${project.id}/`} data-astro-prefetch>← {project.name}</a>
+        <span aria-current="page">{project.disciplinas?.find((d) => d.id === current)?.etiqueta ?? current}</span>
       </nav>
     )}
 
@@ -124,6 +134,21 @@ const esDisciplina = current === "electronica" || current === "mecanica";
       import "../scripts/busqueda";
       // En pantallas estrechas las pestañas desbordan: la activa se acerca a la vista (sin animar si se pidió menos movimiento).
       // Solo se desplaza .ptabs en horizontal (scrollIntoView podía mover también ancestros verticales).
+      // Diagramas es un ancla de /<id>/software/: con #diagramas, aria-current pasa de Resumen a Diagramas (y vuelve).
+      const ptabs = document.querySelector<HTMLElement>(".ptabs");
+      const resumenTab = ptabs?.querySelector<HTMLElement>("a[aria-current='page']:not([data-ptab-ancla])");
+      const diagramasTab = ptabs?.querySelector<HTMLElement>("a[data-ptab-ancla='diagramas']");
+      if (resumenTab && diagramasTab && location.pathname.endsWith("/software/")) {
+        const sync = () => {
+          const d = pestanaActiva(location.hash) === "diagramas";
+          if (d) resumenTab.removeAttribute("aria-current");
+          else resumenTab.setAttribute("aria-current", "page");
+          if (d) diagramasTab.setAttribute("aria-current", "page");
+          else diagramasTab.removeAttribute("aria-current");
+        };
+        sync();
+        addEventListener("hashchange", sync);
+      }
       const activa = document.querySelector<HTMLElement>(".ptabs a[aria-current]");
       const tabs = activa?.closest<HTMLElement>(".ptabs");
       if (activa && tabs) {

@@ -181,3 +181,31 @@ export function projectNav(p: ProjectData) {
   const first = p.pageList.find((x) => x.path === "quickstart.md") ?? p.pageList.find((x) => x.type !== "index" && x.type !== "meta");
   return { id: p.id, name: p.name, theme: p.theme, wiki: first?.route, diagrams: p.diagramList.length > 0, repoUrl: p.repoUrl, sugerencias: sugerenciasBusqueda(p.pageList), disciplinas: disciplinasNav(p) };
 }
+
+// Descripción corta de cada tarjeta de la carátula.
+const DESCRIPCION_CARATULA: Record<string, string> = {
+  software: "Wiki, grafo ROS, paquetes y diagramas del código.",
+  electronica: "Arquitectura eléctrica, PCB y conexiones.",
+  mecanica: "Ensamble, piezas y planos del vehículo.",
+};
+
+// Tarjetas de /<id>/: Software y las disciplinas declaradas, en orden fijo. Nunca editores ni plantilla.
+export function tarjetasCaratula(p: Pick<ProjectSummary, "id" | "disciplinas">): { id: string; titulo: string; href: string; descripcion: string }[] {
+  const ids = Object.keys(p.disciplinas ?? {});
+  const orden = [...ORDEN_DISCIPLINAS.filter((d) => ids.includes(d)), ...ids.filter((d) => !ORDEN_DISCIPLINAS.includes(d))];
+  return [
+    { id: "software", titulo: "Software", href: `/${p.id}/software/`, descripcion: DESCRIPCION_CARATULA.software },
+    ...orden.map((id) => {
+      const titulo = ETIQUETA_DISCIPLINA[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
+      return { id, titulo, href: `/${p.id}/${id}/`, descripcion: DESCRIPCION_CARATULA[id] ?? `Documentación de ${titulo.toLowerCase()}.` };
+    }),
+  ];
+}
+
+// Dónde entra el portal a un proyecto: la carátula si tiene disciplinas; si no, directo a Software.
+export const entradaProyecto = (p: Pick<ProjectSummary, "id" | "disciplinas">) =>
+  Object.keys(p.disciplinas ?? {}).length > 0 ? `/${p.id}/` : `/${p.id}/software/`;
+
+// Slugs de la wiki que no se generan porque la ruta ya es de otra página (software.astro, grafo, etc.) o de una disciplina.
+const SLUGS_FIJOS = ["software", "grafo", "limpieza", "novedades", "comentarios"];
+export const slugReservado = (slug: string, disciplinas: string[] = []) => SLUGS_FIJOS.includes(slug) || disciplinas.includes(slug);

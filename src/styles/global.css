@@ -791,3 +791,16 @@ tr[hidden] { display: none; }
   .hw-progreso { width: 100%; }
   .hw-lectura table, .hw-previa table { display: block; overflow-x: auto; }
 }
+
+/* Carátula del proyecto (/<id>/): tarjetas de disciplinas; la línea de cifras reserva su alto para no mover el diseño */
+.caratula-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.caratula-card { text-decoration: none; color: var(--text); }
+.caratula-card:hover { border-color: var(--accent); }
+.caratula-cifras { display: block; min-height: 1.4em; font-variant-numeric: tabular-nums; }
+@media (max-width: 800px) { .caratula-cards { grid-template-columns: 1fr; } }
+
+/* Cabecera de Electrónica y Mecánica: vuelta a la carátula y disciplina actual */
+.phead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; max-width: calc(100% - 24px); margin: 14px auto 0; padding: 6px 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); width: fit-content; font-size: 14px; font-weight: 600; }
+.phead a { color: var(--muted); text-decoration: none; }
+.phead a:hover { color: var(--text); }
+.phead [aria-current="page"] { color: var(--text); }
