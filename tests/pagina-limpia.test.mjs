@@ -172,9 +172,9 @@ test("C6 global.css: botón de salir de la ruta con tokens y foco visible", () =
 });
 
 // ---------- 7. Slogan ----------
-test("C7 portada: 'Explorando el código de cada vehículo'", () => {
+test("C7 portada: 'Software, electrónica y mecánica de cada vehículo'", () => {
   const src = read("src/pages/index.astro");
-  assert.match(src, /<h1>Explorando el <span class="grad">código<\/span> de cada vehículo<\/h1>/);
+  assert.match(src, /<h1>Software, electrónica y mecánica de <span class="grad">cada vehículo<\/span><\/h1>/);
   assert.doesNotMatch(src, /Navegando/);
 });
 
