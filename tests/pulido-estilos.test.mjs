@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const css = read("src/styles/global.css");
-const INDICE = read("src/pages/[project]/index.astro");
+const INDICE = read("src/pages/[project]/software.astro"); // lote carátula: la portada de software vive aquí
 const PAGINA = read("src/pages/[project]/[...slug].astro");
 
 // Cuerpos de todas las reglas (también dentro de @media) cuya lista de selectores incluye exactamente uno de `sels`.
