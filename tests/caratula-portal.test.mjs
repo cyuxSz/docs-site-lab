@@ -214,6 +214,6 @@ test(".phead: la flecha está oculta a lectores y el enlace tiene nombre accesib
 
 test("scripts/caratula.ts: valida el id antes de cualquier location.replace", () => {
   const js = read(SCRIPT);
-  assert.ok(js.includes("/^[\w-]+$/.test(id)"), "valida el id");
+  assert.ok(js.includes(String.raw`/^[\w-]+$/.test(id)`), "valida el id");
   assert.match(js, /idValido && document\.querySelector/);
 });
