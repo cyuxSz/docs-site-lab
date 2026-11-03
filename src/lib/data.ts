@@ -72,6 +72,7 @@ export interface ProjectSummary {
   note?: string;
   // Carátula: descripción propia (si falta, se usa summary).
   descripcionCaratula?: string;
+  resumenInicio?: string;
   // Documentación de hardware por disciplina (API /api/hardware): plantilla inicial y logins que pueden editar.
   disciplinas?: Record<string, { plantilla: string; editores: string[] }>;
   // Aviso opcional arriba de /<id>/novedades/.

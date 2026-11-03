@@ -64,12 +64,27 @@ test("carátula: ya no contiene la portada de software", () => {
   assert.doesNotMatch(s, /content="Resumen"/, "el «Resumen» de la búsqueda es /<id>/software/");
 });
 
-test("carátula: la tarjeta Software muestra páginas, afirmaciones y nodos del build", () => {
+test("carátula: la tarjeta Software lleva la información de software del proyecto (resumen, cifras y fecha), sin ilustración", () => {
   const s = read(CARATULA);
-  assert.match(s, /data-caratula="software"/);
-  assert.match(s, /p\.pages/);
-  assert.match(s, /p\.claims/);
-  assert.match(s, /conteoNodos\(/);
+  const tarjeta = s.match(/<a class="card caratula-card"[^>]*data-caratula="software">[^]*?<\/a>/)?.[0] ?? "";
+  assert.ok(tarjeta, "tarjeta Software");
+  for (const campo of ["resumen.pages", "resumen.claims", "resumen.rosNodes", "resumen.diagrams", "resumen.updated", "p.summary", "p.note"]) {
+    assert.ok(tarjeta.includes(campo), `la tarjeta usa ${campo}`);
+  }
+  assert.ok(!tarjeta.includes("VehicleArt"), "la tarjeta no lleva ilustración");
+});
+
+test("inicio: con disciplinas la tarjeta del proyecto es general (nombre corto y resumen) y sin disciplinas conserva el contenido de software", () => {
+  const s = read("src/pages/index.astro");
+  assert.match(s, /const general = live && Object\.keys\(p\.disciplinas \?\? \{\}\)\.length > 0/);
+  assert.match(s, /general \? nombreCorto\(p\.name\) : p\.name/);
+  assert.match(s, /general \? \(p\.resumenInicio \?\? p\.summary\) : p\.summary/);
+  assert.match(s, /!general && p\.note/);
+});
+
+test("encabezado: el rastro de la barra superior usa solo el nombre corto del proyecto", () => {
+  const b = read(BASE);
+  assert.match(b, /class="crumb" href=\{`\/\$\{project\.id\}\/`\}>\{nombreCorto\(project\.name\)\}/);
 });
 
 test("carátula: tarjetas de hardware son enlaces con hueco reservado para las cifras", () => {
@@ -209,7 +224,7 @@ test("CSS: la carátula se centra con ancho máximo y margen lateral", () => {
 test(".phead: la flecha está oculta a lectores y el enlace tiene nombre accesible claro", () => {
   const head = read(BASE).match(/<nav class="phead"[^]*?<\/nav>/)?.[0] ?? "";
   assert.match(head, /<span aria-hidden="true">←/);
-  assert.match(head, /aria-label=\{`Volver a \$\{project\.name\}/);
+  assert.match(head, /aria-label=\{`Volver a \$\{nombreCorto\(project\.name\)\}/);
 });
 
 test("scripts/caratula.ts: valida el id antes de cualquier location.replace", () => {
