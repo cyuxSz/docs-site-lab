@@ -4,7 +4,7 @@
 import Base from "../../layouts/Base.astro";
 import VehicleArt from "../../components/VehicleArt.astro";
 import EstadoProyecto from "../../components/EstadoProyecto.astro";
-import { portal, project as load, projectNav, tarjetasCaratula } from "../../lib/data";
+import { portal, project as load, projectNav, tarjetasCaratula, nombreCorto, nombreRepo, sitioOficial } from "../../lib/data";
 import type { ProjectData } from "../../lib/data";
 import { conteoNodos } from "../../lib/conteos.ts";
 
@@ -19,6 +19,9 @@ const sinConstruir = Boolean(resumen.error || resumen.empty);
 const p = (sinConstruir ? resumen : load(resumen.id)) as ProjectData;
 const tarjetas = sinConstruir ? [] : tarjetasCaratula(p);
 const conSoloSoftware = tarjetas.length <= 1;
+const corto = nombreCorto(p.name);
+const repoNombre = nombreRepo(p.name);
+const sitio = sitioOficial(p.sitioOficial);
 const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
 ---
 {sinConstruir ? (
@@ -51,9 +54,8 @@ const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
         <section class="hero phero">
           <div>
             <p class="eyebrow">{p.tagline ?? "Proyecto"}</p>
-            <h1>{p.name}</h1>
-            <p class="lead">{p.summary}</p>
-            {p.note && <p class="card-note">{p.note}</p>}
+            <h1>{corto}</h1>
+            <p class="lead">{p.descripcionCaratula ?? p.summary}</p>
           </div>
           <VehicleArt kind={p.kind} image={p.image} alt={`Ilustración de ${p.name}`} />
         </section>
@@ -64,6 +66,8 @@ const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
                 <a class="card caratula-card" href={t.href} data-astro-prefetch data-caratula="software">
                   <span class="card-title">{t.titulo}</span>
                   <span class="card-desc">{t.descripcion}</span>
+                  {repoNombre && <span class="card-meta">Repositorio <code>{repoNombre}</code></span>}
+                  {p.note && <span class="card-note">{p.note}</span>}
                   <span class="card-meta caratula-cifras">
                     {p.pages} páginas · {p.claims} afirmaciones{p.ros ? ` · ${conteo.enUso} nodos ROS en uso` : ""}
                   </span>
@@ -78,6 +82,14 @@ const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
             )}
           </div>
         </section>
+        {sitio && (
+          <section class="block caratula-por-que">
+            <div class="block-head"><h2>¿Por qué aquí y no en {sitio.host}?</h2></div>
+            <p>
+              {sitio.host} presenta {corto} al público: el equipo, los patrocinadores, las pruebas en agua y los resultados. Este portal es la documentación de trabajo del equipo. Cada afirmación de la wiki enlaza a la línea de código que la respalda, y el CI avisa cuando el código y la documentación dejan de coincidir. El grafo de nodos ROS se genera del repositorio en cada build. Electrónica y Mecánica se editan aquí mismo con historial de versiones, y hay rutas de lectura por área para quien llega nuevo. Si vas a modificar, depurar o integrar algo del vehículo, empieza aquí; si quieres conocer el proyecto o compartirlo, ve a <a href={sitio.href} rel="noopener">{sitio.host}</a>.
+            </p>
+          </section>
+        )}
       </main>
     </div>
     <script>

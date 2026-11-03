@@ -6,6 +6,8 @@
     "repo": "cyuxSz/uuv-docs-lab",
     "branch": "main",
     "note": "Copia de prueba de vanttec/uuv_software",
+    "sitioOficial": "https://www.vanttec.com/#/uuv",
+    "descripcionCaratula": "Vehículo submarino autónomo de VantTEC para RoboSub 2026: chasis tipo costillar de nylamid, 6 propulsores, Jetson con ROS 2 y una máquina de estados de misión, visión con YOLO, localización EKF y control ASMC.",
     "novedadesNota": "Por ahora este repo es una copia de prueba del original, así que todos los cambios aparecen con el mismo autor.",
     "kind": "submarino",
     "tagline": "Vehículo submarino autónomo",

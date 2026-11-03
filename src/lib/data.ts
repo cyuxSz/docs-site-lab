@@ -70,6 +70,9 @@ export interface ProjectSummary {
   repo: string;
   branch: string;
   note?: string;
+  // Carátula: sitio público del proyecto (solo https) y descripción propia (si falta, se usa summary).
+  sitioOficial?: string;
+  descripcionCaratula?: string;
   // Documentación de hardware por disciplina (API /api/hardware): plantilla inicial y logins que pueden editar.
   disciplinas?: Record<string, { plantilla: string; editores: string[] }>;
   // Aviso opcional arriba de /<id>/novedades/.
@@ -209,3 +212,20 @@ export const entradaProyecto = (p: Pick<ProjectSummary, "id" | "disciplinas">) =
 // Slugs de la wiki que no se generan porque la ruta ya es de otra página (software.astro, grafo, etc.) o de una disciplina.
 const SLUGS_FIJOS = ["software", "grafo", "limpieza", "novedades", "comentarios"];
 export const slugReservado = (slug: string, disciplinas: string[] = []) => SLUGS_FIJOS.includes(slug) || disciplinas.includes(slug);
+
+// Nombre corto para el título de la carátula: «UUV · uuv_software» -> «UUV»; sin « · », el nombre entero.
+export const nombreCorto = (name: string) => name.split(" · ")[0];
+
+// Repositorio al que pertenece el proyecto: la parte tras « · » del nombre, o null si no la hay.
+export const nombreRepo = (name: string) => (name.includes(" · ") ? name.split(" · ").slice(1).join(" · ").trim() || null : null);
+
+// Sitio oficial válido: solo https (el valor sale de projects.json, pero no se enlaza nada que no lo sea).
+export function sitioOficial(url?: string): { href: string; host: string } | null {
+  if (typeof url !== "string") return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" ? { href: u.href, host: u.hostname.replace(/^www\./, "") } : null;
+  } catch {
+    return null;
+  }
+}
