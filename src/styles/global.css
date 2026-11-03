@@ -74,6 +74,7 @@ code { font: .9em var(--mono); overflow-wrap: anywhere; }
 /* Enlaces externos del texto (Base.astro les pone target="_blank"). */
 a.ext::after { content: "↗"; margin-left: 2px; font-size: .75em; opacity: .7; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip-link:focus, .skip-link:focus-visible { width: auto; height: auto; clip: auto; overflow: visible; z-index: 1000; top: 0.5rem; left: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg); color: var(--text); border: 2px solid var(--accent); border-radius: 0.375rem; }
 .muted { color: var(--muted); }
 
 /* Barra superior: píldora flotante de vidrio, como la de vanttec.com. */

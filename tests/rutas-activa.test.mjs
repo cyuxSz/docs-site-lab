@@ -64,7 +64,7 @@ test("pasoActivo: sin ruta activa no hay barra; con ruta activa, solo en sus pá
   activarRuta(a, "uuv", "control");
   assert.deepEqual(pasoActivo(a, "uuv", RUTAS, "operations/hardware.md"), { ruta: CONTROL, i: 1 });
   assert.equal(pasoActivo(a, "uuv", RUTAS, "packages/uuv_vision.md"), null, "página de otra ruta: nada");
-  R.marcar(a, "uuv", "control", 0, true);
+  R.marcar(a, "uuv", "control", paso("quickstart.md"), true);
   assert.deepEqual(pasoActivo(a, "uuv", RUTAS, "quickstart.md"), { ruta: CONTROL, i: 0 }, "usa pasoEnPagina");
   activarRuta(a, "uuv", "vision");
   assert.deepEqual(pasoActivo(a, "uuv", RUTAS, "quickstart.md"), { ruta: VISION, i: 0 });
