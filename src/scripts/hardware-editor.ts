@@ -101,6 +101,8 @@ async function iniciar(root: HTMLElement) {
   function actualizarGuardar(avisar = false) {
     const e = estadoGuardar(subidasActivas, guardando);
     btnGuardar.disabled = e.deshabilitado;
+    textarea.disabled = guardando;
+    inputArchivo.disabled = guardando;
     btnGuardar.title = e.aviso;
     if (e.aviso && avisar) mostrarEstado(e.aviso);
     else if (!e.aviso && lblEstado.textContent === AVISO_SUBIDAS) mostrarEstado("");
@@ -574,6 +576,7 @@ async function iniciar(root: HTMLElement) {
 
   // ---------- subida de archivos ----------
   function insertar(texto: string) {
+    if (guardando) return;
     const r = insertarEnTexto(textarea.value, textarea.selectionStart, textarea.selectionEnd, texto);
     textarea.value = r.texto;
     textarea.setSelectionRange(r.cursor, r.cursor);
@@ -639,6 +642,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   async function subirVarios(archivos: FileList | File[]) {
+    if (guardando) return;
     const lista = [...archivos];
     subidasActivas += lista.length;
     actualizarGuardar();

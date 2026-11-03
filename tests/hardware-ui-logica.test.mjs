@@ -180,3 +180,16 @@ test("mensajeError: 409 pide recargar sin perder el texto; 401/403/413/429/503 c
   assert.ok(mensajeError(500).length > 0);
   assert.ok(mensajeError("red").length > 0, "fallo de red");
 });
+
+test("editor: mientras guarda se deshabilitan textarea y selector de archivos y se ignoran inserciones y subidas", () => {
+  const src = leer("src/scripts/hardware-editor.ts");
+  const cuerpo = (firma) => {
+    const i = src.indexOf(firma);
+    assert.ok(i >= 0, `no encontré ${firma}`);
+    return src.slice(i, i + 400);
+  };
+  assert.match(cuerpo("function actualizarGuardar("), /textarea\.disabled = guardando/);
+  assert.match(cuerpo("function actualizarGuardar("), /inputArchivo\.disabled = guardando/);
+  assert.match(cuerpo("function insertar("), /if \(guardando\) return/);
+  assert.match(cuerpo("async function subirVarios("), /if \(guardando\) return/);
+});
