@@ -10,7 +10,6 @@ import { isRestricted } from "../../access.config.js";
 import { ATAJOS } from "../lib/atajos.ts";
 import { themeStyle, type ProjectTheme } from "../lib/data";
 import type { Sugerencia } from "../lib/lectura.ts";
-import { pestanaActiva } from "../lib/caratula.ts";
 
 interface Props {
   title: string;
@@ -132,6 +131,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
       import "../scripts/atajos";
       // Buscador (Pagefind UI, recientes y ?q=): carga diferida, Ctrl/Cmd+K y "/".
       import "../scripts/busqueda";
+      import { pestanaActiva } from "../lib/caratula.ts";
       // En pantallas estrechas las pestañas desbordan: la activa se acerca a la vista (sin animar si se pidió menos movimiento).
       // Solo se desplaza .ptabs en horizontal (scrollIntoView podía mover también ancestros verticales).
       // Diagramas es un ancla de /<id>/software/: con #diagramas, aria-current pasa de Resumen a Diagramas (y vuelve).

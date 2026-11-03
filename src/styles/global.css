@@ -793,6 +793,8 @@ tr[hidden] { display: none; }
 }
 
 /* Carátula del proyecto (/<id>/): tarjetas de disciplinas; la línea de cifras reserva su alto para no mover el diseño */
+/* Contenedor centrado de la carátula, con los mismos márgenes laterales que el resto del portal */
+main.caratula { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 .caratula-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .caratula-card { text-decoration: none; color: var(--text); }
 .caratula-card:hover { border-color: var(--accent); }
