@@ -12,6 +12,7 @@ export interface Tecla {
   escribiendo: boolean;
   dialogoAbierto: boolean;
   t: number;
+  repetida?: boolean;
 }
 
 const SEGUNDA: Record<string, Accion> = { w: "wiki", g: "grafo", n: "novedades" };
@@ -19,6 +20,7 @@ const SEGUNDA: Record<string, Accion> = { w: "wiki", g: "grafo", n: "novedades" 
 // `pendiente` es el instante en que se pulsó "g" (o null).
 export function atajo(pendiente: number | null, k: Tecla): { accion: Accion | null; pendiente: number | null } {
   const nada = { accion: null, pendiente: null };
+  if (k.repetida) return { accion: null, pendiente };
   if (k.escribiendo || k.dialogoAbierto) return nada;
   const key = (k.key ?? "").toLowerCase();
   if (k.altGraph) {

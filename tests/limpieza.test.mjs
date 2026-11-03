@@ -139,7 +139,7 @@ test("limpiezaMarkdown: dos secciones, casillas [x]/[ ] según revisado, enlaces
   assert.match(md, /^- \[x\] .*zz_sin/m, "revisado");
   assert.match(md, /^- \[ \] .*control_by_size/m, "no revisado");
   assert.ok(md.includes("https://github.com/o/r/blob/abc123/src/ctl/zz_sin.cpp#L10"));
-  assert.ok(md.includes("Sistema anterior \\(gazebo_launch\\)"));
+  assert.ok(md.includes("`Sistema anterior (gazebo_launch)`"), "fase 0: configs como code span");
   assert.ok(md.includes("src/m/launch/viejo.launch.py"));
   assert.ok(md.includes("1 de 4 revisados"));
 });
@@ -148,7 +148,7 @@ test("limpiezaMarkdown: el texto del repo no rompe el Markdown (backticks y salt
   const raro = { ...ROS, nodes: [n("p/a`b", "sin_uso", { label: "a`b\n# titulo falso" })] };
   const md = limpiezaMarkdown("X", filasLimpieza(raro, REPO, SHA), new Set());
   assert.doesNotMatch(md, /^# titulo falso/m);
-  assert.ok(!md.includes("a`b"), "los backticks del dato no cierran el código en línea");
+  assert.ok(md.includes("``src/p/a`b.cpp``"), "los backticks del dato van en un code span con delimitador más largo");
 });
 
 test("nombreArchivoMd: nombre seguro por proyecto", () => {

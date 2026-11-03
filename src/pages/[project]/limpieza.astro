@@ -25,7 +25,7 @@ const secciones = [
   <div class="container">
     <div class="doc">
       <SideNav projectId={p.id} projectName={p.name} pages={p.pageList} rutas={p.rutas?.length ? `/${p.id}/rutas/` : undefined} currentRoute={route} hasDiagrams={p.diagramList.length > 0} />
-      <main id="contenido" data-limpieza data-proyecto={p.id} data-nombre={p.name}>
+      <main id="contenido" tabindex="-1" data-limpieza data-proyecto={p.id} data-nombre={p.name}>
         <nav class="migas" aria-label="Migas">
           <ol>
             <li><a href={`/${p.id}/`} data-astro-prefetch>{p.name}</a></li>
