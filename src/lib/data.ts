@@ -70,8 +70,7 @@ export interface ProjectSummary {
   repo: string;
   branch: string;
   note?: string;
-  // Carátula: sitio público del proyecto (solo https) y descripción propia (si falta, se usa summary).
-  sitioOficial?: string;
+  // Carátula: descripción propia (si falta, se usa summary).
   descripcionCaratula?: string;
   // Documentación de hardware por disciplina (API /api/hardware): plantilla inicial y logins que pueden editar.
   disciplinas?: Record<string, { plantilla: string; editores: string[] }>;
@@ -219,13 +218,3 @@ export const nombreCorto = (name: string) => name.split(" · ")[0];
 // Repositorio al que pertenece el proyecto: la parte tras « · » del nombre, o null si no la hay.
 export const nombreRepo = (name: string) => (name.includes(" · ") ? name.split(" · ").slice(1).join(" · ").trim() || null : null);
 
-// Sitio oficial válido: solo https (el valor sale de projects.json, pero no se enlaza nada que no lo sea).
-export function sitioOficial(url?: string): { href: string; host: string } | null {
-  if (typeof url !== "string") return null;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" ? { href: u.href, host: u.hostname.replace(/^www\./, "") } : null;
-  } catch {
-    return null;
-  }
-}

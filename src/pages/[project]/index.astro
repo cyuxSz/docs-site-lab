@@ -4,7 +4,7 @@
 import Base from "../../layouts/Base.astro";
 import VehicleArt from "../../components/VehicleArt.astro";
 import EstadoProyecto from "../../components/EstadoProyecto.astro";
-import { portal, project as load, projectNav, tarjetasCaratula, nombreCorto, nombreRepo, sitioOficial } from "../../lib/data";
+import { portal, project as load, projectNav, tarjetasCaratula, nombreCorto, nombreRepo } from "../../lib/data";
 import type { ProjectData } from "../../lib/data";
 import { conteoNodos } from "../../lib/conteos.ts";
 
@@ -21,7 +21,6 @@ const tarjetas = sinConstruir ? [] : tarjetasCaratula(p);
 const conSoloSoftware = tarjetas.length <= 1;
 const corto = nombreCorto(p.name);
 const repoNombre = nombreRepo(p.name);
-const sitio = sitioOficial(p.sitioOficial);
 const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
 ---
 {sinConstruir ? (
@@ -82,14 +81,6 @@ const conteo = conteoNodos(sinConstruir ? [] : p.ros?.nodes ?? []);
             )}
           </div>
         </section>
-        {sitio && (
-          <section class="block caratula-por-que">
-            <div class="block-head"><h2>¿Por qué aquí y no en {sitio.host}?</h2></div>
-            <p>
-              {sitio.host} presenta {corto} al público: el equipo, los patrocinadores, las pruebas en agua y los resultados. Este portal es la documentación de trabajo del equipo. Cada afirmación de la wiki enlaza a la línea de código que la respalda, y el CI avisa cuando el código y la documentación dejan de coincidir. El grafo de nodos ROS se genera del repositorio en cada build. Electrónica y Mecánica se editan aquí mismo con historial de versiones, y hay rutas de lectura por área para quien llega nuevo. Si vas a modificar, depurar o integrar algo del vehículo, empieza aquí; si quieres conocer el proyecto o compartirlo, ve a <a href={sitio.href} rel="noopener">{sitio.host}</a>.
-            </p>
-          </section>
-        )}
       </main>
     </div>
     <script>
