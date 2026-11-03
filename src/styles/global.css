@@ -88,7 +88,8 @@ a.ext::after { content: "↗"; margin-left: 2px; font-size: .75em; opacity: .7; 
 }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-head); font-weight: 700; color: var(--text); text-decoration: none; white-space: nowrap; }
 .brand-light { font-weight: 400; color: var(--muted); }
-.brand-mark { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50% 50% 50% 8px; background: var(--brand-grad); }
+/* Logo oficial de VantTEC pintado con el degradado de marca: se adapta a los dos temas. */
+.brand-mark { flex: 0 0 auto; width: 24px; height: 24px; background: var(--brand-grad); -webkit-mask: url(/logo-mark.png) center / contain no-repeat; mask: url(/logo-mark.png) center / contain no-repeat; }
 .crumb { color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .crumb::before { content: "/"; margin-right: 10px; color: var(--line); }
 .topnav { display: flex; gap: 16px; align-items: center; margin-left: auto; }
