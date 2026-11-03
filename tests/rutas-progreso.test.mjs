@@ -16,26 +16,26 @@ const CONTROL = {
 };
 const RUTAS = [CONTROL, { id: "vision", nombre: "Visión", pasos: [paso("quickstart.md")] }];
 
-test("claves: separadas por proyecto, rol e índice de paso", () => {
+test("claves: separadas por proyecto, rol y página del paso (fase 0)", () => {
   assert.equal(claveRol("uuv"), "rutas:uuv:rol");
-  assert.equal(clavePaso("uuv", "control", 3), "rutas:uuv:control:3");
-  assert.notEqual(clavePaso("uuv", "control", 0), clavePaso("proyecto-x", "control", 0));
+  assert.equal(clavePaso("uuv", "control", "glosario.md"), "rutas:uuv:control:pagina:glosario.md");
+  assert.notEqual(clavePaso("uuv", "control", "glosario.md"), clavePaso("proyecto-x", "control", "glosario.md"));
 });
 
 test("marcar / leidos / reiniciar: guarda por paso y reiniciar solo borra ese rol de ese proyecto", () => {
   const ls = memoria();
   const a = almacenSeguro(() => ls);
-  marcar(a, "uuv", "control", 0, true);
-  marcar(a, "uuv", "control", 2, true);
-  marcar(a, "uuv", "vision", 0, true);
-  marcar(a, "proyecto-x", "control", 1, true);
+  marcar(a, "uuv", "control", paso("quickstart.md"), true);
+  marcar(a, "uuv", "control", paso("packages/uuv_control.md"), true);
+  marcar(a, "uuv", "vision", paso("quickstart.md"), true);
+  marcar(a, "proyecto-x", "control", paso("operations/hardware.md"), true);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [true, false, true, false, false]);
-  marcar(a, "uuv", "control", 2, false);
+  marcar(a, "uuv", "control", paso("packages/uuv_control.md"), false);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [true, false, false, false, false]);
   reiniciar(a, "uuv", CONTROL);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [false, false, false, false, false]);
-  assert.equal(ls.getItem(clavePaso("uuv", "vision", 0)), "1", "reiniciar no toca otro rol");
-  assert.equal(ls.getItem(clavePaso("proyecto-x", "control", 1)), "1", "reiniciar no toca otro proyecto");
+  assert.equal(ls.getItem(clavePaso("uuv", "vision", "quickstart.md")), "1", "reiniciar no toca otro rol");
+  assert.equal(ls.getItem(clavePaso("proyecto-x", "control", "operations/hardware.md")), "1", "reiniciar no toca otro proyecto");
 });
 
 test("almacenSeguro: sin localStorage o si truena, no lanza y simplemente no recuerda", () => {
@@ -54,7 +54,7 @@ test("almacenSeguro: sin localStorage o si truena, no lanza y simplemente no rec
     },
   }));
   for (const a of [sinLs, roto, almacenSeguro(() => null), almacenSeguro(() => undefined)]) {
-    assert.doesNotThrow(() => marcar(a, "uuv", "control", 0, true));
+    assert.doesNotThrow(() => marcar(a, "uuv", "control", paso("quickstart.md"), true));
     assert.doesNotThrow(() => reiniciar(a, "uuv", CONTROL));
     assert.deepEqual(leidos(a, "uuv", CONTROL), [false, false, false, false, false]);
     assert.equal(rolGuardado(a, "uuv", RUTAS), null);
