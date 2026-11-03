@@ -70,6 +70,8 @@ export interface ProjectSummary {
   repo: string;
   branch: string;
   note?: string;
+  // Documentación de hardware por disciplina (API /api/hardware): plantilla inicial y logins que pueden editar.
+  disciplinas?: Record<string, { plantilla: string; editores: string[] }>;
   // Aviso opcional arriba de /<id>/novedades/.
   novedadesNota?: string;
   // Portada y colores del proyecto (como cada vehículo en vanttec.com). image: ruta en public/; sin ella se dibuja

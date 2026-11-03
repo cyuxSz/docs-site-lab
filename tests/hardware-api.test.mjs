@@ -1,0 +1,806 @@
+// Lote 1a: API de documentación de hardware (api/hardware.js → lib/hardware-core.mjs) sobre Upstash Redis (REST).
+// Mismo patrón que tests/comentarios-api.test.mjs: Redis en memoria inyectado y cookie de sesión firmada con HMAC.
+import { test, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
+import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+
+const SECRET = "s".repeat(40);
+const ORIGIN = "https://docs.example";
+const URL_API = `${ORIGIN}/api/hardware/`;
+const T0 = Date.parse("2026-11-02T12:00:00Z");
+const EDITOR = "edi";
+
+const PLANTILLAS = {
+  electronica: [
+    { slug: "arquitectura", titulo: "Arquitectura", md: "# Arquitectura\n\n## Diagrama de bloques\n" },
+    { slug: "potencia", titulo: "Potencia", md: "# Potencia\n\n## Baterías\n" },
+    { slug: "pcb", titulo: "PCB", md: "# PCB\n\n## Capas\n" },
+  ],
+  mecanica: [{ slug: "ensamble", titulo: "Ensamble", md: "# Ensamble\n" }],
+};
+const PROYECTOS = [
+  { id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR, "Otra"] }, mecanica: { plantilla: "mecanica", editores: [] } } },
+  { id: "proyecto-x", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz"] } } },
+  { id: "usv" },
+];
+
+// Instantánea comparable del almacén: los Map/Set se serializan por entradas (JSON.stringify los daría como {}).
+const instantanea = (redis) =>
+  JSON.stringify([...redis.data].filter(([k]) => !k.includes(":rl:")).map(([k, v]) => [k, v instanceof Map ? [...v] : v instanceof Set ? [...v] : v]));
+
+const core = () => import("../lib/hardware-core.mjs");
+
+beforeEach(() => {
+  process.env.SESSION_SECRET = SECRET;
+});
+
+function cookieDe(login, { exp = Date.now() + 864e5, secret = SECRET } = {}) {
+  const body = Buffer.from(JSON.stringify({ login, exp })).toString("base64url");
+  return `docs_session=${encodeURIComponent(`${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`)}`;
+}
+
+async function montar({ redis = fakeRedis(), env = {}, ahora = () => T0, proyectos = PROYECTOS } = {}) {
+  const { crearHandler } = await core();
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, proyectos, plantillas: PLANTILLAS, ahora });
+  return { handler, redis };
+}
+
+function req(method, { login, cookie, body, query = {}, origin = ORIGIN, ct = "application/json" } = {}) {
+  const headers = {};
+  if (login) headers.cookie = cookieDe(login);
+  if (cookie) headers.cookie = cookie;
+  if (method !== "GET") {
+    if (ct) headers["content-type"] = ct;
+    if (origin) headers.origin = origin;
+  }
+  const qs = new URLSearchParams(query).toString();
+  return new Request(qs ? `${URL_API}?${qs}` : URL_API, { method, headers, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) });
+}
+
+const BASE = { proyecto: "uuv", disciplina: "electronica" };
+const indice = (h, login = "ana", extra = {}) => h(req("GET", { login, query: { ...BASE, ...extra } }));
+const pagina = (h, slug, login = "ana", extra = {}) => h(req("GET", { login, query: { ...BASE, pagina: slug, ...extra } }));
+const post = (h, body, login = EDITOR, extra = {}) => h(req("POST", { login, body: { ...BASE, ...body }, ...extra }));
+const put = (h, body, login = EDITOR, extra = {}) => h(req("PUT", { login, body: { ...BASE, ...body }, ...extra }));
+const del = (h, body, login = EDITOR, extra = {}) => h(req("DELETE", { login, body: { ...BASE, ...body }, ...extra }));
+
+function cabecerasJson(res, que) {
+  assert.match(res.headers.get("content-type") ?? "", /application\/json/, `${que}: content-type`);
+  assert.match(res.headers.get("cache-control") ?? "", /no-store/, `${que}: cache-control`);
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff", `${que}: nosniff`);
+}
+
+async function inicializado() {
+  const m = await montar();
+  const res = await post(m.handler, { accion: "inicializar" });
+  assert.equal(res.status, 201, "inicializar la primera vez");
+  return m;
+}
+
+// ---------- Identidad, configuración y acceso ----------
+
+test("401: sin cookie, alterada, caducada o de otro secreto, en todos los métodos", async () => {
+  const { handler } = await montar();
+  const cookies = [undefined, "docs_session=a.b", cookieDe("ana", { exp: Date.now() - 1 }), cookieDe("ana", { secret: "x".repeat(40) }), `${cookieDe("ana")}x`];
+  for (const cookie of cookies) {
+    for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+      const res = await handler(req(method, { cookie, query: method === "GET" ? BASE : {}, body: method === "GET" ? undefined : { ...BASE, accion: "inicializar", pagina: "pcb", md: "x", version: 1 } }));
+      assert.equal(res.status, 401, `${method} ${cookie}`);
+      cabecerasJson(res, "401");
+      assert.equal(typeof (await res.json()).error, "string");
+    }
+  }
+});
+
+test("503 sin SESSION_SECRET fuerte y 503 'no configurado' sin almacén (sin variables de Upstash)", async () => {
+  const { crearHandler } = await core();
+  const sinSecreto = crearHandler({ env: { SESSION_SECRET: "corto" }, redis: fakeRedis(), proyectos: PROYECTOS, plantillas: PLANTILLAS });
+  assert.equal((await sinSecreto(req("GET", { login: "ana", query: BASE }))).status, 503);
+  for (const redis of [undefined, null]) {
+    const h = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS, plantillas: PLANTILLAS });
+    const res = await h(req("GET", { login: "ana", query: BASE }));
+    assert.equal(res.status, 503, `redis=${redis}`);
+    cabecerasJson(res, "503");
+  }
+});
+
+test("405 para métodos no soportados (PATCH) con cabecera Allow", async () => {
+  const { handler } = await montar();
+  const res = await handler(req("PATCH", { login: EDITOR, body: BASE }));
+  assert.equal(res.status, 405);
+  assert.match(res.headers.get("allow") ?? "", /GET/);
+  assert.match(res.headers.get("allow") ?? "", /PUT/);
+});
+
+test("404: disciplina no configurada en el proyecto o proyecto sin la clave disciplinas", async () => {
+  const { handler } = await montar();
+  for (const query of [{ proyecto: "uuv", disciplina: "software" }, { proyecto: "usv", disciplina: "electronica" }, { proyecto: "proyecto-x", disciplina: "mecanica" }]) {
+    const login = query.proyecto === "proyecto-x" ? "cyuxSz" : "ana";
+    const res = await handler(req("GET", { login, query }));
+    assert.equal(res.status, 404, JSON.stringify(query));
+    cabecerasJson(res, "404");
+  }
+  const res = await handler(req("POST", { login: EDITOR, body: { proyecto: "uuv", disciplina: "software", accion: "inicializar" } }));
+  assert.equal(res.status, 404, "escritura en disciplina no configurada");
+});
+
+test("400/404: proyecto o disciplina con formato inválido o proyecto inexistente; nunca 200", async () => {
+  const { handler } = await montar();
+  for (const query of [{ disciplina: "electronica" }, { proyecto: "uuv" }, { proyecto: "../uuv", disciplina: "electronica" }, { proyecto: "uuv", disciplina: "ELEC TRONICA" }, { proyecto: "nadie", disciplina: "electronica" }]) {
+    const res = await handler(req("GET", { login: "ana", query }));
+    assert.ok([400, 404].includes(res.status), `${JSON.stringify(query)} → ${res.status}`);
+  }
+});
+
+test("proyecto restringido (canAccess): otro login recibe 403 en lectura y escritura; cyuxSz entra", async () => {
+  const { handler } = await montar();
+  const X = { proyecto: "proyecto-x", disciplina: "electronica" };
+  assert.equal((await handler(req("GET", { login: "ana", query: X }))).status, 403);
+  assert.equal((await handler(req("POST", { login: "ana", body: { ...X, accion: "inicializar" } }))).status, 403);
+  // Un proyecto restringido no revela si la disciplina existe: 403 antes que 404.
+  assert.equal((await handler(req("GET", { login: "ana", query: { proyecto: "proyecto-x", disciplina: "mecanica" } }))).status, 403);
+  const ok = await handler(req("GET", { login: "CyuxSZ", query: X }));
+  assert.equal(ok.status, 200);
+});
+
+test("lectura: cualquier sesión con acceso ve el índice; editable solo es true para editores (sin distinguir mayúsculas)", async () => {
+  const { handler } = await inicializado();
+  const res = await indice(handler, "ana");
+  assert.equal(res.status, 200);
+  cabecerasJson(res, "GET índice");
+  const j = await res.json();
+  assert.equal(j.yo, "ana");
+  assert.equal(j.proyecto, "uuv");
+  assert.equal(j.disciplina, "electronica");
+  assert.equal(j.editable, false);
+  assert.deepEqual(j.paginas, PLANTILLAS.electronica.map(({ slug, titulo }) => ({ slug, titulo })));
+  assert.equal((await (await indice(handler, "EDI")).json()).editable, true);
+});
+
+test("403: un no editor no puede escribir (inicializar, crear, reordenar, restaurar, PUT, DELETE)", async () => {
+  const { handler, redis } = await inicializado();
+  const antes = instantanea(redis);
+  const intentos = [
+    () => post(handler, { accion: "inicializar" }, "ana"),
+    () => post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" }, "ana"),
+    () => post(handler, { accion: "reordenar", orden: ["pcb", "potencia", "arquitectura"] }, "ana"),
+    () => post(handler, { accion: "restaurar", pagina: "pcb", revision: 0, version: 1 }, "ana"),
+    () => put(handler, { pagina: "pcb", md: "# hackeado", version: 1 }, "ana"),
+    () => del(handler, { pagina: "pcb", version: 1 }, "ana"),
+  ];
+  for (const f of intentos) {
+    const res = await f();
+    assert.equal(res.status, 403);
+    cabecerasJson(res, "403");
+  }
+  // mecanica no tiene editores: nadie escribe ahí.
+  assert.equal((await post(handler, { disciplina: "mecanica", accion: "inicializar" }, EDITOR)).status, 403);
+  assert.equal(instantanea(redis), antes, "nada cambió en el almacén");
+});
+
+test("escrituras: solo JSON (415) y mismo origen (403), como en comentarios", async () => {
+  const { handler } = await montar();
+  assert.equal((await post(handler, { accion: "inicializar" }, EDITOR, { ct: "text/plain" })).status, 415);
+  assert.equal((await post(handler, { accion: "inicializar" }, EDITOR, { origin: null })).status, 403);
+  assert.equal((await post(handler, { accion: "inicializar" }, EDITOR, { origin: "https://evil.example" })).status, 403);
+  assert.equal((await handler(req("POST", { login: EDITOR, body: "{no json" }))).status, 400);
+  assert.equal((await post(handler, { accion: "desconocida" })).status, 400);
+});
+
+// ---------- Inicializar, crear, reordenar ----------
+
+test("inicializar siembra desde la plantilla y guarda el índice como JSON en hw:<proy>:<disc>:indice", async () => {
+  const { handler, redis } = await inicializado();
+  const crudo = redis.data.get("hw:uuv:electronica:indice");
+  assert.equal(typeof crudo, "string", "el índice es un string JSON");
+  assert.deepEqual(JSON.parse(crudo), PLANTILLAS.electronica.map(({ slug, titulo }) => ({ slug, titulo })));
+  const h = redis.data.get("hw:pag:uuv:electronica:pcb");
+  assert.ok(h instanceof Map, "cada página es un hash");
+  assert.equal(h.get("titulo"), "PCB");
+  assert.equal(h.get("md"), PLANTILLAS.electronica[2].md);
+  assert.equal(h.get("autor"), EDITOR);
+  assert.equal(Number(h.get("version")), 1);
+  assert.equal(h.get("actualizado"), new Date(T0).toISOString());
+});
+
+test("inicializar es idempotente: la segunda vez responde 200 sin tocar índice ni contenido editado", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "# PCB editada", version: 1 })).status, 200);
+  const indiceAntes = redis.data.get("hw:uuv:electronica:indice");
+  const res = await post(handler, { accion: "inicializar" });
+  assert.equal(res.status, 200);
+  const j = await res.json();
+  assert.equal(j.inicializado, false);
+  assert.equal(redis.data.get("hw:uuv:electronica:indice"), indiceAntes);
+  const p = (await (await pagina(handler, "pcb")).json()).pagina;
+  assert.equal(p.md, "# PCB editada");
+  assert.equal(p.version, 2);
+});
+
+test("crear añade una página al final del índice (201); 409 si ya existe; slug inválido → 400", async () => {
+  const { handler } = await inicializado();
+  const res = await post(handler, { accion: "crear", pagina: "conectores-2", titulo: "Conectores" });
+  assert.equal(res.status, 201);
+  const j = await res.json();
+  assert.equal(j.pagina.slug, "conectores-2");
+  assert.equal(j.pagina.version, 1);
+  const paginas = (await (await indice(handler)).json()).paginas;
+  assert.deepEqual(paginas.at(-1), { slug: "conectores-2", titulo: "Conectores" });
+  assert.equal((await post(handler, { accion: "crear", pagina: "pcb", titulo: "Otra" })).status, 409);
+  for (const slug of ["", "Mayus", "con espacio", "../x", "a/b", "x".repeat(61), "ñandu", 5, null]) {
+    assert.equal((await post(handler, { accion: "crear", pagina: slug, titulo: "T" })).status, 400, `slug ${JSON.stringify(slug)}`);
+  }
+  for (const titulo of ["", "   ", "x".repeat(121), "a\u0000b", 3]) {
+    assert.equal((await post(handler, { accion: "crear", pagina: "valida", titulo })).status, 400, `titulo ${JSON.stringify(titulo)}`);
+  }
+});
+
+test("slug de GET validado [a-z0-9-]{1,60}: inválido → 400; válido inexistente → 404", async () => {
+  const { handler } = await inicializado();
+  for (const slug of ["../pcb", "PCB", "a b", "x".repeat(61)]) assert.equal((await pagina(handler, slug)).status, 400, slug);
+  assert.equal((await pagina(handler, "no-existe")).status, 404);
+});
+
+test("reordenar acepta solo una permutación exacta del índice actual", async () => {
+  const { handler } = await inicializado();
+  const res = await post(handler, { accion: "reordenar", orden: ["pcb", "arquitectura", "potencia"] });
+  assert.equal(res.status, 200);
+  assert.deepEqual((await (await indice(handler)).json()).paginas.map((p) => p.slug), ["pcb", "arquitectura", "potencia"]);
+  for (const orden of [["pcb", "arquitectura"], ["pcb", "arquitectura", "potencia", "extra"], ["pcb", "pcb", "potencia"], "pcb", null]) {
+    assert.equal((await post(handler, { accion: "reordenar", orden })).status, 400, JSON.stringify(orden));
+  }
+});
+
+// ---------- GET de página: HTML sanitizado ----------
+
+test("GET de página devuelve md, html, autor, actualizado y version (número)", async () => {
+  const { handler } = await inicializado();
+  const res = await pagina(handler, "potencia");
+  assert.equal(res.status, 200);
+  cabecerasJson(res, "GET página");
+  const { pagina: p, editable } = await res.json();
+  assert.equal(editable, false);
+  assert.equal(p.slug, "potencia");
+  assert.equal(p.titulo, "Potencia");
+  assert.equal(p.md, PLANTILLAS.electronica[1].md);
+  assert.match(p.html, /<h1[^>]*>Potencia<\/h1>/);
+  assert.match(p.html, /<h2[^>]*>Baterías<\/h2>/);
+  assert.equal(p.version, 1);
+  assert.equal(p.autor, EDITOR);
+});
+
+test("html sanitizado: <script>, onerror, <iframe> y enlaces javascript: no llegan como HTML activo", async () => {
+  const { handler } = await inicializado();
+  const md = [
+    "# Prueba",
+    "",
+    "<script>alert(1)</script>",
+    "",
+    '<img src=x onerror="alert(1)">',
+    "",
+    '<iframe src="https://evil.example"></iframe>',
+    "",
+    "[clic](javascript:alert(1)) [otro](JaVaScRiPt:alert(2)) [vb](vbscript:msgbox(1)) [dato](data:text/html,<b>x</b>)",
+    "",
+    "Texto con `<b>código</b>` y **negrita**.",
+  ].join("\n");
+  assert.equal((await put(handler, { pagina: "pcb", md, version: 1 })).status, 200);
+  const { html } = (await (await pagina(handler, "pcb")).json()).pagina;
+  assert.doesNotMatch(html, /<script/i, "sin etiqueta script");
+  assert.doesNotMatch(html, /<img[^>]*onerror/i, "sin img con onerror");
+  assert.doesNotMatch(html, /<iframe/i, "sin iframe");
+  assert.doesNotMatch(html, /href\s*=\s*["']?\s*(javascript|vbscript|data):/i, "sin href peligroso");
+  assert.match(html, /<strong>negrita<\/strong>/, "el Markdown normal sí se renderiza");
+  assert.match(html, /<code>&lt;b&gt;código&lt;\/b&gt;<\/code>/, "el código en línea sale escapado");
+});
+
+test("html sanitizado: bypasses de esquema y atributos on* no dejan href/src peligrosos", async () => {
+  const { handler } = await inicializado();
+  const casos = [
+    "[x](&#x6a;avascript:alert(1))", "[x](JaVaScRiPt:alert(1))", "[x](java	script:alert(1))", "[x](java&#9;script:alert(1))",
+    "[x](data:text/html,<script>alert(1)</script>)", "![x](vbscript:msgbox)", "<img src=x onerror=alert(1)>", "<svg onload=alert(1)>",
+  ];
+  let v = 1;
+  for (const caso of casos) {
+    const r = await put(handler, { pagina: "pcb", md: caso, version: v });
+    assert.equal(r.status, 200, caso);
+    v++;
+    const { html } = (await (await pagina(handler, "pcb")).json()).pagina;
+    for (const [, valor] of html.matchAll(/\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi).map((m) => [0, m[1] ?? m[2] ?? m[3]])) {
+      // como lo interpreta el navegador: entidades numéricas y tab/salto/control se descartan antes del esquema
+      const real = valor.replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d))).replace(/[\u0000-\u0020]/g, "");
+      assert.doesNotMatch(real, /^(javascript|vbscript|data):/i, `esquema peligroso (${valor}): ${caso}`);
+    }
+    assert.doesNotMatch(html, /<[^>]+\son\w+\s*=/i, `atributo on*: ${caso}`);
+    assert.doesNotMatch(html, /<(script|svg|iframe)/i, `etiqueta activa: ${caso}`);
+  }
+});
+
+test("estructura: renderizarMd reutiliza el pipeline de la wiki (neutralizeHtml de tools/neutralizar.mjs + satteri), sin reimplementarlo", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../lib/hardware-core.mjs", import.meta.url), "utf8");
+  assert.match(src, /from\s+["']\.\.\/tools\/neutralizar\.mjs["']/, "importa tools/neutralizar.mjs");
+  assert.match(src, /neutralizeHtml/);
+  assert.match(src, /from\s+["']satteri["']/, "renderiza con satteri");
+  const { renderizarMd } = await core();
+  assert.equal(typeof renderizarMd, "function");
+  const html = await renderizarMd("## Hola\n\n<b>x</b>");
+  assert.match(html, /<h2[^>]*>Hola<\/h2>/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+});
+
+// ---------- PUT, versión y límites ----------
+
+test("PUT guarda con la versión esperada: version+1, autor y fecha nuevos", async () => {
+  let t = T0;
+  const m = await montar({ ahora: () => t });
+  await post(m.handler, { accion: "inicializar" });
+  t = T0 + 60_000;
+  const res = await put(m.handler, { pagina: "pcb", md: "# PCB\n\nCuatro capas.", version: 1 }, "Otra");
+  assert.equal(res.status, 200);
+  cabecerasJson(res, "PUT");
+  const { pagina: p } = await res.json();
+  assert.equal(p.version, 2);
+  assert.equal(p.autor, "Otra");
+  assert.equal(p.actualizado, new Date(t).toISOString());
+  assert.match(p.html, /Cuatro capas/);
+});
+
+test("409 si la versión esperada no coincide; responde la versión actual y no pisa el contenido", async () => {
+  const { handler } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "# v2", version: 1 })).status, 200);
+  const res = await put(handler, { pagina: "pcb", md: "# pisado", version: 1 }, "Otra");
+  assert.equal(res.status, 409);
+  cabecerasJson(res, "409");
+  const j = await res.json();
+  assert.equal(typeof j.error, "string");
+  assert.equal(j.version, 2);
+  assert.equal((await (await pagina(handler, "pcb")).json()).pagina.md, "# v2");
+  for (const version of [undefined, "1", 0, -1, 1.5, null]) {
+    assert.equal((await put(handler, { pagina: "pcb", md: "# x", version })).status, 400, `version ${version}`);
+  }
+});
+
+test("409 si hay otro guardado en curso (candado SET NX en hw:lock:<proy>:<disc>:<slug>) y el candado se libera al terminar", async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["SET", "hw:lock:uuv:electronica:pcb", "otro", "NX", "EX", 10]]);
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 409);
+  await redis.exec([["DEL", "hw:lock:uuv:electronica:pcb"]]);
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.ok(!redis.data.has("hw:lock:uuv:electronica:pcb"), "el candado no queda puesto");
+  assert.ok(redis.comandos.some((c) => String(c[0]).toUpperCase() === "SET" && c[1] === "hw:lock:uuv:electronica:pcb" && c.map(String).map((s) => s.toUpperCase()).includes("NX")), "usa SET NX");
+});
+
+test("PUT: md > 200 KB → 413; md no string → 400; página inexistente → 404", async () => {
+  const { handler } = await inicializado();
+  const grande = "a".repeat(200 * 1024 + 1);
+  assert.equal((await put(handler, { pagina: "pcb", md: grande, version: 1 })).status, 413);
+  assert.equal((await put(handler, { pagina: "pcb", md: "é".repeat(102_401), version: 1 })).status, 413, "el límite es en bytes UTF-8");
+  assert.equal((await put(handler, { pagina: "pcb", md: "a".repeat(200 * 1024), version: 1 })).status, 200, "justo 200 KB se acepta");
+  assert.equal((await put(handler, { pagina: "pcb", md: 7, version: 2 })).status, 400);
+  assert.equal((await put(handler, { pagina: "no-existe", md: "# x", version: 1 })).status, 404);
+});
+
+// ---------- Revisiones ----------
+
+test("cada PUT guarda la versión anterior en hw:rev:<proy>:<disc>:<slug> (LPUSH) recortada a 50 (LTRIM)", async () => {
+  const { handler, redis } = await inicializado();
+  for (let v = 1; v <= 55; v++) {
+    const res = await put(handler, { pagina: "pcb", md: `# v${v + 1}`, version: v });
+    assert.equal(res.status, 200, `PUT ${v}`);
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+  }
+  const lista = redis.data.get("hw:rev:uuv:electronica:pcb");
+  assert.ok(Array.isArray(lista), "las revisiones son una lista");
+  assert.equal(lista.length, 50);
+  assert.ok(redis.comandos.some((c) => String(c[0]).toUpperCase() === "LTRIM" && c[1] === "hw:rev:uuv:electronica:pcb"), "recorta con LTRIM");
+  const res = await pagina(handler, "pcb", "ana", { revisiones: "1" });
+  assert.equal(res.status, 200);
+  cabecerasJson(res, "revisiones");
+  const { revisiones } = await res.json();
+  assert.equal(revisiones.length, 50);
+  assert.deepEqual(revisiones.map((r) => r.n), [...Array(50).keys()], "n = 0 es la más reciente");
+  assert.equal(revisiones[0].version, 55, "la más reciente es la versión anterior a la actual (56)");
+  assert.equal(revisiones[49].version, 6);
+  for (const r of revisiones) {
+    assert.equal(typeof r.autor, "string");
+    assert.equal(typeof r.actualizado, "string");
+    assert.equal(typeof r.titulo, "string");
+  }
+});
+
+test("restaurar revision n: el md vuelve, la versión sube y el estado anterior pasa a revisiones", async () => {
+  const { handler } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# buena", version: 1 });
+  await put(handler, { pagina: "pcb", md: "# rota", version: 2 });
+  // revisiones: n=0 → "# buena" (v2), n=1 → plantilla (v1)
+  const res = await post(handler, { accion: "restaurar", pagina: "pcb", revision: 0, version: 3 });
+  assert.equal(res.status, 200);
+  const { pagina: p } = await res.json();
+  assert.equal(p.md, "# buena");
+  assert.equal(p.version, 4);
+  const revs = (await (await pagina(handler, "pcb", "ana", { revisiones: "1" })).json()).revisiones;
+  assert.equal(revs[0].version, 3, "la versión rota quedó guardada como revisión");
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "pcb", revision: 1, version: 3 })).status, 409, "versión vieja → 409");
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "pcb", revision: 99, version: 4 })).status, 404, "revisión inexistente");
+  for (const revision of [-1, "0", 1.5, null]) {
+    assert.equal((await post(handler, { accion: "restaurar", pagina: "pcb", revision, version: 4 })).status, 400, `revision ${revision}`);
+  }
+});
+
+// ---------- DELETE → papelera ----------
+
+test("DELETE manda la página a la papelera hw:papelera:<proy>:<disc>: sale del índice y GET da 404", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# a la papelera", version: 1 });
+  const res = await del(handler, { pagina: "pcb", version: 2 });
+  assert.equal(res.status, 200);
+  cabecerasJson(res, "DELETE");
+  assert.deepEqual((await (await indice(handler)).json()).paginas.map((p) => p.slug), ["arquitectura", "potencia"]);
+  assert.equal((await pagina(handler, "pcb")).status, 404);
+  assert.ok(!redis.data.has("hw:pag:uuv:electronica:pcb"), "el hash de la página ya no está");
+  const papelera = redis.data.get("hw:papelera:uuv:electronica");
+  assert.ok(papelera instanceof Map, "la papelera es un hash <slug>:<timestamp> → JSON (no se pierden entradas al re-borrar)");
+  const claves = [...papelera.keys()];
+  assert.equal(claves.length, 1);
+  assert.match(claves[0], /^pcb:\d+$/, "clave <slug>:<timestamp>");
+  const guardada = JSON.parse(papelera.get(claves[0]));
+  assert.equal(guardada.md, "# a la papelera");
+  assert.equal(guardada.borradoPor, EDITOR);
+  assert.equal((await del(handler, { pagina: "pcb", version: 2 })).status, 404, "borrar dos veces → 404");
+});
+
+test("DELETE exige version entera válida (400); versión vieja → 409 sin borrar; versión actual → 200", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# nueva", version: 1 });
+  for (const version of [undefined, 0, -1, "2", 1.5, null]) {
+    assert.equal((await del(handler, { pagina: "pcb", version })).status, 400, `version ${version}`);
+  }
+  const res = await del(handler, { pagina: "pcb", version: 1 });
+  assert.equal(res.status, 409);
+  const j = await res.json();
+  assert.match(j.error, /recárgala antes de borrar/);
+  assert.equal(j.version, 2);
+  assert.equal((await pagina(handler, "pcb")).status, 200, "la página sigue");
+  assert.ok(!redis.data.has("hw:papelera:uuv:electronica"), "nada en la papelera");
+  assert.equal((await del(handler, { pagina: "pcb", version: 2 })).status, 200);
+  assert.equal((await pagina(handler, "pcb")).status, 404);
+});
+
+test("versión monótona: crear→PUT→borrar→crear nace en ≥3 y las peticiones atrasadas (v1/v2) dan 409 sin tocarla", async () => {
+  const { handler } = await montar();
+  const ver = async () => (await (await pagina(handler, "nueva")).json()).pagina.version;
+  assert.equal((await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" })).status, 201);
+  assert.equal(await ver(), 1, "sin historial empieza en 1");
+  assert.equal((await put(handler, { pagina: "nueva", md: "# v2", version: 1 })).status, 200);
+  assert.equal((await del(handler, { pagina: "nueva", version: 2 })).status, 200);
+  assert.equal((await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" })).status, 201);
+  const vn = await ver(); assert.ok(vn >= 3, `versión ${vn}`);
+  const antes = await (await pagina(handler, "nueva")).json();
+  for (const version of [1, 2]) {
+    assert.equal((await put(handler, { pagina: "nueva", md: "# pisada", version })).status, 409, `PUT v${version}`);
+    assert.equal((await del(handler, { pagina: "nueva", version })).status, 409, `DELETE v${version}`);
+    assert.equal((await post(handler, { accion: "restaurar", pagina: "nueva", revision: 0, version })).status, 409, `restaurar v${version}`);
+  }
+  assert.deepEqual(await (await pagina(handler, "nueva")).json(), antes, "la página nueva no se tocó");
+});
+
+test("versión monótona: inicializar tras borrar una página de plantilla no reutiliza versiones", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# x", version: 1 });
+  assert.equal((await del(handler, { pagina: "pcb", version: 2 })).status, 200);
+  redis.data.delete("hw:uuv:electronica:indice");
+  assert.equal((await post(handler, { accion: "inicializar" })).status, 201);
+  const p = (await (await pagina(handler, "pcb")).json()).pagina;
+  assert.ok(p.version >= 3, `pcb recreada con versión ${p.version}`);
+  assert.equal((await put(handler, { pagina: "pcb", md: "# pisada", version: 2 })).status, 409);
+  assert.equal((await (await pagina(handler, "arquitectura")).json()).pagina.version, 1, "las no borradas siguen en 1");
+});
+
+test("DELETE: las revisiones van a la papelera y se borran; un slug recreado no las hereda ni se restauran", async () => {
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  await put(handler, { pagina: "nueva", md: "# dos", version: 1 });
+  await put(handler, { pagina: "nueva", md: "# tres", version: 2 });
+  assert.equal((await del(handler, { pagina: "nueva", version: 3 })).status, 200);
+  assert.ok(!redis.data.has("hw:rev:uuv:electronica:nueva"), "la lista de revisiones se borra");
+  const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.equal(entrada.revisiones.length, 2);
+  assert.equal(entrada.revisionesOmitidas, 0);
+  assert.deepEqual(entrada.revisiones.map((r) => r.version), [2, 1]);
+  assert.equal(typeof entrada.revisiones[0].md, "string");
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  const v = (await (await pagina(handler, "nueva")).json()).pagina.version;
+  assert.deepEqual(await (await pagina(handler, "nueva", "ana", { revisiones: "1" })).json(), { revisiones: [] });
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "nueva", revision: 0, version: v })).status, 404);
+});
+
+test("DELETE: con revisiones grandes la papelera respeta el presupuesto de bytes, conserva las recientes y cuenta las omitidas", async () => {
+  const { PRESUPUESTO_PAPELERA_BYTES } = await core();
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  for (let v = 1; v <= 20; v++) {
+    const res = await put(handler, { pagina: "nueva", md: `${v}`.padEnd(100 * 1024, "x"), version: v });
+    assert.equal(res.status, 200, `PUT ${v}`);
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+  }
+  assert.equal((await del(handler, { pagina: "nueva", version: 21 })).status, 200);
+  assert.ok(!redis.data.has("hw:rev:uuv:electronica:nueva"), "la lista de revisiones se borra");
+  const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.ok(Buffer.byteLength(JSON.stringify(entrada.revisiones)) <= PRESUPUESTO_PAPELERA_BYTES);
+  assert.ok(entrada.revisiones.length > 0 && entrada.revisiones.length < 20);
+  assert.equal(entrada.revisionesOmitidas, 20 - entrada.revisiones.length);
+  assert.deepEqual(entrada.revisiones.map((r) => r.version), Array.from({ length: entrada.revisiones.length }, (_, i) => 20 - i), "las más recientes");
+});
+
+// ---------- Fencing del candado ----------
+
+const sinLocks = (r) => JSON.stringify(JSON.parse(instantanea(r)).filter(([k]) => !k.includes(":lock:")));
+
+test("fencing: si el candado ya no es nuestro al escribir, no se aplica nada y responde 409 (PUT, restaurar, borrar, crear, reordenar, inicializar)", async () => {
+  const casos = [
+    ["PUT", (h) => put(h, { pagina: "pcb", md: "# tarde", version: 1 }), true, false],
+    ["restaurar", (h) => post(h, { accion: "restaurar", pagina: "pcb", revision: 0, version: 2 }), true, true],
+    ["borrar", (h) => del(h, { pagina: "pcb", version: 1 }), true, false],
+    ["crear", (h) => post(h, { accion: "crear", pagina: "nueva", titulo: "Nueva" }), true, false],
+    ["reordenar", (h) => post(h, { accion: "reordenar", orden: ["pcb", "potencia", "arquitectura"] }), true, false],
+    ["inicializar", (h) => post(h, { accion: "inicializar" }), false, false],
+  ];
+  for (const [nombre, accion, init, previo] of casos) {
+    const { handler, redis } = init ? await inicializado() : await montar();
+    if (previo) await put(handler, { pagina: "pcb", md: "# a", version: 1 });
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+    const antes = sinLocks(redis);
+    const orig = redis.exec.bind(redis);
+    redis.exec = async (cmds) => {
+      // Simula la expiración del lease y que otro tomó el candado, justo antes de la escritura final.
+      if (cmds.some((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"))) {
+        for (const k of [...redis.data.keys()]) if (k.includes(":lock:")) redis.data.set(k, "de-otro");
+      }
+      return orig(cmds);
+    };
+    const res = await accion(handler);
+    assert.equal(res.status, 409, nombre);
+    assert.match((await res.json()).error, /otro guardado en curso/, nombre);
+    assert.equal(sinLocks(redis), antes, `${nombre}: no se escribió nada`);
+  }
+});
+
+test("fencing con candados anidados: perder solo el del índice basta para que no se escriba", async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    if (cmds.some((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"))) redis.data.delete("hw:lock:uuv:electronica:__indice");
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# tarde", version: 1 })).status, 409);
+  assert.equal((await (await pagina(handler, "pcb")).json()).pagina.version, 1);
+});
+
+test("fencing: la escritura final es un solo EVAL con los dos candados (slug e índice) en KEYS", async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  redis.comandos.length = 0;
+  assert.equal((await put(handler, { pagina: "pcb", md: "# ok", version: 1 })).status, 200);
+  const ev = redis.comandos.find((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"));
+  assert.ok(ev, "hay EVAL de fencing");
+  assert.equal(ev[2], 2);
+  assert.deepEqual([ev[3], ev[4]].sort(), ["hw:lock:uuv:electronica:__indice", "hw:lock:uuv:electronica:pcb"]);
+});
+
+test("tenencias por petición: dos peticiones concurrentes en distintas disciplinas no se interfieren", { timeout: 10000 }, async () => {
+  const proyectos = [{ id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR] }, mecanica: { plantilla: "mecanica", editores: [EDITOR] } } }];
+  const { handler, redis } = await montar({ proyectos });
+  assert.equal((await post(handler, { accion: "inicializar" })).status, 201);
+  assert.equal((await post(handler, { accion: "inicializar", disciplina: "mecanica" })).status, 201);
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  const evals = [];
+  let aEnPunto, bEnPunto;
+  const aListo = new Promise((r) => (aEnPunto = r));
+  const bListo = new Promise((r) => (bEnPunto = r));
+  let liberarA, liberarB;
+  const puertaA = new Promise((r) => (liberarA = r));
+  const puertaB = new Promise((r) => (liberarB = r));
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    if (cmds.some((c) => c[0] === "HGETALL" && c[1] === "hw:pag:uuv:electronica:pcb")) { aEnPunto(); await puertaA; }
+    const ev = cmds.find((c) => c[0] === "EVAL" && String(c[1]).includes("FENCED"));
+    if (ev) {
+      evals.push(ev);
+      if (ev[3].includes(":mecanica:")) { bEnPunto(); await puertaB; }
+    }
+    return orig(cmds);
+  };
+  const a = put(handler, { pagina: "pcb", md: "# a", version: 1 });
+  await aListo; // A retiene sus candados
+  const b = put(handler, { disciplina: "mecanica", pagina: "ensamble", md: "# b", version: 1 });
+  await bListo; // B ya construyó su EVAL mientras A retiene los suyos
+  liberarA();
+  assert.equal((await a).status, 200); // A termina y suelta sus candados
+  liberarB();
+  assert.equal((await b).status, 200, "B no da 409 espurio por candados de A ya liberados");
+  assert.equal(evals.length, 2);
+  for (const ev of evals) {
+    assert.equal(ev[2], 2, "cada EVAL lleva solo sus 2 candados");
+    const disc = ev[3].includes(":mecanica:") ? "mecanica" : "electronica";
+    assert.ok(ev.slice(3, 5).every((k) => k.startsWith(`hw:lock:uuv:${disc}:`)), `claves de ${disc}`);
+  }
+});
+
+test("un fallo a mitad de una petición (sin finally) no afecta a la siguiente en el mismo handler", { timeout: 10000 }, async () => {
+  const { handler, redis } = await inicializado();
+  await redis.exec([["DEL", "hw:rl:edi"]]);
+  const orig = redis.exec.bind(redis);
+  let colgar = true;
+  let llego;
+  const alPunto = new Promise((r) => (llego = r)); // se resuelve cuando la petición muerta llega a su lectura
+  redis.exec = async (cmds) => {
+    if (colgar && cmds.some((c) => c[0] === "HGETALL" && c[1] === "hw:pag:uuv:electronica:pcb")) {
+      colgar = false;
+      llego();
+      return new Promise(() => {}); // la invocación muere: nunca ejecuta su finally
+    }
+    return orig(cmds);
+  };
+  void put(handler, { pagina: "pcb", md: "# muerta", version: 1 });
+  await alPunto; // sincronización por evento, no por tiempo: la petición ya retiene sus candados
+  for (const k of ["hw:lock:uuv:electronica:__indice", "hw:lock:uuv:electronica:pcb"]) assert.ok(redis.data.has(k), `la petición muerta debe retener ${k}`);
+  redis.reloj.ahora = () => Date.now() + 11_000; // el lease huérfano caduca
+  const res = await put(handler, { pagina: "pcb", md: "# viva", version: 1 });
+  assert.equal(res.status, 200);
+  assert.equal((await (await pagina(handler, "pcb")).json()).pagina.md, "# viva");
+});
+
+// ---------- Límite de tasa ----------
+
+test("límite de tasa igual que comentarios: 10 escrituras por minuto y la 11.ª → 429 con Retry-After; las lecturas no cuentan", async () => {
+  const { handler } = await inicializado();
+  for (let i = 0; i < 5; i++) assert.equal((await indice(handler, EDITOR)).status, 200);
+  let v = 1;
+  for (let i = 0; i < 9; i++) assert.equal((await put(handler, { pagina: "pcb", md: `# ${i}`, version: v++ })).status, 200, `escritura ${i + 2}`);
+  const res = await put(handler, { pagina: "pcb", md: "# 11", version: v });
+  assert.equal(res.status, 429);
+  assert.ok(Number(res.headers.get("retry-after")) > 0);
+});
+
+// ---------- Módulo compartido (sin duplicar el cliente Redis ni la sesión) ----------
+
+test("estructura: hardware-core no duplica clienteRedis ni la verificación de sesión: los toma de un módulo compartido", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../lib/hardware-core.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /\/pipeline/, "sin otra copia del cliente REST de Upstash");
+  assert.doesNotMatch(src, /createHmac|crypto\.subtle/, "sin otra verificación HMAC");
+  const com = await import("../lib/comentarios-core.mjs");
+  const comun = await import("../lib/api-comun.mjs");
+  assert.equal(typeof comun.clienteRedis, "function");
+  assert.equal(com.clienteRedis, comun.clienteRedis, "comentarios-core reexporta el mismo clienteRedis");
+});
+
+test("estructura: api/hardware.js delega en lib/hardware-core.mjs con projects.json y las plantillas importadas como JSON", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../api/hardware.js", import.meta.url), "utf8");
+  assert.match(src, /from\s+["']\.\.\/lib\/hardware-core\.mjs["']/);
+  assert.match(src, /projects\.json["']\s+with\s+\{\s*type:\s*["']json["']\s*\}/);
+  assert.match(src, /plantillas\/electronica\.json["']\s+with/);
+  assert.match(src, /plantillas\/mecanica\.json["']\s+with/);
+  for (const m of ["GET", "POST", "PUT", "DELETE"]) assert.match(src, new RegExp(`export const ${m}\\b`));
+});
+
+test("entidad numérica de sustituto (&#xd800;) no rompe el render y no deja javascript:", async () => {
+  const { handler } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "[x](&#xd800;javascript:alert(1)) [y](&#55296;javascript:alert(2))", version: 1 })).status, 200);
+  const res = await pagina(handler, "pcb");
+  assert.equal(res.status, 200);
+  const { html } = (await res.json()).pagina;
+  assert.doesNotMatch(html, /href\s*=\s*["']?\s*javascript:/i);
+});
+
+test("PUT con cambio de título toma el candado del índice", async () => {
+  const m = await inicializado();
+  const { handler, redis } = m;
+  const orig = redis.exec.bind(redis);
+  const claves = [];
+  redis.exec = async (cmds) => {
+    for (const c of cmds) if (c[0] === "SET" && String(c[1]).includes(":lock:")) claves.push(c[1]);
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# PCB", version: 1, titulo: "PCB nueva" })).status, 200);
+  assert.ok(claves.some((k) => k.endsWith(":__indice")), `candados tomados: ${claves.join(",")}`);
+});
+
+test("la clave de candado del índice no colisiona con una página de slug `indice`", async () => {
+  const { handler } = await inicializado();
+  assert.equal((await post(handler, { accion: "crear", pagina: "indice", titulo: "Índice" })).status, 201);
+  assert.equal((await put(handler, { pagina: "indice", md: "# i", version: 1 })).status, 200);
+  assert.equal((await del(handler, { pagina: "indice", version: 2 })).status, 200);
+});
+
+test("inicializar tras perder el índice conserva el título guardado de las páginas con hash", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", titulo: "PCB renombrada", md: "# x", version: 1 })).status, 200);
+  redis.data.delete("hw:uuv:electronica:indice");
+  const res = await post(handler, { accion: "inicializar" });
+  assert.equal(res.status, 201);
+  const pcb = (await res.json()).paginas.find((p) => p.slug === "pcb");
+  assert.equal(pcb.titulo, "PCB renombrada");
+});
+
+test("restaurar con título distinto toma el candado del índice y actualiza el índice", async () => {
+  const { handler, redis } = await inicializado();
+  await put(handler, { pagina: "pcb", md: "# buena", version: 1 });
+  await put(handler, { pagina: "pcb", md: "# otra", version: 2, titulo: "PCB nueva" });
+  // revisiones[0] guarda el título anterior ("PCB").
+  const orig = redis.exec.bind(redis);
+  const claves = [];
+  redis.exec = async (cmds) => {
+    for (const c of cmds) if (c[0] === "SET" && String(c[1]).includes(":lock:")) claves.push(c[1]);
+    return orig(cmds);
+  };
+  assert.equal((await post(handler, { accion: "restaurar", pagina: "pcb", revision: 0, version: 3 })).status, 200);
+  assert.ok(claves.some((k) => k.endsWith(":__indice")), "toma el candado del índice");
+  const j = await (await indice(handler, "ana")).json();
+  assert.equal(j.paginas.find((p) => p.slug === "pcb").titulo, "PCB");
+});
+
+test("el candado solo lo libera su dueño: si el lease expiró y otro lo tomó, no se borra", async () => {
+  const { handler, redis } = await inicializado();
+  const orig = redis.exec.bind(redis);
+  redis.exec = async (cmds) => {
+    // Simula expiración + readquisición por otro justo antes de liberar.
+    for (const c of cmds) if (c[0] === "EVAL" && String(c[1]).includes("'del'")) redis.data.set("hw:lock:uuv:electronica:pcb", "de-otro");
+    return orig(cmds);
+  };
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.equal(redis.data.get("hw:lock:uuv:electronica:pcb"), "de-otro");
+});
+
+test("el candado propio sí se libera y el fake caduca el lease a los 10 s", async () => {
+  const { handler, redis } = await inicializado();
+  assert.equal((await put(handler, { pagina: "pcb", md: "# x", version: 1 })).status, 200);
+  assert.ok(!redis.data.has("hw:lock:uuv:electronica:pcb"));
+  await redis.exec([["SET", "k", "v", "NX", "EX", 10]]);
+  { const ttl = (await redis.exec([["TTL", "k"]]))[0]; assert.ok(ttl > 0 && ttl <= 10, `TTL fuera de rango: ${ttl}`); }
+  const t = Date.now();
+  redis.reloj.ahora = () => t + 11000;
+  assert.equal((await redis.exec([["GET", "k"]]))[0], null);
+});
+
+test("DELETE: lee las revisiones por tramos (LRANGE <= 5 elementos, como mucho 2 lecturas) y omitidas = total - guardadas", async () => {
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  for (let v = 1; v <= 20; v++) {
+    assert.equal((await put(handler, { pagina: "nueva", md: `${v}`.padEnd(100 * 1024, "x"), version: v })).status, 200);
+    await redis.exec([["DEL", "hw:rl:edi"]]);
+  }
+  const antes = redis.comandos.length;
+  assert.equal((await del(handler, { pagina: "nueva", version: 21 })).status, 200);
+  const lr = redis.comandos.slice(antes).filter((c) => c[0] === "LRANGE");
+  assert.ok(lr.length >= 1 && lr.length <= 2, `LRANGE emitidos: ${lr.length}`);
+  for (const c of lr) assert.ok(Number(c[3]) - Number(c[2]) + 1 <= 5, "tramo de 5 como máximo");
+  const [entrada] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.ok(entrada.revisiones.length > 0);
+  assert.equal(entrada.revisionesOmitidas, 20 - entrada.revisiones.length);
+});
+
+test("DELETE: historial pequeño se lee entero y en orden; sin revisiones, papelera vacía y omitidas 0", async () => {
+  const { handler, redis } = await montar();
+  await post(handler, { accion: "crear", pagina: "nueva", titulo: "Nueva" });
+  await put(handler, { pagina: "nueva", md: "# dos", version: 1 });
+  await put(handler, { pagina: "nueva", md: "# tres", version: 2 });
+  assert.equal((await del(handler, { pagina: "nueva", version: 3 })).status, 200);
+  let [e] = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((v) => JSON.parse(v));
+  assert.deepEqual(e.revisiones.map((r) => r.version), [2, 1]);
+  assert.equal(e.revisionesOmitidas, 0);
+  // Sin revisiones: se vacía la lista antes de borrar.
+  await post(handler, { accion: "crear", pagina: "otra", titulo: "Otra" });
+  await redis.exec([["DEL", "hw:rev:uuv:electronica:otra"]]);
+  const v = (await (await pagina(handler, "otra")).json()).pagina.version;
+  const antes = redis.comandos.length;
+  assert.equal((await del(handler, { pagina: "otra", version: v })).status, 200);
+  assert.ok(redis.comandos.slice(antes).some((c) => c[0] === "LLEN"));
+  e = [...redis.data.get("hw:papelera:uuv:electronica").values()].map((x) => JSON.parse(x)).find((x) => x.titulo === "Otra");
+  assert.deepEqual(e.revisiones, []);
+  assert.equal(e.revisionesOmitidas, 0);
+});

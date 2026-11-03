@@ -48,9 +48,16 @@ Si el repo tiene `openwiki/.graph/ros.json` (lo genera `tools/ros_graph.py` en e
 | `SESSION_SECRET` | 32+ caracteres aleatorios para firmar la cookie de sesión |
 | `ALLOWED_ORG` | Org cuyos miembros pueden entrar (p. ej. `vanttec`) |
 | `ALLOWED_USERS` | Opcional: logins separados por coma, como respaldo |
+| `BLOB_READ_WRITE_TOKEN` | Lo crea Vercel al conectar un Blob store privado al proyecto; activa la subida de archivos de hardware (`/api/archivos/`) |
 | `PREVIEW_TRUST_VERCEL_AUTH` | `1` para que los Preview no pidan login de GitHub. Solo con Vercel Authentication activo en *Deployment Protection*; si no, los Preview responden 403 |
 
 Los Preview no usan la OAuth App: los protege el login de Vercel (ver `PREVIEW_TRUST_VERCEL_AUTH`).
+
+## Electrónica y Mecánica (hardware)
+Cada proyecto puede documentar disciplinas de hardware con contenido guardado solo en la web (no en el GitHub del proyecto). Se activan con la clave opcional `disciplinas` de `projects.json`: `"disciplinas": { "electronica": { "plantilla": "electronica", "editores": ["login"] } }`. `plantilla` es un archivo de `plantillas/` y `editores` son los únicos logins que pueden escribir; todos los que ven el proyecto leen. No se usa `secciones` (es del grafo).
+
+- **Páginas** (`/api/hardware/`): Markdown con versiones, revisiones y papelera. Usan el mismo Upstash Redis que los comentarios; no requieren nada más.
+- **Archivos** (`/api/archivos/`): suben directo a Vercel Blob y sus metadatos viven en el mismo Upstash Redis (`KV_REST_API_URL`/`KV_REST_API_TOKEN` o `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`); sin él responde 503. Para activarlos: Vercel → Storage → crear un **Blob store privado** y conectarlo al proyecto (esto crea `BLOB_READ_WRITE_TOKEN`); después, volver a desplegar. Con un store público las URLs serían accesibles sin login: debe ser privado. Los archivos se sirven por el portal (con sesión), nunca por la URL del Blob.
 
 ## Avisos en la portada
 - **Sin documentación aún:** la rama de `projects.json` no tiene `openwiki/` ni `docs/arch/`; si hay ramas `docs/*` sin mergear, las nombra.
