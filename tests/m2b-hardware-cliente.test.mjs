@@ -329,6 +329,20 @@ test("cliente: crearRenderizador(win) devuelve { html, fragmento } y no deja HTM
   }
 });
 
+test("cliente: entidad numérica de sustituto (&#xd800; / &#55296;) en un enlace no rompe el render ni deja javascript:", async () => {
+  for (const caso of ["[x](&#xd800;javascript:alert(1))", "[y](&#55296;javascript:alert(2))", "[x](&#xd800;javascript:alert(1)) [y](&#55296;javascript:alert(2))"]) {
+    const { html, doc } = await render(caso);
+    assert.equal(typeof html, "string", caso);
+    // Se resuelve con el parser WHATWG (el del navegador): "�javascript:..." es una ruta relativa, no un esquema.
+    for (const a of doc.querySelectorAll("[href]")) {
+      const h = a.getAttribute("href");
+      assert.doesNotMatch(h.replace(/[\u0000- \u007f-\u009f]/g, ""), /^javascript:/i, `${caso}: href ${h}`);
+      assert.notEqual(new URL(h, `${ORIGIN}/uuv/electronica/`).protocol, "javascript:", `${caso}: href ${h}`);
+    }
+    comprobarSeguro(doc, caso);
+  }
+});
+
 test("cliente: el HTML crudo se neutraliza (se ve como texto), igual que neutralizeHtml en la wiki", async () => {
   const { doc } = await render("# Hola\n\n<b>negrita cruda</b>\n\ntexto <i>en línea</i> fin\n\n<div onclick=x>bloque</div>");
   assert.equal(doc.querySelector("b, i, div"), null, "las etiquetas crudas no se vuelven elementos");

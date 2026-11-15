@@ -645,13 +645,15 @@ test("estructura: api/hardware.js delega en lib/hardware-core.mjs con projects.j
   for (const m of ["GET", "POST", "PUT", "DELETE"]) assert.match(src, new RegExp(`export const ${m}\\b`));
 });
 
-test("entidad numérica de sustituto (&#xd800;) no rompe el render y no deja javascript:", async () => {
+test("entidad numérica de sustituto (&#xd800;) no rompe la API: devuelve el md tal cual y sin html (el render es del cliente)", async () => {
   const { handler } = await inicializado();
-  assert.equal((await put(handler, { pagina: "pcb", md: "[x](&#xd800;javascript:alert(1)) [y](&#55296;javascript:alert(2))", version: 1 })).status, 200);
+  const md = "[x](&#xd800;javascript:alert(1)) [y](&#55296;javascript:alert(2))";
+  assert.equal((await put(handler, { pagina: "pcb", md, version: 1 })).status, 200);
   const res = await pagina(handler, "pcb");
   assert.equal(res.status, 200);
-  const { html } = (await res.json()).pagina;
-  assert.doesNotMatch(html, /href\s*=\s*["']?\s*javascript:/i);
+  const { pagina: p } = await res.json();
+  assert.equal(p.html, undefined, "sin html: renderiza el navegador");
+  assert.equal(p.md, md);
 });
 
 test("PUT con cambio de título toma el candado del índice", async () => {
