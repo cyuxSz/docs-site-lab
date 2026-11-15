@@ -6,8 +6,8 @@
     "repo": "cyuxSz/uuv-docs-lab",
     "branch": "main",
     "note": "Copia de prueba de vanttec/uuv_software",
-    "resumenInicio": "Vehículo submarino autónomo de VantTEC para RoboSub: ROS 2, visión con YOLO, localización EKF y control ASMC.",
-    "descripcionCaratula": "Vehículo submarino autónomo de VantTEC para RoboSub: chasis tipo costillar de nylamid, 6 propulsores, Jetson con ROS 2 y una máquina de estados de misión, visión con YOLO, localización EKF y control ASMC.",
+    "resumenInicio": "Vehículo submarino autónomo de VantTEC para RoboSub: ROS 2, visión con YOLO, pose de la ZED (EKF con IMU planeado) y control ASMC.",
+    "descripcionCaratula": "Vehículo submarino autónomo de VantTEC para RoboSub: chasis tipo costillar de nylamid, 6 propulsores, Jetson con ROS 2 y una máquina de estados de misión, visión con YOLO, pose de la ZED 2i (EKF con IMU planeado) y control ASMC.",
     "novedadesNota": "Por ahora este repo es una copia de prueba del original, así que todos los cambios aparecen con el mismo autor.",
     "kind": "submarino",
     "tagline": "Vehículo submarino autónomo",
@@ -15,7 +15,7 @@
     "tour": [
       { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2i: además de ver, calcula dónde está el sub." },
       { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },
-      { "node": "uuv_mission/instruction_handler", "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo." },
+      { "node": "uuv_mission/instruction_handler", "text": "La misión decide a dónde ir y manda ese objetivo por /pose_objetivo. Ojo: en sim los giros de más de ~90° desestabilizan el control." },
       { "node": "uuv_control/asmc", "text": "El control (ASMC) compara dónde está con dónde debe estar y calcula las fuerzas (/forces)." },
       { "node": "uuv_control/thrust_allocator", "text": "thrust_allocator reparte esas fuerzas entre los 6 motores. En este launch el paso al Arduino está comentado." }
     ],
@@ -32,10 +32,10 @@
     "secciones": {
       "vision": {
         "tour": [
-          { "node": "uuv_vision/picture", "text": "picture guarda la última imagen de /camera/right, publica /camera/low_res y la entrega a quien llame al servicio /take_picture. Si responde vacío, no está llegando la cámara (en el log sale «No hay camara»). Prueba: ros2 service call /take_picture uuv_interfaces/srv/TakePicture" },
+          { "node": "uuv_vision/picture", "text": "picture guarda la última imagen de /camera/right, la entrega a quien llame al servicio /take_picture. /camera/low_res hoy no se publica (está roto): falta una coma en picture.py, cv2.resize(cv_image (640, 360)). /take_picture sí funciona. Si responde vacío, no está llegando la cámara (en el log sale «No hay camara»). Prueba: ros2 service call /take_picture uuv_interfaces/srv/TakePicture" },
           { "node": "uuv_vision/gate_analizer", "text": "gate_analizer pide la foto a /take_picture, busca la compuerta y responde por /GateService. Los otros *_analizer (navigation, search, octagon, pivot_align) siguen el mismo patrón, cada uno con su servicio." },
           { "node": "uuv_mission/mission_handler_3", "text": "En sim-competencia, mission_handler_3 llama al servicio de la tarea y, con la respuesta, publica el objetivo en /pose_objetivo. Para ver si llega: ros2 topic echo /pose_objetivo" },
-          { "node": "uuv_mission/instruction_handler", "text": "En el Jetson (y en sim-secuencia) instruction_handler hace ese mismo papel. Después siguen asmc (lee /pose_objetivo y publica /forces) y thrust_allocator (reparte /forces entre los motores): si el sub detecta pero no se mueve, sigue en la sección Control." }
+          { "node": "uuv_mission/instruction_handler", "text": "En el Jetson (y en sim-secuencia) instruction_handler hace ese mismo papel. En sim funcionan traslaciones y giros pequeños; un giro con yaw mayor a ~90° desestabiliza el ASMC (satura a ±70 N) y la misión no termina bien. Después siguen asmc (lee /pose_objetivo y publica /forces) y thrust_allocator (reparte /forces entre los motores): si el sub detecta pero no se mueve, sigue en la sección Control." }
         ]
       }
     },
