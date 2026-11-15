@@ -247,9 +247,10 @@ test("archivos: subir PNG y PDF, leerlos con las cabeceras de hoy y borrarlos", 
   assert.equal(pdf.status, 201);
 
   // Clave canónica (igual que el pathname de Blob) y Content-Type de la lista blanca, no del cliente.
-  assert.ok(r2.objetos.has(`hw/uuv/electronica/${ID}-placa.png`), [...r2.objetos.keys()].join(", "));
-  assert.equal(r2.objetos.get(`hw/uuv/electronica/${ID}-placa.png`).httpMetadata.contentType, "image/png");
-  assert.ok(r2.objetos.has(`hw/uuv/electronica/${ID2}-esquema-v2.pdf`));
+  const clavePng = [...r2.objetos.keys()].find((k) => new RegExp(`^hw/uuv/electronica/${ID}-[0-9a-f-]{36}-placa\.png$`).test(k));
+  assert.ok(clavePng, [...r2.objetos.keys()].join(", "));
+  assert.equal(r2.objetos.get(clavePng).httpMetadata.contentType, "image/png");
+  assert.ok([...r2.objetos.keys()].some((k) => new RegExp(`^hw/uuv/electronica/${ID2}-[0-9a-f-]{36}-esquema-v2\.pdf$`).test(k)));
 
   const lista = await (await pedir("/api/archivos/?proyecto=uuv&lista=1", { env, login: "ana" })).json();
   assert.deepEqual(lista.archivos.map((a) => a.id).sort(), [ID, ID2].sort());
@@ -268,10 +269,34 @@ test("archivos: subir PNG y PDF, leerlos con las cabeceras de hoy y borrarlos", 
   assert.match(gp.headers.get("content-disposition") ?? "", /^inline; filename="esquema-v2\.pdf"/);
 
   assert.equal((await borrar(env, ID)).status, 200);
-  assert.ok(!r2.objetos.has(`hw/uuv/electronica/${ID}-placa.png`), "borra el objeto de R2");
+  assert.ok(!r2.objetos.has(clavePng), "borra el objeto de R2");
   assert.equal((await getArchivo(env, ID)).status, 404);
   // Un id borrado no se puede reutilizar (lápida, como hoy).
   assert.equal((await subir(env, { id: ID })).status, 409);
+});
+
+test("archivos: carrera de dos subidas del mismo id; el perdedor (EVAL=0) no borra el objeto del ganador", async () => {
+  const { env, r2 } = crearEnv();
+  const GANADOR = new Uint8Array([137, 80, 78, 71, 1, 1, 1, 1]);
+  assert.equal((await subir(env, { id: ID, bytes: GANADOR })).status, 201);
+  const [claveGanadora] = [...r2.objetos.keys()];
+  // El perdedor pasa el HEXISTS (lo hizo antes de que el ganador insertara) y su EVAL devuelve 0.
+  const fetchNormal = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const cmds = JSON.parse(init.body);
+    return Response.json(cmds.map((c) => ({ result: c[0] === "HEXISTS" || c[0] === "SISMEMBER" || c[0] === "EVAL" ? 0 : null })));
+  };
+  let perdedor;
+  try {
+    perdedor = await subir(env, { id: ID, bytes: PNG });
+  } finally {
+    globalThis.fetch = fetchNormal;
+  }
+  assert.equal(perdedor.status, 409);
+  assert.deepEqual([...r2.objetos.keys()], [claveGanadora], "solo queda el objeto del ganador");
+  const g = await getArchivo(env, ID);
+  assert.equal(g.status, 200);
+  assert.deepEqual(new Uint8Array(await g.arrayBuffer()), GANADOR);
 });
 
 test("archivos: SVG se sirve como adjunto con la CSP sandbox propia (el Worker no la pisa con la global)", async () => {
