@@ -180,7 +180,7 @@ test("worker: el 404 de ASSETS también lleva las cabeceras de seguridad", async
 });
 
 test("worker: /:project/arch/* lleva la CSP sandbox (también con mayúsculas o codificado); el resto no", async () => {
-  for (const path of ["/uuv/arch/x.html", "/uuv/arch/sub/y.html", "/uuv/ARCH/x.html", "/uuv/%61rch/x.html"]) {
+  for (const path of ["/uuv/arch/x.html", "/uuv/arch/sub/y.html", "/uuv/ARCH/x.html", "/uuv/%61rch/x.html", "/uuv/%5carch/x.html", "/uuv//arch/x.html"]) {
     const res = await pedir(path, { cookie: sesion("ana") });
     assert.equal(res.status, 200, path);
     assert.equal(res.headers.get("content-security-policy"), SANDBOX, path);
