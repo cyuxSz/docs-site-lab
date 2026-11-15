@@ -75,4 +75,21 @@ npm ci
 npm run build                     # o, con repos ya clonados: DOCS_LOCAL_REPOS="uuv=../uuv-lab" npm run build
 python -m http.server --directory dist
 ```
-En local no corre el login (el middleware solo se ejecuta en Vercel).
+En local con `python -m http.server` no corre el login (el middleware solo se ejecuta en Vercel); para probarlo usa `npm run cf:dev` (ver la sección de Cloudflare).
+
+## Cloudflare (en preparación)
+El portal también puede servirse desde un Worker de Cloudflare con static assets (`worker/index.mjs`, `wrangler.jsonc`), con el mismo login que Vercel. Vercel sigue siendo producción.
+
+```bash
+npm run build
+cp .dev.vars.example .dev.vars    # rellena los valores; .dev.vars no se sube a git
+npm run cf:dev                    # http://localhost:8787
+```
+
+Variables (en `.dev.vars` en local; en Cloudflare con `wrangler secret put`):
+- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`: OAuth App de GitHub (callback `<origen>/auth/callback`).
+- `SESSION_SECRET`: 32+ caracteres aleatorios para firmar la cookie `docs_session`.
+- `ALLOWED_ORG`: organización con acceso. `ALLOWED_USERS`: logins extra separados por coma (opcional).
+
+`/api/*` responde 501 hasta M2. Los Preview se protegerán con Cloudflare Access.
+
