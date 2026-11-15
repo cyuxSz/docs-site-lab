@@ -501,3 +501,61 @@ test("wrangler: el Worker se empaqueta (deploy --dry-run) sin satteri ni process
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("archivos: si el EVAL aplica la inserción pero la respuesta se pierde, el objeto se conserva y se puede leer", async () => {
+  const { env, r2 } = crearEnv();
+  const fetchNormal = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const cmds = JSON.parse(init.body);
+    const res = await fetchNormal(input, init);
+    if (cmds[0][0] === "EVAL") throw new TypeError("respuesta perdida");
+    return res;
+  };
+  let r;
+  try {
+    r = await subir(env, { id: ID });
+  } finally {
+    globalThis.fetch = fetchNormal;
+  }
+  assert.equal(r.status, 201, "la re-lectura confirma que el meta apunta al objeto");
+  assert.equal(r2.objetos.size, 1);
+  const g = await getArchivo(env, ID);
+  assert.equal(g.status, 200);
+  assert.deepEqual(new Uint8Array(await g.arrayBuffer()), PNG);
+});
+
+test("archivos: si el EVAL lanza y la re-lectura también falla, se conserva el objeto y responde 503", async () => {
+  const { env, r2 } = crearEnv();
+  const fetchNormal = globalThis.fetch;
+  let fallar = false;
+  globalThis.fetch = async (input, init = {}) => {
+    const cmds = JSON.parse(init.body);
+    if (cmds[0][0] === "EVAL") fallar = true;
+    if (fallar) throw new TypeError("sin red");
+    return fetchNormal(input, init);
+  };
+  let r;
+  try {
+    r = await subir(env, { id: ID });
+  } finally {
+    globalThis.fetch = fetchNormal;
+  }
+  assert.equal(r.status, 503);
+  assert.equal(r2.objetos.size, 1, "huérfano posible, pero no se pierde el dato");
+});
+
+test("archivos: si el EVAL lanza sin haberse aplicado, se borra el objeto", async () => {
+  const { env, r2 } = crearEnv();
+  const fetchNormal = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const cmds = JSON.parse(init.body);
+    if (cmds[0][0] === "EVAL") throw new TypeError("timeout");
+    return fetchNormal(input, init);
+  };
+  try {
+    await subir(env, { id: ID });
+  } finally {
+    globalThis.fetch = fetchNormal;
+  }
+  assert.equal(r2.objetos.size, 0);
+});
