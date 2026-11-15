@@ -82,9 +82,25 @@ test("proyecto-x no cambia respecto a main", (t) => {
       return false;
     }
   };
-  const ref = ["origin/main", "main"].find(existe);
-  if (!ref) return t.skip("sin ref de main en este checkout (CI superficial)");
-  const base = execFileSync("git", ["show", `${ref}:projects.json`], { cwd: RAIZ, encoding: "utf8" });
+  // En push a main la comparación es contra sí mismo y pasa; es esperado.
+  let spec;
+  const baseRef = process.env.GITHUB_BASE_REF;
+  if (baseRef) {
+    // CI de PR (checkout superficial): solo existe refs/pull/N/merge, hay que traer la base.
+    assert.match(baseRef, /^[A-Za-z0-9._/-]+$/, `GITHUB_BASE_REF con caracteres no válidos: ${baseRef}`);
+    assert.ok(!baseRef.startsWith("-"), "GITHUB_BASE_REF no puede empezar con «-»");
+    try {
+      execFileSync("git", ["fetch", "--quiet", "--depth=1", "origin", baseRef], { cwd: RAIZ, stdio: "pipe" });
+    } catch (e) {
+      assert.fail(`no se pudo hacer fetch de la base «${baseRef}» para comparar proyecto-x: ${e.message}`);
+    }
+    spec = "FETCH_HEAD:projects.json";
+  } else {
+    const ref = ["origin/main", "main"].find(existe);
+    if (!ref) return t.skip("sin ref de main ni GITHUB_BASE_REF en este checkout");
+    spec = `${ref}:projects.json`;
+  }
+  const base = execFileSync("git", ["show", spec], { cwd: RAIZ, encoding: "utf8" });
   const antes = JSON.parse(base).find((p) => p.id === "proyecto-x");
   const ahora = proyectos().find((p) => p.id === "proyecto-x");
   assert.deepEqual(ahora, antes);
