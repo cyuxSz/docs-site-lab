@@ -5,3 +5,6 @@ dist/
 .astro/
 .vercel
 .env*
+
+.dev.vars
+.wrangler/
