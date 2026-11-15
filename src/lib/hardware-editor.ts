@@ -128,3 +128,10 @@ export function mensajeError(estado: number | string): string {
     default: return "Algo salió mal. Inténtalo de nuevo.";
   }
 }
+
+// Ejecuta fn cuando la señal se aborta (o ya lo está). No sirve addEventListener(..., { signal: senal }) sobre la propia
+// senal: la especificación DOM quita ese listener antes de despachar "abort", así que nunca se ejecutaría.
+export function alAbortar(senal: AbortSignal, fn: () => void): void {
+  if (senal.aborted) return fn();
+  senal.addEventListener("abort", fn, { once: true });
+}

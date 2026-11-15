@@ -246,7 +246,7 @@ test("archivos: subir PNG y PDF, leerlos con las cabeceras de hoy y borrarlos", 
   const pdf = await subir(env, { id: ID2, nombre: "esquema v2.pdf", bytes: PDF });
   assert.equal(pdf.status, 201);
 
-  // Clave canónica (igual que el pathname de Blob) y Content-Type de la lista blanca, no del cliente.
+  // Clave R2 única por intento (<id>-<uuid>-<nombre>) para que dos subidas del mismo id no se pisen (la copia Blob→R2 de M4 sí conserva el pathname de Blob), y Content-Type de la lista blanca, no del cliente.
   const clavePng = [...r2.objetos.keys()].find((k) => new RegExp(`^hw/uuv/electronica/${ID}-[0-9a-f-]{36}-placa\.png$`).test(k));
   assert.ok(clavePng, [...r2.objetos.keys()].join(", "));
   assert.equal(r2.objetos.get(clavePng).httpMetadata.contentType, "image/png");

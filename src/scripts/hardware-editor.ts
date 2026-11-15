@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
 import {
+  alAbortar,
   actualizarTituloIndice,
   clavePagina,
   enlaceArchivo,
@@ -593,7 +594,7 @@ async function iniciar(root: HTMLElement) {
     modoSubida ??= (async () => {
       // Dentro del límite de inactividad: si el servidor no responde, la consulta se corta y no deja la subida colgada.
       const cortar = new AbortController();
-      escuchar(senal, "abort", () => cortar.abort());
+      alAbortar(senal, () => cortar.abort());
       const t = setTimeout(() => cortar.abort(), SIN_AVANCE_MS);
       try {
         const r = await fetch("/api/archivos/?capacidades=1", { credentials: "same-origin", signal: cortar.signal });
@@ -660,7 +661,7 @@ async function iniciar(root: HTMLElement) {
         }, SIN_AVANCE_MS);
       };
       armar();
-      escuchar(senal, "abort", () => corte.abort());
+      alAbortar(senal, () => corte.abort());
       try {
         // Cada subida puede cancelar su espera de la consulta compartida (corte), para llegar siempre al finally.
         const cancelada = new Promise<never>((_, rechazar) => {
