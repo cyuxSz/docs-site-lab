@@ -77,6 +77,20 @@ python -m http.server --directory dist
 ```
 En local con `python -m http.server` no corre el login (el middleware solo se ejecuta en Vercel); para probarlo usa `npm run cf:dev` (ver la sección de Cloudflare).
 
+## Despliegue en Cloudflare
+`.github/workflows/deploy-cloudflare.yml` construye el portal y lo despliega con `wrangler-action`. Se dispara con:
+- push a la rama `cloudflare` (build completo; `main` queda comentado hasta M4);
+- a mano, por proyecto: `gh workflow run deploy-cloudflare.yml --ref cloudflare -f proyecto=uuv`;
+- `repository_dispatch` tipo `docs-actualizados` (con `client_payload: { proyecto, sha }`; solo corre desde la rama por defecto).
+
+Secrets: `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID`. Sin ellos el workflow construye, avisa con `::warning::` y termina en verde sin desplegar. `DOCS_GITHUB_TOKEN` se usa para leer los repos privados.
+
+Con un disparo por proyecto, el build corre `tools/fetch.mjs` con `DOCS_SOLO_PROYECTO=<id>`: vuelve a traer solo ese proyecto y conserva los demás del `.content/` restaurado de la caché (si a otro le falta algo, lo trae de nuevo). Sin la variable (Vercel, push) se descarga todo.
+
+Quién puede disparar un proyecto lo define `editoresDocs` en `projects.json` (logins de GitHub; sin esa lista nadie puede, se actualiza con el build completo). No llega a `.content/` ni al sitio. El workflow valida proyecto, sha y remitente con `tools/proyecto-valido.mjs` antes de construir.
+
+El repo de código avisa con `docs/notify-docs-site.cloudflare.yml.example` (renombrar a `notify-docs-site.yml` en ese repo), que usa el secret `DOCS_SITE_DISPATCH_TOKEN`: un token fine-grained solo sobre `docs-site-lab` con permiso Actions: Read and write.
+
 ## Cloudflare (en preparación)
 El portal también puede servirse desde un Worker de Cloudflare con static assets (`worker/index.mjs`, `wrangler.jsonc`), con el mismo login que Vercel. Vercel sigue siendo producción.
 
