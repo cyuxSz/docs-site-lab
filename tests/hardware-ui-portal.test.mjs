@@ -188,3 +188,15 @@ test("hardware-editor.ts: el DELETE envía { pagina, version } y decide con resu
   assert.match(js, /api\("DELETE",\s*\{\s*cuerpo:\s*\{\s*pagina:\s*slug,\s*version:\s*pagina\.version\s*\}\s*\}\)/);
   assert.match(js, /resultadoBorrado\(r\.status\)/);
 });
+
+// ---------- subida: capacidades y cancelación ----------
+test("hardware-editor: capacidades acotadas por inactividad, sin cachear fallo de red; subir() cancelable; abort previo a send", () => {
+  const src = leer(SCRIPT);
+  const modo = src.slice(src.indexOf("function modoDeSubida"), src.indexOf("function subirDirecto"));
+  assert.match(modo, /SIN_AVANCE_MS/, "la consulta compartida respeta el límite de inactividad");
+  assert.match(modo, /catch \{[^}]*modoSubida = null;[^}]*throw new TypeError\("red"\)/s, "el fallo de red no se cachea");
+  assert.match(modo, /if \(!r\.ok\) return "blob"/);
+  assert.match(src, /Promise\.race\(\[modoDeSubida\(\), cancelada\]\)/, "subir() cancela su espera con corte");
+  assert.match(src, /if \(corte\.aborted\) return reject\(new TypeError\("abortado"\)\)/, "abort previo a send rechaza");
+  assert.doesNotMatch(src, /if \(corte\.aborted\) return xhr\.abort\(\)/);
+});
