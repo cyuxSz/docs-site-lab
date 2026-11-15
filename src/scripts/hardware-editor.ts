@@ -625,7 +625,7 @@ async function iniciar(root: HTMLElement) {
       };
       xhr.onerror = () => reject(new TypeError("red"));
       xhr.onabort = () => reject(new TypeError("abortado"));
-      escuchar(corte, "abort", () => xhr.abort());
+      alAbortar(corte, () => xhr.abort());
       if (corte.aborted) return reject(new TypeError("abortado"));
       xhr.send(archivo);
     });
@@ -666,7 +666,7 @@ async function iniciar(root: HTMLElement) {
         // Cada subida puede cancelar su espera de la consulta compartida (corte), para llegar siempre al finally.
         const cancelada = new Promise<never>((_, rechazar) => {
           if (corte.signal.aborted) return rechazar(new TypeError("abortado"));
-          escuchar(corte.signal, "abort", () => rechazar(new TypeError("abortado")));
+          alAbortar(corte.signal, () => rechazar(new TypeError("abortado")));
         });
         cancelada.catch(() => {});
         if ((await Promise.race([modoDeSubida(), cancelada])) === "directa") {

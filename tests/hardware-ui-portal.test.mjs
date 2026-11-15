@@ -153,6 +153,16 @@ test("script: inicialización idempotente, listeners con señal de aborto y preg
   assert.match(preg, /catch\s*\{\s*fin\(false\)/, "showModal que falla no deja la promesa colgada");
 });
 
+test("script: los cortes de subida usan alAbortar (escuchar con { signal } no dispara al abortar la propia señal)", () => {
+  const src = leer(SCRIPT);
+  assert.equal((src.match(/alAbortar\((senal|corte|corte\.signal),/g) ?? []).length, 4, "cuatro puntos con alAbortar");
+  for (const ancla of ["alAbortar(senal, () => cortar.abort())", "alAbortar(corte, () => xhr.abort())", "alAbortar(senal, () => corte.abort())", "alAbortar(corte.signal,"]) {
+    assert.ok(src.includes(ancla), ancla);
+  }
+  assert.doesNotMatch(src, /escuchar\(senal,\s*"abort"/);
+  assert.doesNotMatch(src, /escuchar\(corte[^)]*"abort"/);
+});
+
 test("script: cada acción limpia el estado aria-live al empezar", () => {
   const src = leer(SCRIPT);
   for (const ancla of ['escuchar(form, "submit"', "escuchar(btnBorrar", 'accion: "reordenar"', "async function subir"]) {
