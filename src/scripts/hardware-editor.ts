@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
 import {
+  alAbortar,
   actualizarTituloIndice,
   clavePagina,
   enlaceArchivo,
@@ -599,13 +600,21 @@ async function iniciar(root: HTMLElement) {
   let modoSubida: Promise<"directa" | "blob"> | null = null;
   function modoDeSubida(): Promise<"directa" | "blob"> {
     modoSubida ??= (async () => {
+      // Dentro del límite de inactividad: si el servidor no responde, la consulta se corta y no deja la subida colgada.
+      const cortar = new AbortController();
+      alAbortar(senal, () => cortar.abort());
+      const t = setTimeout(() => cortar.abort(), SIN_AVANCE_MS);
       try {
-        const r = await fetch("/api/archivos/?capacidades=1", { credentials: "same-origin", signal: senal });
+        const r = await fetch("/api/archivos/?capacidades=1", { credentials: "same-origin", signal: cortar.signal });
         if (!r.ok) return "blob";
         const j = await r.json();
         return j?.subida === "directa" ? "directa" : "blob";
       } catch {
-        return "blob";
+        // Un fallo de red no se cachea: la siguiente subida vuelve a consultar.
+        modoSubida = null;
+        throw new TypeError("red");
+      } finally {
+        clearTimeout(t);
       }
     })();
     return modoSubida;
@@ -624,8 +633,8 @@ async function iniciar(root: HTMLElement) {
       };
       xhr.onerror = () => reject(new TypeError("red"));
       xhr.onabort = () => reject(new TypeError("abortado"));
-      escuchar(corte, "abort", () => xhr.abort());
-      if (corte.aborted) return xhr.abort();
+      alAbortar(corte, () => xhr.abort());
+      if (corte.aborted) return reject(new TypeError("abortado"));
       xhr.send(archivo);
     });
   }
@@ -660,9 +669,15 @@ async function iniciar(root: HTMLElement) {
         }, SIN_AVANCE_MS);
       };
       armar();
-      escuchar(senal, "abort", () => corte.abort());
+      alAbortar(senal, () => corte.abort());
       try {
-        if ((await modoDeSubida()) === "directa") {
+        // Cada subida puede cancelar su espera de la consulta compartida (corte), para llegar siempre al finally.
+        const cancelada = new Promise<never>((_, rechazar) => {
+          if (corte.signal.aborted) return rechazar(new TypeError("abortado"));
+          alAbortar(corte.signal, () => rechazar(new TypeError("abortado")));
+        });
+        cancelada.catch(() => {});
+        if ((await Promise.race([modoDeSubida(), cancelada])) === "directa") {
           await subirDirecto(archivo, id, corte.signal, (cargado, total) => {
             armar();
             progreso.value = porcentaje(cargado, total);
