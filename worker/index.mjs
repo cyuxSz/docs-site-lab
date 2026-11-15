@@ -17,7 +17,9 @@ const SANDBOX = "sandbox allow-scripts allow-downloads allow-popups; frame-ances
 function esArch(pathname) {
   const ruta = decodificar(pathname);
   if (ruta === null) return true;
-  return (ruta.split("/")[2] ?? "").toLowerCase() === "arch";
+  // Misma segmentación que canAccess: separa por / y \, descarta vacíos y ".".
+  const segs = ruta.split(/[/\\]/).filter((s) => s !== "" && s !== ".");
+  return (segs[1] ?? "").toLowerCase() === "arch";
 }
 
 // Copia la respuesta (las de ASSETS tienen cabeceras inmutables) y fija las cabeceras.
