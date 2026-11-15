@@ -61,6 +61,11 @@ export function moverEnOrden(orden: string[], slug: string, delta: -1 | 1): stri
 // Pathname exacto que exige el servidor: hw/<proyecto>/<disciplina>/<uuid>-<nombre saneado>.
 export const rutaBlob = (proyecto: string, disciplina: string, id: string, nombre: string): string => `hw/${proyecto}/${disciplina}/${id}-${sanearNombre(nombre)}`;
 
+// URL de la subida directa al Worker (modo R2): el archivo va como cuerpo binario, los metadatos en la query.
+export function urlSubidaDirecta(proyecto: string, disciplina: string, id: string, nombre: string): string {
+  return `/api/archivos/?${new URLSearchParams({ proyecto, disciplina, id, nombre: sanearNombre(nombre) }).toString()}`;
+}
+
 const mb = (n: number): string => `${Math.round(n / (1024 * 1024))} MB`;
 
 export type ResultadoArchivo = { ok: true; tipo: string; imagen: boolean } | { ok: false; error: string };
