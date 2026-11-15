@@ -8,7 +8,7 @@
 // No llama a ningún LLM. Para repos privados necesita DOCS_GITHUB_TOKEN con permiso de lectura de contenido.
 // DOCS_STRICT=1 (CI) termina con error si algún proyecto falla, salvo repos privados cuando no hay token.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walk, leerDentro } from "./archivos.mjs";
@@ -17,6 +17,7 @@ import { clasificarError, limpiarControl } from "./estado.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 import { historial } from "./historial.mjs";
 import { neutralizeHtml, statusBadges } from "./neutralizar.mjs";
+import { esProyectoValido } from "./proyecto-valido.mjs";
 import { pageRoute, parseRutas } from "./rutas.mjs";
 import { corregirH1, tituloPagina } from "./titulos.mjs";
 
@@ -25,6 +26,7 @@ const OUT = join(ROOT, ".content");
 const WORK = join(ROOT, ".build");
 const TOKEN = process.env.DOCS_GITHUB_TOKEN || "";
 const STRICT = process.env.DOCS_STRICT === "1";
+const SOLO = process.env.DOCS_SOLO_PROYECTO || "";
 const LOCAL = Object.fromEntries((process.env.DOCS_LOCAL_REPOS || "").split(",").filter(Boolean).map((p) => p.split("=")));
 
 const toPosix = (p) => p.split(sep).join(posix.sep);
@@ -132,7 +134,11 @@ function rewriteLinks(body, id, rel, repoUrl, sha, links) {
   });
 }
 
+// editoresDocs es solo para CI (quién puede disparar): no llega a .content ni al sitio.
+const publico = ({ editoresDocs, ...resto }) => resto;
+
 function buildProject(project) {
+  project = publico(project);
   const dir = fetchRepo(project);
   const sha = git(["-C", dir, "rev-parse", "HEAD"]);
   const repoUrl = `https://github.com/${project.repo}`;
@@ -237,14 +243,43 @@ function buildProject(project) {
   return summary;
 }
 
-rmSync(OUT, { recursive: true, force: true });
+const projects = JSON.parse(readFileSync(join(ROOT, "projects.json"), "utf8"));
+if (SOLO && !esProyectoValido(SOLO, projects)) {
+  console.error("DOCS_SOLO_PROYECTO no es un proyecto válido de projects.json.");
+  process.exit(1);
+}
+
+// Con DOCS_SOLO_PROYECTO se parte del .content/ previo (el de la caché); sin él o sin previo, descarga completa.
+let previo = null;
+if (SOLO) {
+  try {
+    const txt = leerDentro(OUT, join(OUT, "projects.json"));
+    const prev = txt !== null ? JSON.parse(txt) : null;
+    if (Array.isArray(prev?.projects)) previo = prev.projects;
+  } catch {}
+}
+if (!previo) rmSync(OUT, { recursive: true, force: true });
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(join(OUT, "docs"), { recursive: true });
 
+const conservable = (p) => {
+  const e = previo?.find((x) => x && x.id === p.id);
+  return e && !e.error && (e.empty || existsSync(join(OUT, "data", `${p.id}.json`))) ? e : null;
+};
 const alerts = [await tokenAlert()].filter(Boolean);
-const projects = JSON.parse(readFileSync(join(ROOT, "projects.json"), "utf8"));
 const summary = [];
 for (const p of projects) {
+  const cache = SOLO && p.id !== SOLO ? conservable(p) : null;
+  if (cache) {
+    summary.push(cache);
+    console.log(`↺ ${p.id}: desde caché`);
+    continue;
+  }
+  if (previo) {
+    rmSync(join(OUT, "docs", p.id), { recursive: true, force: true });
+    rmSync(join(OUT, "arch", p.id), { recursive: true, force: true });
+    rmSync(join(OUT, "data", `${p.id}.json`), { force: true });
+  }
   try {
     const result = buildProject(p);
     summary.push(result);
@@ -253,7 +288,7 @@ for (const p of projects) {
     const causa = clasificarError(err, { token: Boolean(TOKEN) });
     const linea = hideToken(err instanceof Error ? err.message : String(err)).split(/\r?\n/).find((l) => l.trim()) ?? "";
     console.error(`✗ ${p.id} (${causa}): ${limpiarControl(linea).slice(0, 240) || "error desconocido"}`);
-    summary.push({ ...p, error: true, auth: causa === "sin-token" || causa === "sin-acceso", causa });
+    summary.push({ ...publico(p), error: true, auth: causa === "sin-token" || causa === "sin-acceso", causa });
   }
 }
 writeFileSync(join(OUT, "projects.json"), JSON.stringify({ builtAt: new Date().toISOString(), alerts, projects: summary }, null, 2));

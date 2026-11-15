@@ -1,0 +1,80 @@
+# Construye el portal y lo despliega a Cloudflare con wrangler-action.
+# Sin los secrets de Cloudflare (M0 pendiente) construye, avisa con ::warning:: y termina en verde.
+name: deploy-cloudflare
+on:
+  push:
+    branches:
+      - cloudflare
+      # Tras el corte (M4):
+      #   - main
+  workflow_dispatch:
+    inputs:
+      proyecto:
+        description: "Id del proyecto de projects.json a refrescar"
+        required: true
+        type: string
+      sha:
+        description: "Commit del repo de código (opcional; solo entra en la clave de caché)"
+        required: false
+        type: string
+  repository_dispatch:
+    types: [docs-actualizados]
+    # client_payload: { proyecto, sha }
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROYECTO: ${{ inputs.proyecto || github.event.client_payload.proyecto || '' }}
+      SHA: ${{ inputs.sha || github.event.client_payload.sha || '' }}
+      REMITENTE: ${{ github.event.sender.login }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "26"
+      - name: Validar proyecto, sha y remitente
+        if: github.event_name != 'push'
+        run: node tools/proyecto-valido.mjs "$PROYECTO" "$SHA" "$REMITENTE"
+      - name: Instalar
+        run: npm ci --no-audit --no-fund
+      - name: Caché de .content
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .content/
+          key: content-${{ hashFiles('projects.json', 'tools/**') }}-${{ env.PROYECTO || 'todos' }}-${{ env.SHA || github.run_id }}
+          restore-keys: |
+            content-${{ hashFiles('projects.json', 'tools/**') }}-
+      - name: Build
+        env:
+          DOCS_STRICT: "1"
+          DOCS_GITHUB_TOKEN: ${{ secrets.DOCS_GITHUB_TOKEN }}
+          DOCS_SOLO_PROYECTO: ${{ env.PROYECTO }}
+        run: npm run build
+      - name: Comprobar secrets de Cloudflare
+        id: cf
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "::warning::Faltan CLOUDFLARE_API_TOKEN o CLOUDFLARE_ACCOUNT_ID: no se despliega"
+            echo "listo=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy
+        if: steps.cf.outputs.listo == 'true'
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

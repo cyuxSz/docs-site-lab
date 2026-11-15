@@ -5,6 +5,7 @@
     "summary": "Vehículo submarino autónomo: control, navegación, visión, misiones y simulación en ROS 2.",
     "repo": "cyuxSz/uuv-docs-lab",
     "branch": "main",
+    "editoresDocs": ["cyuxSz"],
     "note": "Copia de prueba de vanttec/uuv_software",
     "resumenInicio": "Vehículo submarino autónomo de VantTEC para RoboSub: ROS 2, visión con YOLO, localización EKF y control ASMC.",
     "descripcionCaratula": "Vehículo submarino autónomo de VantTEC para RoboSub: chasis tipo costillar de nylamid, 6 propulsores, Jetson con ROS 2 y una máquina de estados de misión, visión con YOLO, localización EKF y control ASMC.",
