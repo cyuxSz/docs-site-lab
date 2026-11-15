@@ -73,13 +73,18 @@ test("tour principal, instruction_handler: también avisa del límite de giros d
   assert.match(paso.text, /giro/i);
 });
 
-test("proyecto-x no cambia respecto a main", () => {
-  let base;
-  try {
-    base = execFileSync("git", ["show", "main:projects.json"], { cwd: RAIZ, encoding: "utf8" });
-  } catch {
-    base = execFileSync("git", ["show", "origin/main:projects.json"], { cwd: RAIZ, encoding: "utf8" });
-  }
+test("proyecto-x no cambia respecto a main", (t) => {
+  const existe = (ref) => {
+    try {
+      execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd: RAIZ, stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const ref = ["origin/main", "main"].find(existe);
+  if (!ref) return t.skip("sin ref de main en este checkout (CI superficial)");
+  const base = execFileSync("git", ["show", `${ref}:projects.json`], { cwd: RAIZ, encoding: "utf8" });
   const antes = JSON.parse(base).find((p) => p.id === "proyecto-x");
   const ahora = proyectos().find((p) => p.id === "proyecto-x");
   assert.deepEqual(ahora, antes);
