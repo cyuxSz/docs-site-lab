@@ -200,3 +200,20 @@ test("hardware-editor: capacidades acotadas por inactividad, sin cachear fallo d
   assert.match(src, /if \(corte\.aborted\) return reject\(new TypeError\("abortado"\)\)/, "abort previo a send rechaza");
   assert.doesNotMatch(src, /if \(corte\.aborted\) return xhr\.abort\(\)/);
 });
+
+test("alAbortar: dispara al abortar la señal; con { signal: senal } sobre la propia senal no dispararía", async () => {
+  const { alAbortar } = await import("../src/lib/hardware-editor.ts");
+  const a = new AbortController();
+  let n = 0;
+  alAbortar(a.signal, () => n++);
+  a.abort();
+  assert.equal(n, 1);
+  const ya = AbortSignal.abort();
+  alAbortar(ya, () => n++);
+  assert.equal(n, 2, "señal ya abortada: se ejecuta de inmediato");
+  const b = new AbortController();
+  let roto = 0;
+  b.signal.addEventListener("abort", () => roto++, { signal: b.signal });
+  b.abort();
+  assert.equal(roto, 0, "el patrón anterior nunca se ejecutaba");
+});
