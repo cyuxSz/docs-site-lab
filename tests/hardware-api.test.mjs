@@ -252,9 +252,9 @@ test("reordenar acepta solo una permutación exacta del índice actual", async (
   }
 });
 
-// ---------- GET de página: HTML sanitizado ----------
+// ---------- GET de página: Markdown y metadatos (M2b: el HTML lo genera y sanea el navegador) ----------
 
-test("GET de página devuelve md, html, autor, actualizado y version (número)", async () => {
+test("GET de página devuelve md, autor, actualizado y version (número), sin html", async () => {
   const { handler } = await inicializado();
   const res = await pagina(handler, "potencia");
   assert.equal(res.status, 200);
@@ -264,70 +264,26 @@ test("GET de página devuelve md, html, autor, actualizado y version (número)",
   assert.equal(p.slug, "potencia");
   assert.equal(p.titulo, "Potencia");
   assert.equal(p.md, PLANTILLAS.electronica[1].md);
-  assert.match(p.html, /<h1[^>]*>Potencia<\/h1>/);
-  assert.match(p.html, /<h2[^>]*>Baterías<\/h2>/);
+  assert.ok(!("html" in p), "sin html: el render y el saneado viven en src/lib/hardware-md.ts (ver m2b-hardware-cliente)");
   assert.equal(p.version, 1);
   assert.equal(p.autor, EDITOR);
 });
 
-test("html sanitizado: <script>, onerror, <iframe> y enlaces javascript: no llegan como HTML activo", async () => {
+test("md con HTML crudo o enlaces peligrosos se guarda y se devuelve tal cual (el cliente lo neutraliza al pintar)", async () => {
   const { handler } = await inicializado();
-  const md = [
-    "# Prueba",
-    "",
-    "<script>alert(1)</script>",
-    "",
-    '<img src=x onerror="alert(1)">',
-    "",
-    '<iframe src="https://evil.example"></iframe>',
-    "",
-    "[clic](javascript:alert(1)) [otro](JaVaScRiPt:alert(2)) [vb](vbscript:msgbox(1)) [dato](data:text/html,<b>x</b>)",
-    "",
-    "Texto con `<b>código</b>` y **negrita**.",
-  ].join("\n");
+  const md = "# Prueba\n\n<script>alert(1)</script>\n\n[clic](javascript:alert(1))\n";
   assert.equal((await put(handler, { pagina: "pcb", md, version: 1 })).status, 200);
-  const { html } = (await (await pagina(handler, "pcb")).json()).pagina;
-  assert.doesNotMatch(html, /<script/i, "sin etiqueta script");
-  assert.doesNotMatch(html, /<img[^>]*onerror/i, "sin img con onerror");
-  assert.doesNotMatch(html, /<iframe/i, "sin iframe");
-  assert.doesNotMatch(html, /href\s*=\s*["']?\s*(javascript|vbscript|data):/i, "sin href peligroso");
-  assert.match(html, /<strong>negrita<\/strong>/, "el Markdown normal sí se renderiza");
-  assert.match(html, /<code>&lt;b&gt;código&lt;\/b&gt;<\/code>/, "el código en línea sale escapado");
+  const { pagina: p } = await (await pagina(handler, "pcb")).json();
+  assert.equal(p.md, md);
+  assert.ok(!("html" in p));
 });
 
-test("html sanitizado: bypasses de esquema y atributos on* no dejan href/src peligrosos", async () => {
-  const { handler } = await inicializado();
-  const casos = [
-    "[x](&#x6a;avascript:alert(1))", "[x](JaVaScRiPt:alert(1))", "[x](java	script:alert(1))", "[x](java&#9;script:alert(1))",
-    "[x](data:text/html,<script>alert(1)</script>)", "![x](vbscript:msgbox)", "<img src=x onerror=alert(1)>", "<svg onload=alert(1)>",
-  ];
-  let v = 1;
-  for (const caso of casos) {
-    const r = await put(handler, { pagina: "pcb", md: caso, version: v });
-    assert.equal(r.status, 200, caso);
-    v++;
-    const { html } = (await (await pagina(handler, "pcb")).json()).pagina;
-    for (const [, valor] of html.matchAll(/\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi).map((m) => [0, m[1] ?? m[2] ?? m[3]])) {
-      // como lo interpreta el navegador: entidades numéricas y tab/salto/control se descartan antes del esquema
-      const real = valor.replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d))).replace(/[\u0000-\u0020]/g, "");
-      assert.doesNotMatch(real, /^(javascript|vbscript|data):/i, `esquema peligroso (${valor}): ${caso}`);
-    }
-    assert.doesNotMatch(html, /<[^>]+\son\w+\s*=/i, `atributo on*: ${caso}`);
-    assert.doesNotMatch(html, /<(script|svg|iframe)/i, `etiqueta activa: ${caso}`);
-  }
-});
-
-test("estructura: renderizarMd reutiliza el pipeline de la wiki (neutralizeHtml de tools/neutralizar.mjs + satteri), sin reimplementarlo", async () => {
+test("estructura: hardware-core ya no renderiza (sin satteri, sin neutralizar.mjs, sin renderizarMd)", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../lib/hardware-core.mjs", import.meta.url), "utf8");
-  assert.match(src, /from\s+["']\.\.\/tools\/neutralizar\.mjs["']/, "importa tools/neutralizar.mjs");
-  assert.match(src, /neutralizeHtml/);
-  assert.match(src, /from\s+["']satteri["']/, "renderiza con satteri");
-  const { renderizarMd } = await core();
-  assert.equal(typeof renderizarMd, "function");
-  const html = await renderizarMd("## Hola\n\n<b>x</b>");
-  assert.match(html, /<h2[^>]*>Hola<\/h2>/);
-  assert.doesNotMatch(html, /<b>x<\/b>/);
+  assert.doesNotMatch(src, /satteri|neutralizar|renderizarMd/);
+  const mod = await core();
+  assert.equal(mod.renderizarMd, undefined);
 });
 
 // ---------- PUT, versión y límites ----------
@@ -344,7 +300,8 @@ test("PUT guarda con la versión esperada: version+1, autor y fecha nuevos", asy
   assert.equal(p.version, 2);
   assert.equal(p.autor, "Otra");
   assert.equal(p.actualizado, new Date(t).toISOString());
-  assert.match(p.html, /Cuatro capas/);
+  assert.equal(p.md, "# PCB\n\nCuatro capas.");
+  assert.ok(!("html" in p));
 });
 
 test("409 si la versión esperada no coincide; responde la versión actual y no pisa el contenido", async () => {

@@ -1,7 +1,7 @@
 // M2a: las APIs del portal (comentarios y archivos sobre R2) en el Worker de Cloudflare, probadas sin cuenta.
 // Upstash se simula interceptando fetch hacia KV_REST_API_URL con el Redis en memoria de fixtures; R2 es un bucket falso
-// en memoria con la forma de la API de Workers (put/get/delete). Hardware sigue en 501 en el Worker (lo bloquea satteri,
-// que no se puede empaquetar para workerd; ver M2b). Vercel no cambia: se comprueba también el modo "blob".
+// en memoria con la forma de la API de Workers (put/get/delete). Hardware ya responde en el Worker desde M2b (render en el
+// navegador; ver tests/m2b-hardware-cliente.test.mjs). Vercel no cambia: se comprueba también el modo "blob".
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
@@ -145,12 +145,14 @@ test("rutas: /api/comentarios, /api/archivos con y sin barra llegan a su API (ya
   assert.equal(llamadas.length, 0, "las APIs no pasan por ASSETS");
 });
 
-test("rutas: /api/hardware sigue en 501 en el Worker (render pendiente de M2b), con y sin barra", async () => {
+test("rutas: /api/hardware con y sin barra llega a hardware-core (M2b: ya no 501)", async () => {
   const { env, llamadas } = crearEnv();
-  for (const [path, method] of [["/api/hardware/", "GET"], ["/api/hardware", "GET"], ["/api/hardware/", "POST"]]) {
-    const res = await pedir(path, { env, method, login: "ana", body: method === "POST" ? "{}" : undefined, headers: method === "POST" ? { "content-type": "application/json" } : {} });
-    assert.equal(res.status, 501, `${method} ${path}`);
-    assert.deepEqual(await res.json(), { error: "No disponible aún en Cloudflare" });
+  for (const path of ["/api/hardware/?proyecto=uuv&disciplina=electronica", "/api/hardware?proyecto=uuv&disciplina=electronica"]) {
+    const res = await pedir(path, { env, login: "ana" });
+    assert.equal(res.status, 200, path);
+    const j = await res.json();
+    assert.equal(j.editable, false, path);
+    assert.deepEqual(j.paginas, [], path);
   }
   assert.equal(llamadas.length, 0);
 });
@@ -458,7 +460,7 @@ test("wrangler.jsonc: binding R2 ARCHIVOS → docs-hardware; .dev.vars.example c
   for (const k of ["KV_REST_API_URL", "KV_REST_API_TOKEN", "SESSION_SECRET"]) assert.ok(ej.includes(`${k}=`), `${k}= sin valor`);
 });
 
-test("README: la sección de Cloudflare describe R2 (ARCHIVOS), Upstash y que hardware sigue en 501", () => {
+test("README: la sección de Cloudflare describe R2 (ARCHIVOS), Upstash y hardware", () => {
   const md = leer("README.md");
   const i = md.indexOf("## Cloudflare");
   assert.ok(i >= 0);
@@ -496,7 +498,9 @@ test("wrangler: el Worker se empaqueta (deploy --dry-run) sin satteri ni process
     const r = spawnSync(process.execPath, [bin, "deploy", "--dry-run", "--outdir", join(tmp, "out"), "-c", join(tmp, "wrangler.json")], { cwd: raiz, encoding: "utf8", timeout: 170_000, env: { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "1" } });
     assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
     const js = readFileSync(join(tmp, "out", "index.js"), "utf8");
-    assert.doesNotMatch(js, /satteri-wasm32-wasi/, "satteri no puede entrar en el Worker");
+    assert.doesNotMatch(js, /satteri|markdownToMdast|markdownToHtml/, "satteri no puede entrar en el Worker");
+    assert.match(js, /hw:lock:/, "M2b: hardware-core sí va en el bundle");
+    assert.doesNotMatch(js, /from\s*["']node:(?!crypto|buffer)/, "sin otros módulos de Node en el bundle");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

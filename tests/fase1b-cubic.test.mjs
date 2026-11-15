@@ -60,7 +60,7 @@ test("resultadoGuardado: ante 409 se conserva el texto y se da el mensaje de con
 test("scripts/hardware-editor.ts: usa el estado de Guardar y la vista previa lleva el título", () => {
   const js = read("src/scripts/hardware-editor.ts");
   assert.match(js, /estadoGuardar\(/);
-  assert.match(js, /pintarHtml\(previa,\s*r\.json\.html,\s*pagina\?\.titulo\)/);
+  assert.match(js, /pintarMd\(previa,\s*textarea\.value,\s*pagina\?\.titulo\)/, "M2b: la vista previa se renderiza en el navegador");
 });
 
 const t = (key, extra = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, escribiendo: false, dialogoAbierto: false, t: 1000, ...extra });
