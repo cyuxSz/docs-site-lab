@@ -10,7 +10,7 @@ import { fakeRedis } from "./fixtures/redis-memoria.mjs";
 const SECRET = "c".repeat(40);
 const ORIGIN = "https://docs-site-lab.ejemplo.workers.dev";
 const UPSTASH = "https://upstash.prueba";
-const EDITOR = "cyuxSz"; // editor de uuv/electronica en projects.json
+const EDITOR = "cyuxSz"; // editor de uuv/electronica (y mecanica) en projects.json
 const LECTOR = "ana";
 const ID_F = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
 const ID_S = "7a1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3b";
@@ -105,7 +105,7 @@ test("validarArchivo del cliente acepta las fuentes de diagrama (misma lista bla
 
 // ---------- Guardar: subida de fuente + SVG y permisos ----------
 
-test("editor de la disciplina sube .excalidraw, .drawio y .svg (201); el lector y el editor de otra disciplina no (403)", async () => {
+test("editor de la disciplina sube .excalidraw, .drawio y .svg (201); el lector no (403) y sin sesión 401", async () => {
   const env = crearEnv();
   assert.equal((await subir(env, { id: ID_F, nombre: "cableado.excalidraw", bytes: EXCALIDRAW })).status, 201);
   assert.equal((await subir(env, { id: ID_S, nombre: "cableado.svg", bytes: SVG })).status, 201);
@@ -113,8 +113,29 @@ test("editor de la disciplina sube .excalidraw, .drawio y .svg (201); el lector 
   const otro = "1b1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3d";
   assert.equal((await subir(env, { login: LECTOR, id: otro, nombre: "x.drawio", bytes: DRAWIO })).status, 403);
   assert.equal((await subir(env, { login: LECTOR, id: otro, nombre: "x.excalidraw", bytes: EXCALIDRAW })).status, 403);
-  assert.equal((await subir(env, { id: otro, nombre: "x.drawio", bytes: DRAWIO, disciplina: "mecanica" })).status, 403, "editor de electrónica no escribe en mecánica");
   assert.equal((await subir(env, { login: null, id: otro, nombre: "x.drawio", bytes: DRAWIO })).status, 401);
+});
+
+// En projects.json cyuxSz edita electrónica Y mecánica, así que el caso "editor de otra disciplina" usa un fixture
+// propio (mismo core y mismo almacén R2 que el Worker) con un editor distinto por disciplina.
+test("editor de otra disciplina no sube fuentes de diagrama (403) y no toca R2", async () => {
+  const { crearHandler } = await import("../lib/archivos-core.mjs");
+  const { crearAlmacenR2 } = await import("../lib/almacen-r2.mjs");
+  const env = crearEnv();
+  const proyectos = [{ id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: ["eli"] }, mecanica: { plantilla: "mecanica", editores: ["meca"] } } }];
+  const handler = crearHandler({ env, proyectos, blob: crearAlmacenR2(env.ARCHIVOS) });
+  const subirComo = (login, disciplina, id, nombre, bytes) =>
+    handler(
+      new Request(`${ORIGIN}/api/archivos/?${qs({ proyecto: "uuv", disciplina, id, nombre })}`, {
+        method: "POST",
+        headers: { cookie: sesion(login), origin: ORIGIN, "content-type": "application/octet-stream", "content-length": String(bytes.length) },
+        body: bytes,
+      }),
+    );
+  assert.equal((await subirComo("eli", "mecanica", ID_F, "x.drawio", DRAWIO)).status, 403, "editor de electrónica no escribe en mecánica");
+  assert.equal((await subirComo("meca", "electronica", ID_S, "x.excalidraw", EXCALIDRAW)).status, 403, "editor de mecánica no escribe en electrónica");
+  assert.equal(env.ARCHIVOS.objetos.size, 0);
+  assert.equal((await subirComo("eli", "electronica", ID_F, "x.drawio", DRAWIO)).status, 201, "control: el fixture sí deja al editor de su disciplina");
 });
 
 test("tamaño: una fuente de diagrama por encima del máximo se rechaza con 413 sin tocar R2", async () => {
