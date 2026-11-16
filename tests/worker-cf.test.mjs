@@ -473,9 +473,9 @@ test(".dev.vars.example lista las variables sin valores y .dev.vars está ignora
   assert.ok(gi.some((l) => l === ".wrangler" || l === ".wrangler/"), ".wrangler en .gitignore");
 });
 
-test("README: sección Cloudflare (en preparación) con npm run cf:dev y .dev.vars", () => {
+test("README: sección Cloudflare (Worker y entorno local) con npm run cf:dev y .dev.vars", () => {
   const md = leer("README.md");
-  const i = md.indexOf("Cloudflare (en preparación)");
+  const i = md.indexOf("## Cloudflare: Worker");
   assert.ok(i >= 0, "falta la sección");
   const sec = md.slice(i, md.indexOf("\n## ", i + 1) === -1 ? undefined : md.indexOf("\n## ", i + 1));
   assert.match(sec, /npm run cf:dev/);
