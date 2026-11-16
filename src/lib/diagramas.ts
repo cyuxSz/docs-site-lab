@@ -139,6 +139,16 @@ export function svgDeExport(data: unknown): string | null {
 // Las fuentes de Excalidraw salen de este origen (tools/postbuild.mjs las copia a dist/excalidraw/fonts/).
 export const RUTA_ASSETS_EXCALIDRAW = "/excalidraw/";
 
+// `src` de un FontFace ("url(a) format('woff2'), url(b) ...") -> solo las fuentes de `origen` (o data:). Si no queda ninguna, el original.
+export function fuentesSoloDeOrigen(src: string, origen: string): string {
+  const partes = String(src).split(/,\s*(?=url\()/);
+  const propias = partes.filter((p) => {
+    const m = /^url\(\s*["']?([^"')]+)["']?\s*\)/.exec(p.trim());
+    return !!m && (m[1].startsWith("data:") || m[1].startsWith(origen + "/"));
+  });
+  return propias.length ? propias.join(", ") : src;
+}
+
 // ---------- Cambios sin guardar ----------
 export interface EstadoEditor {
   sucio: boolean;
