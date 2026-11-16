@@ -22,7 +22,7 @@ const BLOB_HOST = "https://abc123.private.blob.vercel-storage.com";
 
 const PROYECTOS = [
   { id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR] }, mecanica: { plantilla: "mecanica", editores: ["meca"] } } },
-  { id: "restringido-demo", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz"] } } },
+  { id: "restringido-demo", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz", "ana"] } } },
   { id: "usv" },
 ];
 
@@ -338,12 +338,16 @@ test("proxy: 401 sin sesión, 403 proyecto restringido, 400 id no uuid, 404 id i
   assert.equal(m.blob.leidos.length, 0);
 });
 
-test("proyecto restringido (tabla inyectada): el login autorizado lista, pide token y lee; otro login → 403 en los tres", async () => {
+test("proyecto restringido (tabla inyectada): el login autorizado lista, pide token y lee; sin acceso → 403 en los tres", async () => {
   const m = await montar();
   const cp = payload({ proyecto: "restringido-demo" });
   const pathname = `hw/restringido-demo/electronica/${ID}-placa.png`;
-  // Cubre las dos llamadas a canAccess del core: token (POST) y lectura (GET lista / proxy).
-  assert.equal((await pedirToken(m.handler, { login: "otro", pathname, cp })).status, 403, "token sin acceso");
+  // Las dos llamadas a canAccess del core, con casos que solo pasan si respeta la tabla inyectada:
+  //  - token (POST): "ana" es editora de restringido-demo/electronica pero no está en la tabla; su 403 no puede venir
+  //    del chequeo de editor, solo de canAccess. cyuxSz (editor y en la tabla) recibe el token.
+  //  - lectura (GET lista / proxy): no hay chequeo de editor, así que el 403 de "otro" solo viene de canAccess.
+  assert.equal((await pedirToken(m.handler, { login: "ana", pathname, cp })).status, 403, "token: editora sin acceso");
+  assert.equal(m.blob.tokens.length, 0, "no se emitió token sin acceso");
   assert.equal((await listar(m.handler, "otro", "restringido-demo")).status, 403, "lista sin acceso");
   assert.equal((await getArchivo(m.handler, ID, "otro", "restringido-demo")).status, 403, "proxy sin acceso");
   assert.equal((await pedirToken(m.handler, { login: "CyuxSZ", pathname, cp })).status, 200, "token con acceso");
