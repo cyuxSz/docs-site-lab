@@ -25,23 +25,27 @@ const ATTR = ["href","src","alt","title","align","start","type","checked","disab
 const PROYECTO = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 // Bloques ```diagrama válidos de primer nivel (los de citas o listas siguen siendo código), con su posición en el texto.
-// Marked normaliza los saltos de línea a LF; los desplazamientos se devuelven sobre el texto original.
-function localizarDiagramas(md: string, tokens?: any[]): { inicio: number; fin: number; datos: Diagrama }[] {
+// Marked normaliza los saltos de línea a LF: las posiciones se calculan sobre ese texto y se devuelven sobre el original.
+// Cada bloque lleva además su token, que es la clave para el render (sin depender de posiciones). Marked puede consumir
+// sin token definiciones de enlace repetidas: ese tramo se salta, sin descartar el resto de la página.
+function localizarDiagramas(md: string, tokens?: any[]): { inicio: number; fin: number; datos: Diagrama; token: any }[] {
   const texto = String(md ?? "");
   const lista = tokens ?? new Marked({ gfm: true }).lexer(texto);
   const normalizado = texto.replace(/\r\n|\r/g, "\n");
-  if (lista.map((t: any) => t.raw).join("") !== normalizado) return [];
   const orig: number[] = [];
   if (normalizado !== texto) for (let i = 0, j = 0; i <= texto.length; i++, j++) { orig[j] = i; if (texto[i] === "\r" && texto[i + 1] === "\n") i++; }
   const aOrig = (n: number) => (normalizado === texto ? n : orig[n]);
-  const salida: { inicio: number; fin: number; datos: Diagrama }[] = [];
+  const salida: { inicio: number; fin: number; datos: Diagrama; token: any }[] = [];
   let pos = 0;
   for (const t of lista) {
+    const raw = String(t.raw ?? "");
+    const idx = normalizado.indexOf(raw, pos);
+    if (idx < 0 || (idx > pos && !/^\s*\[/.test(normalizado.slice(pos, idx)))) continue; // no se puede situar: se ignora este token
     if (t.type === "code" && t.lang === "diagrama" && t.codeBlockStyle !== "indented") {
       const datos = parsearBloque(t.text);
-      if (datos) salida.push({ inicio: aOrig(pos), fin: aOrig(pos + t.raw.replace(/\n+$/, "").length), datos });
+      if (datos) salida.push({ inicio: aOrig(idx), fin: aOrig(idx + raw.replace(/\n+$/, "").length), datos, token: t });
     }
-    pos += t.raw.length;
+    pos = idx + raw.length;
   }
   return salida;
 }
@@ -72,12 +76,10 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
   const analizar = (md: string) => {
     const tokens = marked.lexer(String(md));
     if (!proyecto) return tokens;
-    const buenos = new Map(localizarDiagramas(String(md), tokens).map((x) => [x.inicio, x.datos]));
+    const buenos = new Map(localizarDiagramas(String(md), tokens).map((x) => [x.token, x.datos]));
     if (!buenos.size) return tokens;
-    let pos = 0;
     return tokens.map((t: any) => {
-      const datos = t.type === "code" ? buenos.get(pos) : undefined;
-      pos += t.raw.length;
+      const datos = buenos.get(t);
       return datos ? { type: "diagrama", raw: t.raw, datos } : t;
     });
   };

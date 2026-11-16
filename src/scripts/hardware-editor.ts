@@ -107,6 +107,7 @@ async function iniciar(root: HTMLElement) {
     btnGuardar.disabled = e.deshabilitado;
     textarea.disabled = guardando;
     inputArchivo.disabled = guardando;
+    btnInsertarDiagrama.disabled = guardando;
     btnGuardar.title = e.aviso;
     if (e.aviso && avisar) mostrarEstado(e.aviso);
     else if (!e.aviso && lblEstado.textContent === AVISO_SUBIDAS) mostrarEstado("");
@@ -301,7 +302,7 @@ async function iniciar(root: HTMLElement) {
   // Sube la fuente y el SVG como archivos nuevos (UUID nuevos: /api/archivos no sobrescribe) y enlaza el bloque:
   // al crear lo inserta en el cursor del textarea; al editar desde la lectura reemplaza el bloque y hace PUT con la versión vista.
   async function guardarDiagrama(
-    ctx: { editor: EditorDiagrama; titulo: string; anterior: string | null },
+    ctx: { editor: EditorDiagrama; titulo: string; anterior: string | null; enTexto: boolean },
     r: { fuente: string; svg: string },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     if (!esSvg(r.svg)) return { ok: false, error: "El SVG exportado no es válido: no se guardó nada." };
@@ -323,13 +324,23 @@ async function iniciar(root: HTMLElement) {
       subidasActivas--;
       actualizarGuardar();
     }
-    if (ctx.anterior === null) {
-      const res = insertarBloque(textarea.value, textarea.selectionStart, datos);
+    if (ctx.enTexto) {
+      let res: { texto: string; cursor: number } | null;
+      if (ctx.anterior === null) res = insertarBloque(textarea.value, textarea.selectionStart, datos);
+      else {
+        // Segundo guardado sin cerrar el editor: reemplaza el bloque que se insertó antes, no lo duplica.
+        const { reemplazarDiagrama } = await import("../lib/hardware-md");
+        const t = reemplazarDiagrama(textarea.value, ctx.anterior, datos);
+        res = t === null ? null : { texto: t, cursor: textarea.selectionStart };
+      }
+      if (res === null) return { ok: false, error: "El bloque del diagrama ya no está en la página. Revisa el texto antes de guardar." };
       textarea.value = res.texto;
       textarea.setSelectionRange(res.cursor, res.cursor);
+      ctx.anterior = datos.fuente; // referencia vigente para el siguiente guardado
       lblSubiendo.textContent = "Diagrama insertado. Guarda la página para publicarlo.";
       return { ok: true };
     }
+    if (ctx.anterior === null) return { ok: false, error: TEXTO_CONFLICTO };
     if (!pagina) return { ok: false, error: TEXTO_CONFLICTO };
     const { reemplazarDiagrama } = await import("../lib/hardware-md");
     const nuevoMd = reemplazarDiagrama(pagina.md, ctx.anterior, datos);
@@ -337,6 +348,7 @@ async function iniciar(root: HTMLElement) {
     const res = await api("PUT", { cuerpo: { pagina: pagina.slug, md: nuevoMd, version: pagina.version } });
     if (res.status !== 200 || !res.json?.pagina) return { ok: false, error: resultadoGuardado(res.status).mensaje };
     indice = actualizarTituloIndice(indice, res.json.pagina);
+    ctx.anterior = datos.fuente; // referencia vigente para el siguiente guardado
     fuenteNueva = datos.fuente;
     await pintarPagina(res.json.pagina);
     mostrarEstado("Diagrama guardado");
@@ -345,6 +357,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   async function abrirDiagrama(editor: EditorDiagrama, fuente: string | null, titulo: string, anterior: string | null, disparador: HTMLElement) {
+    const ctx = { editor, titulo, anterior, enTexto: anterior === null };
     try {
       const { abrirEditorDiagrama } = await import("./diagramas");
       await abrirEditorDiagrama({
@@ -352,7 +365,7 @@ async function iniciar(root: HTMLElement) {
         fuente,
         titulo,
         disparador,
-        alGuardar: (r) => guardarDiagrama({ editor, titulo, anterior }, r),
+        alGuardar: (r) => guardarDiagrama(ctx, r),
         confirmarDescartar: () => preguntar(dlgDescartar),
       });
     } catch {
@@ -392,6 +405,7 @@ async function iniciar(root: HTMLElement) {
   // Insertar un diagrama nuevo desde el editor de la página: elegir editor y título, dibujar y guardar.
   const formDiagramaNuevo = dlgDiagramaNuevo.querySelector<HTMLFormElement>("[data-hw-diag-form]")!;
   escuchar(btnInsertarDiagrama, "click", () => {
+    if (guardando) return;
     formDiagramaNuevo.reset();
     dlgDiagramaNuevo.showModal();
     formDiagramaNuevo.querySelector<HTMLInputElement>("input[name=editor]:checked")?.focus();

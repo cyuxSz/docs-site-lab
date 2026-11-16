@@ -170,4 +170,9 @@ export function estadoEditor(e: EstadoEditor, evento: "cambio" | "guardando" | "
   }
 }
 
+// Huella de lo que cuenta como cambio del dibujo en Excalidraw: ids y versiones de los elementos y el color de fondo
+// (no la selección ni el desplazamiento).
+export const huellaDibujo = (elementos: readonly { id: string; version: number }[], appState?: { viewBackgroundColor?: string } | null): string =>
+  elementos.map((e) => `${e.id}:${e.version}`).join(",") + "|" + String(appState?.viewBackgroundColor ?? "");
+
 export const confirmarCierre = (e: EstadoEditor): boolean => e.sucio || e.guardando;
