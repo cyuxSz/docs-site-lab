@@ -4,6 +4,7 @@ import { manejarLogin } from "../lib/login-core.mjs";
 import { decodificar } from "../lib/decodificar-ruta.mjs";
 import { crearHandler as crearComentarios } from "../lib/comentarios-core.mjs";
 import { crearHandler as crearArchivos } from "../lib/archivos-core.mjs";
+import { clienteD1 } from "../lib/almacen-d1.mjs";
 import { crearAlmacenR2 } from "../lib/almacen-r2.mjs";
 import { crearHandler as crearHardware } from "../lib/hardware-core.mjs";
 import proyectos from "../projects.json" with { type: "json" };
@@ -44,12 +45,14 @@ function handlerDe(env, nombre) {
   let h = handlers.get(env);
   if (!h) handlers.set(env, (h = {}));
   if (!h[nombre]) {
+    // Con binding D1 el almacén es D1 (aunque haya credenciales de Upstash); sin él, undefined → el core usa Upstash.
+    const redis = env.DB ? clienteD1(env.DB) : undefined;
     h[nombre] =
       nombre === "comentarios"
-        ? crearComentarios({ env, proyectos })
+        ? crearComentarios({ env, proyectos, redis })
         : nombre === "hardware"
-          ? crearHardware({ env, proyectos, plantillas: { electronica, mecanica } })
-          : crearArchivos({ env, proyectos, blob: env.ARCHIVOS ? crearAlmacenR2(env.ARCHIVOS) : null });
+          ? crearHardware({ env, proyectos, redis, plantillas: { electronica, mecanica } })
+          : crearArchivos({ env, proyectos, redis, blob: env.ARCHIVOS ? crearAlmacenR2(env.ARCHIVOS) : null });
   }
   return h[nombre];
 }
