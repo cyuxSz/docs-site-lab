@@ -1,6 +1,6 @@
 // Documentación de hardware (Electrónica / Mecánica): lectura, editor Markdown, índice, historial y subida de archivos.
 // Habla con /api/hardware/ (misma sesión) y sube a Vercel Blob con upload() contra /api/archivos/. La lógica pura
-// está en src/lib/hardware-editor.ts. El HTML del servidor llega ya saneado y entra al DOM por un único punto.
+// está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
 import {
@@ -30,7 +30,6 @@ interface PaginaHw {
   slug: string;
   titulo: string;
   md: string;
-  html: string;
   autor: string;
   actualizado: string;
   version: number;
@@ -133,16 +132,32 @@ async function iniciar(root: HTMLElement) {
   const msg = (status: number) => mensajeError(status === 0 ? "red" : status);
 
   // ---------- DOM ----------
-  // Único punto por el que entra HTML del servidor (ya saneado allí; la CSP además bloquea scripts).
-  function pintarHtml(destino: HTMLElement, html: string, titulo?: string) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const nodos = [...doc.body.childNodes];
-    if (titulo && !doc.body.querySelector("h1")) {
+  // Render del Markdown en el navegador (marked + DOMPurify), carga diferida y memoizada. Se dispara al iniciar,
+  // en paralelo con el primer fetch del índice.
+  let cargaRender: Promise<ReturnType<typeof import("../lib/hardware-md").crearRenderizador>> | null = null;
+  function cargarRender() {
+    cargaRender ??= import("../lib/hardware-md").then((m) => m.crearRenderizador(window));
+    return cargaRender;
+  }
+  // Único punto por el que entra HTML al DOM: fragmento ya saneado por DOMPurify (sin reparsear strings).
+  async function pintarMd(destino: HTMLElement, md: string, titulo?: string): Promise<boolean> {
+    let frag: DocumentFragment;
+    try {
+      frag = (await cargarRender()).fragmento(md);
+    } catch {
+      cargaRender = null;
+      const texto = mensajeError("red");
+      if (destino === previa) errorEditor(texto);
+      else mostrarError(texto);
+      return false;
+    }
+    if (titulo && !frag.querySelector("h1")) {
       const h1 = document.createElement("h1");
       h1.textContent = titulo;
-      nodos.unshift(h1);
+      frag.prepend(h1);
     }
-    destino.replaceChildren(...nodos);
+    destino.replaceChildren(frag);
+    return true;
   }
   function mostrarEstado(texto: string) {
     lblEstado.textContent = texto;
@@ -231,9 +246,9 @@ async function iniciar(root: HTMLElement) {
     }
   }
 
-  function pintarPagina(p: PaginaHw) {
+  async function pintarPagina(p: PaginaHw) {
     pagina = p;
-    pintarHtml(lectura, p.html, p.titulo);
+    await pintarMd(lectura, p.md, p.titulo);
     pintarMetadatos(p);
     document.title = `${p.titulo} · ${etiqueta}`;
     pintarIndice();
@@ -292,7 +307,7 @@ async function iniciar(root: HTMLElement) {
     for (const el of soloEditor) el.hidden = !editable;
     vista("pagina");
     mostrarEstado("");
-    pintarPagina(r.json.pagina);
+    await pintarPagina(r.json.pagina);
     historial.hidden = false;
     await activarComentarios(r.json.pagina.slug);
   }
@@ -381,14 +396,7 @@ async function iniciar(root: HTMLElement) {
   async function mostrarPrevia() {
     modoEditor("previa");
     errorEditor("");
-    previa.textContent = "Generando vista previa…";
-    const r = await api("POST", { cuerpo: { accion: "previsualizar", md: textarea.value } });
-    if (r.status !== 200 || typeof r.json?.html !== "string") {
-      previa.textContent = "";
-      errorEditor(msg(r.status));
-      return;
-    }
-    pintarHtml(previa, r.json.html, pagina?.titulo);
+    await pintarMd(previa, textarea.value, pagina?.titulo);
   }
 
   function abrirEditor() {
@@ -456,7 +464,7 @@ async function iniciar(root: HTMLElement) {
     }
     cerrarEditor();
     indice = actualizarTituloIndice(indice, r.json.pagina);
-    pintarPagina(r.json.pagina);
+    await pintarPagina(r.json.pagina);
     mostrarEstado("Guardado");
     if (historial.open) void cargarHistorial();
   });
@@ -571,7 +579,7 @@ async function iniciar(root: HTMLElement) {
       return;
     }
     indice = actualizarTituloIndice(indice, r.json.pagina);
-    pintarPagina(r.json.pagina);
+    await pintarPagina(r.json.pagina);
     mostrarEstado("Versión restaurada");
     await cargarHistorial();
   });
@@ -747,5 +755,6 @@ async function iniciar(root: HTMLElement) {
   });
 
   // ---------- arranque ----------
+  void cargarRender().catch(() => {});
   if (await cargarIndice()) await mostrar();
 }

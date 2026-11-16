@@ -1,6 +1,9 @@
-// Mide la CPU de renderizarMd (satteri nativo en Node). Uso: node tools/medir-render.mjs [--iteraciones N]
+// Mide la CPU de neutralizeHtml + markdownToHtml (dato que motivó M2b) (satteri nativo en Node). Uso: node tools/medir-render.mjs [--iteraciones N]
 // Aviso: en Node satteri es nativo; es una cota inferior y no vale tal cual para el Worker (ahí no corre, ver M2b).
-import { renderizarMd } from "../lib/hardware-core.mjs";
+import { markdownToHtml } from "satteri";
+import { neutralizeHtml } from "./neutralizar.mjs";
+
+const renderizarMd = async (md) => markdownToHtml(neutralizeHtml(String(md)), { features: { gfm: true, frontmatter: false } }).html;
 
 const i = process.argv.indexOf("--iteraciones");
 const N = i >= 0 ? Math.max(1, Number.parseInt(process.argv[i + 1], 10) || 20) : 20;
