@@ -74,18 +74,15 @@ test("middleware.js: exporta crearMiddleware y el default usa RESTRICTED (sin ta
   assert.match(src, /export default crearMiddleware\(\)/, "el default no debe recibir una tabla");
 });
 
+// Que cada crearHandler y crearMiddleware respeten la tabla inyectada se prueba por comportamiento (con RESTRICTED
+// vacío, un 403 solo puede venir de la tabla inyectada; el login autorizado debe entrar):
+//   - comentarios: tests/comentarios-api.test.mjs  «proyecto restringido: sin acceso → 403 …; con acceso → permitido»
+//   - hardware:    tests/hardware-api.test.mjs     «proyecto restringido (canAccess): otro login recibe 403 …; cyuxSz entra»
+//   - archivos:    tests/hardware-archivos.test.mjs «proyecto restringido (tabla inyectada): el login autorizado lista, pide token y lee …»
+//   - middleware:  tests/middleware.test.mjs        «restringido: …» (403 para otro login; cyuxSz pasa)
 test("APIs de producción no inyectan tabla: usan RESTRICTED de access.config.js", () => {
   for (const f of ["api/comentarios.js", "api/hardware.js", "api/archivos.js"]) {
     assert.ok(!/restringidos/.test(read(f)), `${f} no debe pasar restringidos a crearHandler`);
-  }
-  for (const f of ["lib/comentarios-core.mjs", "lib/hardware-core.mjs", "lib/archivos-core.mjs"]) {
-    const src = read(f);
-    const firma = src.split(/\r?\n/).find((l) => l.includes("export function crearHandler(")) ?? "";
-    assert.match(firma, /\brestringidos\b/, `${f}: crearHandler acepta restringidos`);
-    const llamadas = src.match(/canAccess\(/g) ?? [];
-    const conTabla = src.match(/canAccess\([^()]*,\s*restringidos\)/g) ?? [];
-    assert.ok(llamadas.length > 0, `${f}: usa canAccess`);
-    assert.equal(conTabla.length, llamadas.length, `${f}: cada canAccess recibe restringidos`);
   }
 });
 
