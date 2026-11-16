@@ -19,7 +19,7 @@ const RUTAS = [CONTROL, { id: "vision", nombre: "Visión", pasos: [paso("quickst
 test("claves: separadas por proyecto, rol y página del paso (fase 0)", () => {
   assert.equal(claveRol("uuv"), "rutas:uuv:rol");
   assert.equal(clavePaso("uuv", "control", "glosario.md"), "rutas:uuv:control:pagina:glosario.md");
-  assert.notEqual(clavePaso("uuv", "control", "glosario.md"), clavePaso("proyecto-x", "control", "glosario.md"));
+  assert.notEqual(clavePaso("uuv", "control", "glosario.md"), clavePaso("otro-proyecto", "control", "glosario.md"));
 });
 
 test("marcar / leidos / reiniciar: guarda por paso y reiniciar solo borra ese rol de ese proyecto", () => {
@@ -28,14 +28,14 @@ test("marcar / leidos / reiniciar: guarda por paso y reiniciar solo borra ese ro
   marcar(a, "uuv", "control", paso("quickstart.md"), true);
   marcar(a, "uuv", "control", paso("packages/uuv_control.md"), true);
   marcar(a, "uuv", "vision", paso("quickstart.md"), true);
-  marcar(a, "proyecto-x", "control", paso("operations/hardware.md"), true);
+  marcar(a, "otro-proyecto", "control", paso("operations/hardware.md"), true);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [true, false, true, false, false]);
   marcar(a, "uuv", "control", paso("packages/uuv_control.md"), false);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [true, false, false, false, false]);
   reiniciar(a, "uuv", CONTROL);
   assert.deepEqual(leidos(a, "uuv", CONTROL), [false, false, false, false, false]);
   assert.equal(ls.getItem(clavePaso("uuv", "vision", "quickstart.md")), "1", "reiniciar no toca otro rol");
-  assert.equal(ls.getItem(clavePaso("proyecto-x", "control", "operations/hardware.md")), "1", "reiniciar no toca otro proyecto");
+  assert.equal(ls.getItem(clavePaso("otro-proyecto", "control", "operations/hardware.md")), "1", "reiniciar no toca otro proyecto");
 });
 
 test("almacenSeguro: sin localStorage o si truena, no lanza y simplemente no recuerda", () => {

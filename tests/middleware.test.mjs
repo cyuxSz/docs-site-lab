@@ -2,7 +2,12 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import middleware from "../middleware.js";
+import * as mod from "../middleware.js";
+import { DEMO } from "./fixtures/acceso-demo.mjs";
+
+// El portal no tiene proyectos restringidos por defecto: se prueba un middleware con la tabla de prueba inyectada.
+// Si falta crearMiddleware se usa el default, y las pruebas de "restringido" fallan (no hay nada restringido).
+const middleware = typeof mod.crearMiddleware === "function" ? mod.crearMiddleware({ restringidos: DEMO }) : mod.default;
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
@@ -28,7 +33,7 @@ const get = (path, cookie) => middleware(new Request(`${ORIGIN}${path}`, { heade
 const passes = (res) => res.headers.get("x-middleware-next") === "1";
 
 test("restringido: un miembro que no está en la lista recibe 403 'Este proyecto es privado' en cualquier ruta del proyecto", async () => {
-  for (const path of ["/proyecto-x/", "/proyecto-x/grafo/", "/proyecto-x/ros.json", "/proyecto-x/arch/general.html", "/proyecto-x"]) {
+  for (const path of ["/restringido-demo/", "/restringido-demo/grafo/", "/restringido-demo/ros.json", "/restringido-demo/arch/general.html", "/restringido-demo"]) {
     const res = await get(path, session("otro"));
     assert.equal(res.status, 403, path);
     assert.ok(!passes(res), `${path} no debe pasar al sitio estático`);
@@ -41,7 +46,7 @@ test("restringido: un miembro que no está en la lista recibe 403 'Este proyecto
 });
 
 test("restringido: el login de la sesión sale escapado en la página 403", async () => {
-  const res = await get("/proyecto-x/", session('<img src=x onerror="a">'));
+  const res = await get("/restringido-demo/", session('<img src=x onerror="a">'));
   assert.equal(res.status, 403);
   const html = await res.text();
   assert.ok(!html.includes("<img src=x"), "login sin escapar");
@@ -49,20 +54,20 @@ test("restringido: el login de la sesión sale escapado en la página 403", asyn
 
 test("restringido: cyuxSz (con cualquier mayúscula) pasa al sitio estático", async () => {
   for (const login of ["cyuxSz", "CyuxSZ"]) {
-    const res = await get("/proyecto-x/ros.json", session(login));
+    const res = await get("/restringido-demo/ros.json", session(login));
     assert.ok(passes(res), login);
     assert.equal(res.headers.get("cache-control"), "private, no-store");
   }
 });
 
 test("restringido: sin sesión sigue redirigiendo al login (no revela nada)", async () => {
-  const res = await get("/proyecto-x/grafo/");
+  const res = await get("/restringido-demo/grafo/");
   assert.equal(res.status, 302);
   assert.match(res.headers.get("location"), /^\/auth\/login\?next=/);
 });
 
 test("no restringido: el resto del portal sigue igual para cualquier sesión válida", async () => {
-  for (const path of ["/", "/uuv/", "/uuv/ros.json", "/proyecto-x-bis/"]) assert.ok(passes(await get(path, session("otro"))), path);
+  for (const path of ["/", "/uuv/", "/uuv/ros.json", "/restringido-demo-bis/"]) assert.ok(passes(await get(path, session("otro"))), path);
   const me = await get("/auth/me", session("otro"));
   assert.deepEqual(await me.json(), { login: "otro" });
 });
@@ -106,7 +111,7 @@ test("membresía no confirmada: login y org pasan por esc() / encodeURIComponent
 
 test("preview con PREVIEW_TRUST_VERCEL_AUTH=1: proyecto restringido responde 403 y no pasa al sitio", async () => {
   Object.assign(process.env, { VERCEL_ENV: "preview", PREVIEW_TRUST_VERCEL_AUTH: "1" });
-  for (const path of ["/proyecto-x/", "/proyecto-x/ros.json", "/PROYECTO-X/grafo/"]) {
+  for (const path of ["/restringido-demo/", "/restringido-demo/ros.json", "/RESTRINGIDO-DEMO/grafo/"]) {
     const res = await get(path);
     assert.equal(res.status, 403, path);
     assert.ok(!passes(res), path);
@@ -116,6 +121,6 @@ test("preview con PREVIEW_TRUST_VERCEL_AUTH=1: proyecto restringido responde 403
 });
 
 test("403 de proyecto privado ofrece un siguiente paso", async () => {
-  const res = await get("/proyecto-x/", session("otro"));
+  const res = await get("/restringido-demo/", session("otro"));
   assert.match(await res.text(), /Pide acceso a quien administra el portal\./);
 });

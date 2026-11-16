@@ -96,10 +96,10 @@ test("render: un bloque válido se muestra como <figure> con <img> del SVG por e
 test("render: sin título no hay figcaption y el alt es 'Diagrama'; el id de proyecto va codificado", async () => {
   const { crearRenderizador } = await md();
   const win = ventana();
-  win.document.body.replaceChildren(crearRenderizador(win, { proyecto: "proyecto-x" }).fragmento(bloque(`editor: drawio\nfuente: ${F}\nsvg: ${S}`)));
+  win.document.body.replaceChildren(crearRenderizador(win, { proyecto: "otro-proyecto" }).fragmento(bloque(`editor: drawio\nfuente: ${F}\nsvg: ${S}`)));
   const img = win.document.querySelector("figure.hw-diagrama img");
   assert.equal(img.getAttribute("alt"), "Diagrama");
-  assert.equal(img.getAttribute("src"), `/api/archivos/?proyecto=proyecto-x&id=${S}`);
+  assert.equal(img.getAttribute("src"), `/api/archivos/?proyecto=otro-proyecto&id=${S}`);
   assert.equal(win.document.querySelector("figcaption"), null);
 });
 

@@ -51,15 +51,5 @@
         ]
       }
     }
-  },
-  {
-    "id": "proyecto-x",
-    "name": "Proyecto X",
-    "summary": "Proyecto ficticio con el que se probaron las herramientas de documentación.",
-    "tagline": "Proyecto de prueba",
-    "novedadesNota": "Por ahora este repo es una copia de prueba del original, así que todos los cambios aparecen con el mismo autor.",
-    "theme": { "accent": "#8B9CF6", "deep": "#6366F1", "warm": "#F0900D" },
-    "repo": "cyuxSz/docs-lab-proyecto-x",
-    "branch": "main"
   }
 ]

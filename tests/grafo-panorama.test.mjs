@@ -50,8 +50,7 @@ test("projects.json (uuv): panorama con Misión → Navegación → Control → 
   for (const c of uuv.panorama) assert.ok(typeof c.texto === "string" && c.texto.trim().length > 0 && c.texto.length <= 80, `texto de ${c.seccion}`);
   assert.match(uuv.panorama[3].texto, /Arduino/);
   assert.match(uuv.panorama[3].texto, /6 motores/);
-  const otro = projects.find((p) => p.id === "proyecto-x");
-  assert.equal(otro.panorama, undefined, "proyecto-x no tiene Panorama");
+  for (const otro of projects.filter((p) => p.id !== "uuv")) assert.equal(otro.panorama, undefined, `${otro.id} no tiene Panorama`);
 });
 
 test("data.ts tipa panorama en el proyecto y graph.ts lo publica en GraphData", () => {
