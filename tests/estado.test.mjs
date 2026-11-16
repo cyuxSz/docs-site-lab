@@ -49,7 +49,7 @@ test("clasificarError: autenticación gana a red (orden)", async () => {
 });
 
 const BUILT = "2026-10-29T16:05:00.000Z";
-const base = { id: "px", name: "Proyecto X", repo: "o/px", branch: "main" };
+const base = { id: "px", name: "Proyecto Demo", repo: "o/px", branch: "main" };
 
 test("tarjetaEstado: forma, título y cuándo", async () => {
   const { tarjetaEstado } = await cargar();
