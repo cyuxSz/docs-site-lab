@@ -120,16 +120,19 @@ test("deploy-cloudflare: valida proyecto/sha/remitente antes de cache y build (s
   assert.match(s, /REMITENTE:\s*\$\{\{\s*github\.event\.sender\.login\s*\}\}/);
 });
 
-test("deploy-cloudflare: caché de .content por proyecto y sha", () => {
+test("deploy-cloudflare: caché de .content con clave única por ejecución e intento", () => {
   const ps = pasos(sinComentarios(wf()));
   const c = ps.find((p) => /uses:\s*actions\/cache@/.test(p));
   assert.ok(c);
   assert.match(c, /path:\s*\.content\/?/);
   const key = c.match(/key:\s*(.*)/)?.[1] ?? "";
   assert.match(key, /hashFiles\(/, "la clave cambia si cambian projects.json o tools/");
-  assert.match(key, /env\.PROYECTO/);
-  assert.match(key, /env\.SHA/);
-  assert.match(c, /restore-keys:/);
+  assert.match(key, /github.run_id/, "clave única por ejecución: una clave exacta repetida restauraría una instantánea vieja");
+  assert.match(key, /github.run_attempt/, "y por intento");
+  assert.doesNotMatch(key, /env.SHA/, "el sha del disparo no entra en la clave");
+  const rk = c.split(/restore-keys:/)[1]?.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && l !== "|")[0] ?? "";
+  assert.match(rk, /^content-[$][{][{] hashFiles[(][^)]*[)] [}][}]-$/, "restore-keys conserva el prefijo para tomar la más reciente");
+  assert.ok(key.startsWith(rk), "la clave empieza por el prefijo de restore-keys");
 });
 
 test("deploy-cloudflare: build con DOCS_GITHUB_TOKEN y DOCS_SOLO_PROYECTO, después de npm ci", () => {

@@ -95,17 +95,19 @@ test("sin DOCS_SOLO_PROYECTO: construye todos y borra restos de .content (como e
 });
 
 test("DOCS_SOLO_PROYECTO=a: rehace a y conserva b desde .content sin volver a traerlo", () => {
-  const { a } = inicial();
+  const { a, b } = inicial();
   const antesB = entrada("b");
   const nuevoSha = commit(a, { "openwiki/nuevo.md": "# Nuevo\n\nPágina nueva.\n" }, ["openwiki/viejo.md", "docs/arch/viejo.html"]);
-  // b apunta a un directorio inexistente: si fetch intentara traerlo, quedaría con error.
-  const r = fetch({ solo: "a", locales: { a, b: NO_EXISTE() } });
+  // Marca en b: si fetch lo reconstruyera, se borraría (conservar exige que su sha siga siendo el HEAD remoto).
+  escribir(OUT(), "docs/b/marca.md", "marca");
+  const r = fetch({ solo: "a", locales: { a, b } });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(entrada("a").sha, nuevoSha);
   assert.ok(existsSync(join(OUT(), "docs", "a", "nuevo.md")));
   assert.equal(existsSync(join(OUT(), "docs", "a", "viejo.md")), false, "borra las páginas viejas de a");
   assert.equal(existsSync(join(OUT(), "arch", "a", "viejo.html")), false, "borra los diagramas viejos de a");
   assert.deepEqual(entrada("b"), antesB, "b sale tal cual de la caché");
+  assert.ok(existsSync(join(OUT(), "docs", "b", "marca.md")), "b no se reconstruyó");
   assert.ok(existsSync(join(OUT(), "docs", "b", "index.md")));
   assert.ok(existsSync(join(OUT(), "data", "b.json")));
 });
@@ -162,4 +164,70 @@ test("editoresDocs no se copia a .content (no llega al sitio)", () => {
   inicial();
   assert.doesNotMatch(readFileSync(join(OUT(), "projects.json"), "utf8"), /editoresDocs/);
   assert.doesNotMatch(readFileSync(join(OUT(), "data", "a.json"), "utf8"), /editoresDocs/);
+});
+
+// Conservar desde la caché exige que el sha guardado siga siendo el HEAD remoto de la rama (git ls-remote; aquí, repos locales).
+test("DOCS_SOLO_PROYECTO: si el HEAD remoto de otro proyecto avanzó, lo reconstruye", () => {
+  const { a, b } = inicial();
+  const shaViejo = entrada("b").sha;
+  const shaNuevo = commit(b, { "openwiki/nuevo.md": "# Nuevo B\n\nCambió.\n" });
+  const r = fetch({ solo: "a", locales: { a, b } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.notEqual(shaViejo, shaNuevo);
+  assert.equal(entrada("b").sha, shaNuevo);
+  assert.ok(existsSync(join(OUT(), "docs", "b", "nuevo.md")));
+});
+
+test("DOCS_SOLO_PROYECTO: si el sha coincide con el HEAD remoto, conserva sin reconstruir", () => {
+  const { a, b } = inicial();
+  escribir(OUT(), "docs/b/marca.md", "marca");
+  const r = fetch({ solo: "a", locales: { a, b } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(OUT(), "docs", "b", "marca.md")));
+  assert.match(r.stdout, /b: desde caché/);
+});
+
+test("DOCS_SOLO_PROYECTO: si ls-remote falla, reconstruye (aquí queda con error al no poder traerlo)", () => {
+  const { a } = inicial();
+  escribir(OUT(), "docs/b/marca.md", "marca");
+  const r = fetch({ solo: "a", locales: { a, b: NO_EXISTE() } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /b: desde caché/);
+  assert.match(r.stderr, /b: ls-remote falló/);
+  assert.equal(existsSync(join(OUT(), "docs", "b", "marca.md")), false);
+  assert.ok(entrada("b").error);
+});
+
+test("DOCS_SOLO_PROYECTO: si falta una página de docs/<id>/ de otro proyecto, lo reconstruye", () => {
+  const { a, b } = inicial();
+  rmSync(join(OUT(), "docs", "b", "index.md"));
+  const r = fetch({ solo: "a", locales: { a, b } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(OUT(), "docs", "b", "index.md")));
+  assert.doesNotMatch(r.stdout, /b: desde caché/);
+});
+
+test("DOCS_SOLO_PROYECTO: si falta un diagrama de arch/<id>/ de otro proyecto, lo reconstruye", () => {
+  const a = repo("a", { "openwiki/index.md": "# A\n" });
+  const b = repo("b", { "openwiki/index.md": "# B\n", "docs/arch/d.html": "<title>D · Diagrama</title>" });
+  rmSync(OUT(), { recursive: true, force: true });
+  assert.equal(fetch({ locales: { a, b } }).status, 0);
+  assert.ok(existsSync(join(OUT(), "arch", "b", "d.html")));
+  rmSync(join(OUT(), "arch", "b", "d.html"));
+  const r = fetch({ solo: "a", locales: { a, b } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(OUT(), "arch", "b", "d.html")));
+  assert.doesNotMatch(r.stdout, /b: desde caché/);
+});
+
+test("DOCS_SOLO_PROYECTO: entradas vacías (sin sha) se reconstruyen", () => {
+  const a = repo("a", { "openwiki/index.md": "# A\n" });
+  const b = repo("b", { "README.md": "sin docs\n" });
+  rmSync(OUT(), { recursive: true, force: true });
+  assert.equal(fetch({ locales: { a, b } }).status, 0);
+  assert.ok(entrada("b").empty);
+  const r = fetch({ solo: "a", locales: { a, b } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /b: desde caché/);
+  assert.ok(entrada("b").empty);
 });
