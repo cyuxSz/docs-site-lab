@@ -131,12 +131,16 @@ test("sanearNombre: quita rutas (../, \\), caracteres raros y deja un nombre seg
   assert.match(sanearNombre("x".repeat(300) + ".glb"), /\.glb$/, "al recortar conserva la extensión");
 });
 
-test("lista blanca de tipos: extensión → Content-Type, tamaño máximo (imágenes 10 MB, resto 50 MB) e inline", async () => {
+test("lista blanca de tipos: extensión → Content-Type, tamaño máximo (imágenes 10 MB, diagramas 20/10 MB, resto 50 MB) e inline", async () => {
   const { TIPOS } = await core();
-  const esperadas = ["png", "jpg", "jpeg", "webp", "svg", "pdf", "kicad_sch", "kicad_pcb", "kicad_pro", "step", "stp", "stl", "glb", "3mf", "sldprt", "sldasm", "slddrw", "zip", "csv"];
+  const esperadas = ["png", "jpg", "jpeg", "webp", "svg", "pdf", "kicad_sch", "kicad_pcb", "kicad_pro", "step", "stp", "stl", "glb", "3mf", "sldprt", "sldasm", "slddrw", "zip", "csv", "excalidraw", "drawio"];
   assert.deepEqual(Object.keys(TIPOS).sort(), [...esperadas].sort());
   for (const ext of ["png", "jpg", "jpeg", "webp", "svg"]) assert.equal(TIPOS[ext].max, 10 * MB, ext);
-  for (const ext of esperadas.filter((e) => !["png", "jpg", "jpeg", "webp", "svg"].includes(e))) assert.equal(TIPOS[ext].max, 50 * MB, ext);
+  // C1: fuentes de diagrama, siempre como adjunto octet-stream.
+  assert.equal(TIPOS.excalidraw.max, 20 * MB, "excalidraw");
+  assert.equal(TIPOS.drawio.max, 10 * MB, "drawio");
+  for (const ext of ["excalidraw", "drawio"]) assert.equal(TIPOS[ext].mime, "application/octet-stream", ext);
+  for (const ext of esperadas.filter((e) => !["png", "jpg", "jpeg", "webp", "svg", "excalidraw", "drawio"].includes(e))) assert.equal(TIPOS[ext].max, 50 * MB, ext);
   for (const ext of ["png", "jpg", "jpeg", "webp", "pdf"]) assert.equal(TIPOS[ext].inline, true, `${ext} inline`);
   for (const ext of esperadas.filter((e) => !["png", "jpg", "jpeg", "webp", "pdf"].includes(e))) assert.equal(TIPOS[ext].inline, false, `${ext} attachment`);
   assert.equal(TIPOS.png.mime, "image/png");

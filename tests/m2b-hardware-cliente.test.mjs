@@ -453,7 +453,7 @@ test("cliente: hardware-editor.ts carga el render con import() diferido y no imp
   const js = leer("src/scripts/hardware-editor.ts");
   assert.match(js, /import\(\s*["']\.\.\/lib\/hardware-md(\.ts)?["']\s*\)/, "import() dinámico de ../lib/hardware-md");
   assert.doesNotMatch(js, /^\s*import\s[^;]*from\s+["'](marked|dompurify|\.\.\/lib\/hardware-md(\.ts)?)["']/m, "sin import estático");
-  assert.match(js, /crearRenderizador\(window\)/);
+  assert.match(js.replace(/^\s*\/\/.*$/gm, ""), /crearRenderizador\(window\s*(\)|,\s*\{)/, "crearRenderizador(window) o crearRenderizador(window, { ...opciones })");
   assert.match(js, /\.fragmento\(/);
 });
 
