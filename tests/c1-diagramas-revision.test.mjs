@@ -202,3 +202,20 @@ test("crearRenderizador: con saltos CRLF y con definiciones repetidas el bloque 
     assert.doesNotMatch(h, /<pre>/);
   }
 });
+
+// ---------- segundo guardado sin cerrar el editor ----------
+test("hardware-editor: tras cada guardado correcto la referencia del diagrama pasa a la fuente nueva (no duplica ni da conflicto)", async () => {
+  const { reemplazarDiagrama } = await md();
+  const F2 = "0b1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3c";
+  const S2 = "1b1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3d";
+  const F3 = "2b1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3e";
+  const S3 = "3b1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3f";
+  const tras1 = reemplazarDiagrama(bloque, F, { editor: "drawio", fuente: F2, svg: S2 });
+  // Con la referencia vieja el segundo guardado no encuentra el bloque; con la nueva, lo reemplaza.
+  assert.equal(reemplazarDiagrama(tras1, F, { editor: "drawio", fuente: F3, svg: S3 }), null);
+  const tras2 = reemplazarDiagrama(tras1, F2, { editor: "drawio", fuente: F3, svg: S3 });
+  assert.equal((tras2.match(/```diagrama/g) ?? []).length, 1);
+  const src = readFileSync(raiz + "src/scripts/hardware-editor.ts", "utf8");
+  assert.equal((src.match(/ctx\.anterior = datos\.fuente/g) ?? []).length, 2, "tanto al insertar en el texto como al guardar la página");
+  assert.match(src, /alGuardar: \(r\) => guardarDiagrama\(ctx, r\)/, "el mismo ctx mutable en todos los guardados");
+});
