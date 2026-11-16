@@ -68,6 +68,7 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
             <div class="hw-subida">
               <input type="file" id="hw-archivo" class="hw-archivo" />
               <label for="hw-archivo" class="btn">Adjuntar</label>
+              <button type="button" class="btn" data-hw-insertar-diagrama aria-haspopup="dialog">Insertar diagrama</button>
               <progress class="hw-progreso" data-hw-progreso max="100" value="0" aria-label="Progreso de la subida" hidden></progress>
               <span class="hw-subiendo" data-hw-subiendo aria-live="polite"></span>
             </div>
@@ -131,6 +132,35 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
       <button type="button" data-hw-ok>Descartar</button>
       <button type="button" data-hw-no>Seguir editando</button>
     </div>
+  </dialog>
+
+  <dialog class="atajos-dialog" id="hw-diagrama-nuevo" aria-labelledby="hw-diagrama-nuevo-titulo">
+    <form data-hw-diag-form novalidate>
+      <div class="atajos-bar"><h2 id="hw-diagrama-nuevo-titulo">Insertar diagrama</h2></div>
+      <div class="campo hw-dialogo-cuerpo">
+        <fieldset class="hw-diag-opciones">
+          <legend>Editor</legend>
+          <label><input type="radio" name="editor" value="excalidraw" checked /> Excalidraw (dibujo libre)</label>
+          <label><input type="radio" name="editor" value="drawio" /> diagrams.net (diagramas y esquemas)</label>
+        </fieldset>
+        <label for="hw-diagrama-nuevo-nombre">Título (opcional)</label>
+        <input type="text" id="hw-diagrama-nuevo-nombre" name="titulo" maxlength="120" autocomplete="off" />
+      </div>
+      <div class="atajos-bar">
+        <button type="submit" data-hw-ok>Abrir editor</button>
+        <button type="button" data-hw-no>Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog class="hw-dlg-diagrama" id="hw-diagrama" aria-labelledby="hw-diagrama-titulo">
+    <div class="hw-dlg-barra">
+      <h2 id="hw-diagrama-titulo">Diagrama</h2>
+      <button type="button" class="btn btn-primary" data-hw-diag-guardar>Guardar</button>
+      <button type="button" class="btn" data-hw-diag-cerrar>Cerrar</button>
+    </div>
+    <p class="hw-error" data-hw-diag-error role="alert" hidden></p>
+    <p class="hw-ayuda hw-diag-estado" data-hw-diag-estado aria-live="polite"></p>
+    <div class="hw-dlg-lienzo" data-hw-diag-lienzo></div>
   </dialog>
 
   <script>

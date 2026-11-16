@@ -3,6 +3,7 @@
 // está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
+import { esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
 import {
   alAbortar,
   actualizarTituloIndice,
@@ -91,6 +92,8 @@ async function iniciar(root: HTMLElement) {
   const dlgNueva = $<HTMLDialogElement>("#hw-nueva");
   const dlgBorrar = $<HTMLDialogElement>("#hw-borrar");
   const dlgDescartar = $<HTMLDialogElement>("#hw-descartar");
+  const btnInsertarDiagrama = $<HTMLButtonElement>("[data-hw-insertar-diagrama]");
+  const dlgDiagramaNuevo = $<HTMLDialogElement>("#hw-diagrama-nuevo");
 
   let indice: PaginaIndice[] = [];
   let editable = false;
@@ -136,7 +139,8 @@ async function iniciar(root: HTMLElement) {
   // en paralelo con el primer fetch del índice.
   let cargaRender: Promise<ReturnType<typeof import("../lib/hardware-md").crearRenderizador>> | null = null;
   function cargarRender() {
-    cargaRender ??= import("../lib/hardware-md").then((m) => m.crearRenderizador(window));
+    // Con { proyecto } los bloques ```diagrama se ven como figuras; crearRenderizador(window) sin opciones sigue valiendo (los muestra como código).
+    cargaRender ??= import("../lib/hardware-md").then((m) => m.crearRenderizador(window, { proyecto }));
     return cargaRender;
   }
   // Único punto por el que entra HTML al DOM: fragmento ya saneado por DOMPurify (sin reparsear strings).
@@ -248,11 +252,138 @@ async function iniciar(root: HTMLElement) {
 
   async function pintarPagina(p: PaginaHw) {
     pagina = p;
-    await pintarMd(lectura, p.md, p.titulo);
+    if (await pintarMd(lectura, p.md, p.titulo)) await anadirBotonesDiagrama(p.md);
     pintarMetadatos(p);
     document.title = `${p.titulo} · ${etiqueta}`;
     pintarIndice();
   }
+
+  // ---------- diagramas (C1) ----------
+  // Cada figure.hw-diagrama de la lectura lleva debajo "Editar diagrama" (solo quien puede escribir). El orden de los bloques del
+  // Markdown es el de las figuras renderizadas.
+  async function anadirBotonesDiagrama(md: string) {
+    if (!editable) return;
+    const { diagramasDe } = await import("../lib/hardware-md");
+    const lista = diagramasDe(md);
+    const figuras = [...lectura.querySelectorAll<HTMLElement>("figure.hw-diagrama")];
+    figuras.forEach((fig, i) => {
+      const d = lista[i];
+      if (!d) return;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn hw-diagrama-editar";
+      b.dataset.fuente = d.fuente;
+      b.dataset.editor = d.editor;
+      b.textContent = "Editar diagrama";
+      b.setAttribute("aria-label", d.titulo ? `Editar diagrama: ${d.titulo}` : "Editar diagrama");
+      fig.append(b);
+    });
+  }
+
+  const TEXTO_CONFLICTO = resultadoGuardado(409).mensaje;
+
+  // Sube la fuente y el SVG como archivos nuevos (UUID nuevos: /api/archivos no sobrescribe) y enlaza el bloque:
+  // al crear lo inserta en el cursor del textarea; al editar desde la lectura reemplaza el bloque y hace PUT con la versión vista.
+  async function guardarDiagrama(
+    ctx: { editor: EditorDiagrama; titulo: string; anterior: string | null },
+    r: { fuente: string; svg: string },
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (!esSvg(r.svg)) return { ok: false, error: "El SVG exportado no es válido: no se subió nada." };
+    const nombres = nombresArchivos(ctx);
+    const fuente = new File([r.fuente], nombres.fuente, { type: "application/octet-stream" });
+    const svg = new File([r.svg], nombres.svg, { type: "image/svg+xml" });
+    for (const a of [fuente, svg]) {
+      const v = validarArchivo(a);
+      if (!v.ok) return { ok: false, error: `${a.name}: ${v.error}` };
+    }
+    const datos = { editor: ctx.editor, fuente: crypto.randomUUID(), svg: crypto.randomUUID(), titulo: limpiarTitulo(ctx.titulo) };
+    subidasActivas++;
+    actualizarGuardar();
+    let error = "";
+    const fallo = (texto: string) => (error = texto);
+    try {
+      if (!(await subir(fuente, { id: datos.fuente, fallo })) || !(await subir(svg, { id: datos.svg, fallo }))) return { ok: false, error };
+    } finally {
+      subidasActivas--;
+      actualizarGuardar();
+    }
+    if (ctx.anterior === null) {
+      const res = insertarBloque(textarea.value, textarea.selectionStart, datos);
+      textarea.value = res.texto;
+      textarea.setSelectionRange(res.cursor, res.cursor);
+      return { ok: true };
+    }
+    if (!pagina) return { ok: false, error: TEXTO_CONFLICTO };
+    const { reemplazarDiagrama } = await import("../lib/hardware-md");
+    const nuevoMd = reemplazarDiagrama(pagina.md, ctx.anterior, datos);
+    if (nuevoMd === null) return { ok: false, error: TEXTO_CONFLICTO };
+    const res = await api("PUT", { cuerpo: { pagina: pagina.slug, md: nuevoMd, version: pagina.version } });
+    if (res.status !== 200 || !res.json?.pagina) return { ok: false, error: resultadoGuardado(res.status).mensaje };
+    indice = actualizarTituloIndice(indice, res.json.pagina);
+    await pintarPagina(res.json.pagina);
+    mostrarEstado("Diagrama guardado");
+    if (historial.open) void cargarHistorial();
+    return { ok: true };
+  }
+
+  async function abrirDiagrama(editor: EditorDiagrama, fuente: string | null, titulo: string, anterior: string | null, disparador: HTMLElement) {
+    try {
+      const { abrirEditorDiagrama } = await import("./diagramas");
+      await abrirEditorDiagrama({
+        editor,
+        fuente,
+        titulo,
+        disparador,
+        alGuardar: (r) => guardarDiagrama({ editor, titulo, anterior }, r),
+        confirmarDescartar: () => preguntar(dlgDescartar),
+      });
+    } catch {
+      mostrarError(mensajeError("red"));
+    }
+  }
+
+  escuchar(lectura, "click", async (e) => {
+    const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-diagrama-editar");
+    if (!b || !editable || !pagina) return;
+    const fuenteId = b.dataset.fuente ?? "";
+    const editor = b.dataset.editor === "drawio" ? "drawio" : "excalidraw";
+    const titulo = b.closest("figure")?.querySelector("figcaption")?.textContent ?? "";
+    mostrarError("");
+    b.disabled = true;
+    mostrarEstado("Descargando diagrama…");
+    let texto: string | null = null;
+    try {
+      const r = await fetch(`/api/archivos/?${new URLSearchParams({ proyecto, id: fuenteId })}`, { credentials: "same-origin", cache: "no-store" });
+      if (r.ok) texto = await r.text();
+      else mostrarError(msg(r.status));
+    } catch {
+      mostrarError(msg(0));
+    }
+    b.disabled = false;
+    mostrarEstado("");
+    if (texto === null) return;
+    await abrirDiagrama(editor, texto, titulo, fuenteId, b);
+    if (!document.activeElement || document.activeElement === document.body) (lectura.querySelector<HTMLElement>(".hw-diagrama-editar") ?? btnEditar).focus();
+  });
+
+  // Insertar un diagrama nuevo desde el editor de la página: elegir editor y título, dibujar y guardar.
+  const formDiagramaNuevo = dlgDiagramaNuevo.querySelector<HTMLFormElement>("[data-hw-diag-form]")!;
+  escuchar(btnInsertarDiagrama, "click", () => {
+    formDiagramaNuevo.reset();
+    dlgDiagramaNuevo.showModal();
+    formDiagramaNuevo.querySelector<HTMLInputElement>("input[name=editor]:checked")?.focus();
+  });
+  escuchar(dlgDiagramaNuevo.querySelector("[data-hw-no]")!, "click", () => {
+    dlgDiagramaNuevo.close();
+    btnInsertarDiagrama.focus();
+  });
+  escuchar(formDiagramaNuevo, "submit", async (e) => {
+    e.preventDefault();
+    const editor = new FormData(formDiagramaNuevo).get("editor") === "drawio" ? "drawio" : "excalidraw";
+    const titulo = limpiarTitulo(String(new FormData(formDiagramaNuevo).get("titulo") ?? ""));
+    dlgDiagramaNuevo.close();
+    await abrirDiagrama(editor, null, titulo, null, btnInsertarDiagrama);
+  });
 
   // ---------- carga ----------
   async function cargarIndice(): Promise<boolean> {
@@ -390,6 +521,7 @@ async function iniciar(root: HTMLElement) {
       t.tabIndex = activa ? 0 : -1;
     }
     panelEscribir.hidden = modo !== "escribir";
+    btnInsertarDiagrama.hidden = modo !== "escribir";
     previa.hidden = modo !== "previa";
   }
 
@@ -644,7 +776,8 @@ async function iniciar(root: HTMLElement) {
     }
   }
 
-  async function subir(archivo: File) {
+  // `diagrama`: la subida es de un diagrama (C1): usa el id dado, no inserta enlace en el textarea y entrega el error a `fallo`.
+  async function subir(archivo: File, diagrama?: { id: string; fallo: (texto: string) => void }): Promise<boolean> {
     errorEditor("");
     mostrarEstado("");
     const nombre = String(archivo?.name ?? "archivo");
@@ -652,10 +785,11 @@ async function iniciar(root: HTMLElement) {
     try {
       const v = validarArchivo(archivo);
       if (!v.ok) {
-        errorEditor(`${nombre}: ${v.error}`);
-        return;
+        if (diagrama) diagrama.fallo(`${nombre}: ${v.error}`);
+        else errorEditor(`${nombre}: ${v.error}`);
+        return false;
       }
-      const id = crypto.randomUUID();
+      const id = diagrama?.id ?? crypto.randomUUID();
       lblSubiendo.textContent = `Subiendo ${nombre}…`;
       progreso.value = 0;
       progreso.hidden = false;
@@ -698,14 +832,17 @@ async function iniciar(root: HTMLElement) {
         if (sinAvance) throw new TypeError("sin avance");
         throw err;
       }
-      insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
+      if (!diagrama) insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
       lblSubiendo.textContent = `${nombre} subido`;
+      return true;
     } catch (err) {
       // El SDK no expone el estado HTTP del token (400, 403, 413 o 429): se da una causa general.
       const red = err instanceof TypeError;
       lblSubiendo.textContent = "";
-      if (err instanceof ErrorSubida) errorEditor(`${nombre}: ${mensajeError(err.status)}`);
-      else errorEditor(red ? `${nombre}: ${mensajeError("red")}` : `No se pudo subir ${nombre}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`);
+      const texto = err instanceof ErrorSubida ? `${nombre}: ${mensajeError(err.status)}` : red ? `${nombre}: ${mensajeError("red")}` : `No se pudo subir ${nombre}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`;
+      if (diagrama) diagrama.fallo(texto);
+      else errorEditor(texto);
+      return false;
     } finally {
       clearTimeout(temporizador);
       progreso.value = 0;
