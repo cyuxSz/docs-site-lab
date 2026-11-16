@@ -6,6 +6,7 @@ import { useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { Excalidraw, exportToSvg, serializeAsJSON } from "@excalidraw/excalidraw";
 // ?url: el CSS no se eleva a la página (Astro lo enlazaría en la lectura); se inyecta al montar el editor.
+import { huellaDibujo } from "../lib/diagramas";
 import estilos from "@excalidraw/excalidraw/index.css?url";
 
 export interface ExcalidrawMontado {
@@ -26,9 +27,9 @@ function Lienzo({ fuente, alCambiar, alListo }: { fuente: string | null; alCambi
       excalidrawAPI={alListo}
       initialData={inicial}
       langCode="es-ES"
-      onChange={(elementos: readonly any[]) => {
-        // Cambios reales del dibujo (no selección ni desplazamiento): huella de ids y versiones.
-        const huella = elementos.map((e) => `${e.id}:${e.version}`).join(",");
+      onChange={(elementos: readonly any[], appState: any) => {
+        // Cambios reales del dibujo (no selección ni desplazamiento): huella de ids, versiones y color de fondo.
+        const huella = huellaDibujo(elementos, appState);
         if (base.current === null) base.current = huella;
         else if (huella !== base.current) {
           base.current = huella;
