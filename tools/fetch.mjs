@@ -59,12 +59,26 @@ async function tokenAlert() {
   }
 }
 
+// URL de clon (con token si hay) o la ruta local de DOCS_LOCAL_REPOS; la usan el clon y la consulta del HEAD remoto.
+const urlDe = (project) => LOCAL[project.id] || `https://${TOKEN ? `x-access-token:${TOKEN}@` : ""}github.com/${project.repo}.git`;
+
+// HEAD remoto de la rama del proyecto (sha) o null si ls-remote falla o no encuentra la rama. Sin imprimir el token.
+function headRemoto(project) {
+  try {
+    const linea = git(["ls-remote", urlDe(project), `refs/heads/${project.branch}`]).split(/\r?\n/)[0] || "";
+    const sha = linea.split(/\s+/)[0];
+    return /^[0-9a-f]{40,64}$/.test(sha) ? sha : null;
+  } catch (err) {
+    console.warn(`⚠ ${project.id}: ls-remote falló (${hideToken(err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0].slice(0, 160)}); se reconstruye`);
+    return null;
+  }
+}
+
 // Trae solo openwiki/ y docs/arch/ con el historial de commits (sin blobs viejos) para fechar cada página.
 function fetchRepo(project) {
   if (LOCAL[project.id]) return LOCAL[project.id];
   const dest = join(WORK, project.id);
-  const auth = TOKEN ? `x-access-token:${TOKEN}@` : "";
-  git(["clone", "--quiet", "--filter=blob:none", "--no-checkout", "--branch", project.branch, `https://${auth}github.com/${project.repo}.git`, dest]);
+  git(["clone", "--quiet", "--filter=blob:none", "--no-checkout", "--branch", project.branch, urlDe(project), dest]);
   git(["-C", dest, "sparse-checkout", "set", "--no-cone", "/openwiki/", "/docs/arch/"]);
   git(["-C", dest, "checkout", "--quiet", project.branch]);
   return dest;
@@ -262,9 +276,25 @@ if (!previo) rmSync(OUT, { recursive: true, force: true });
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(join(OUT, "docs"), { recursive: true });
 
+// Conserva un proyecto de la caché solo si está íntegro (data, páginas y diagramas en disco) y su sha sigue siendo el
+// HEAD remoto de su rama; si no, devuelve null y se reconstruye.
 const conservable = (p) => {
   const e = previo?.find((x) => x && x.id === p.id);
-  return e && !e.error && (e.empty || existsSync(join(OUT, "data", `${p.id}.json`))) ? e : null;
+  if (!e || e.error || !e.sha) return null;
+  try {
+    const dataTxt = leerDentro(OUT, join(OUT, "data", `${p.id}.json`));
+    if (dataTxt === null) return null;
+    const data = JSON.parse(dataTxt);
+    if (!Array.isArray(data.pageList) || !Array.isArray(data.diagramList)) return null;
+    for (const pg of data.pageList) if (typeof pg?.path !== "string" || !existsSync(join(OUT, "docs", p.id, pg.path))) return null;
+    for (const d of data.diagramList) {
+      const name = typeof d?.file === "string" ? d.file.split("/").pop() : "";
+      if (!name || !existsSync(join(OUT, "arch", p.id, name))) return null;
+    }
+  } catch {
+    return null;
+  }
+  return headRemoto(p) === e.sha ? e : null;
 };
 const alerts = [await tokenAlert()].filter(Boolean);
 const summary = [];
