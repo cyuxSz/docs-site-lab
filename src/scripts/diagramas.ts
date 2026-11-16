@@ -9,6 +9,7 @@ import {
   esSvg,
   mensajeDrawio,
   RUTA_ASSETS_EXCALIDRAW,
+  fuentesSoloDeOrigen,
   svgDeExport,
   urlDrawio,
   type EditorDiagrama,
@@ -22,6 +23,20 @@ export interface OpcionesEditor {
   disparador: HTMLElement | null; // botón que lo abrió: recibe el foco al cerrar
   alGuardar: (r: { fuente: string; svg: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
   confirmarDescartar: () => Promise<boolean>;
+}
+
+// Excalidraw 0.18 añade siempre https://esm.sh/... como última fuente de cada FontFace y Chrome comprueba la CSP de todas al
+// construirla (230 errores aunque la local exista). Se envuelve FontFace para quitar las fuentes de otros orígenes.
+function soloFuentesLocales(): void {
+  const w = window as unknown as { FontFace: typeof FontFace; __fuentesLocales?: boolean };
+  if (w.__fuentesLocales) return;
+  w.__fuentesLocales = true;
+  const Original = w.FontFace;
+  w.FontFace = class extends Original {
+    constructor(familia: string, origen: string | BufferSource, descriptores?: FontFaceDescriptors) {
+      super(familia, typeof origen === "string" ? fuentesSoloDeOrigen(origen, location.origin) : origen, descriptores);
+    }
+  };
 }
 
 const NOMBRES: Record<EditorDiagrama, string> = { excalidraw: "Excalidraw", drawio: "diagrams.net" };
@@ -137,6 +152,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
       void (async () => {
         try {
           (window as unknown as { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH = RUTA_ASSETS_EXCALIDRAW;
+          soloFuentesLocales();
           const m = await import("../components/EditorExcalidraw");
           if (cerrado) return;
           const montado = m.montarExcalidraw(lienzo, { fuente: o.fuente, alCambiar: () => evento("cambio") });
@@ -174,12 +190,20 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
     marco.src = urlDrawio();
     let xml = o.fuente ?? "";
     let xmlConocido = o.fuente === null ? false : true;
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+    const quitarSpinner = () => enviarDrawio(marco.contentWindow, { action: "spinner", show: false });
+    // Solo `export` con spinKey: diagrams.net muestra su propio spinner. Un {action:"spinner"} previo lo deja ocupado e ignora el export.
     const pedirExport = () => {
       evento("guardando");
-      enviarDrawio(marco.contentWindow, { action: "spinner", show: true, messageKey: "saving" });
       enviarDrawio(marco.contentWindow, { action: "export", format: "svg", spinKey: "saving" });
+      clearTimeout(temporizador);
+      temporizador = setTimeout(() => {
+        if (cerrado || !estado.guardando) return;
+        quitarSpinner();
+        evento("error");
+        fallo("diagrams.net no respondió al guardar: no se subió nada. Inténtalo de nuevo.");
+      }, 20000);
     };
-    const quitarSpinner = () => enviarDrawio(marco.contentWindow, { action: "spinner", show: false });
     guardarActual = () => {
       if (!listo || estado.guardando) return;
       pedirExport();
@@ -213,6 +237,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
             if (!estado.guardando) pedirExport();
             break;
           case "export": {
+            clearTimeout(temporizador);
             if (typeof msg.xml === "string") {
               xml = msg.xml;
               xmlConocido = true;
@@ -235,7 +260,10 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
       },
       { signal },
     );
-    limpiarEditor = () => marco.remove();
+    limpiarEditor = () => {
+      clearTimeout(temporizador);
+      marco.remove();
+    };
     lienzo.append(marco);
   });
 }

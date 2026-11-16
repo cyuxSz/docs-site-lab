@@ -185,3 +185,22 @@ test("Excalidraw usa fuentes propias (sin CDN): EXCALIDRAW_ASSET_PATH apunta a e
   const { RUTA_ASSETS_EXCALIDRAW } = await diag();
   assert.match(RUTA_ASSETS_EXCALIDRAW, /^\/[a-z0-9/-]+\/$/, "ruta absoluta del mismo origen terminada en /");
 });
+
+// ---------- Regresiones vistas en el navegador ----------
+
+test("fuentesSoloDeOrigen: quita el fallback de esm.sh que Excalidraw añade a cada FontFace (230 errores de CSP)", async () => {
+  const { fuentesSoloDeOrigen } = await diag();
+  const src =
+    "url(http://localhost:8787/excalidraw/fonts/A/a.woff2) format('woff2'), url(https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/fonts/A/a.woff2) format('woff2')";
+  assert.equal(fuentesSoloDeOrigen(src, "http://localhost:8787"), "url(http://localhost:8787/excalidraw/fonts/A/a.woff2) format('woff2')");
+  assert.equal(fuentesSoloDeOrigen("url(data:font/woff2;base64,AAAA)", "http://x"), "url(data:font/woff2;base64,AAAA)");
+  const ajena = "url(https://esm.sh/a.woff2) format('woff2')";
+  assert.equal(fuentesSoloDeOrigen(ajena, "http://localhost:8787"), ajena, "sin fuentes propias se deja tal cual");
+});
+
+test("diagrams.net: pedir el SVG envía solo export con spinKey (un spinner previo hace que diagrams.net ignore el export)", () => {
+  const src = readFileSync(resolve(raiz, "src/scripts/diagramas.ts"), "utf8");
+  assert.doesNotMatch(src, /action:\s*"spinner",\s*show:\s*true/, "no enviar spinner show:true antes del export");
+  assert.match(src, /action:\s*"export",\s*format:\s*"svg",\s*spinKey:\s*"saving"/);
+  assert.match(src, /setTimeout\(/, "si diagrams.net no responde se quita el spinner y se muestra un error");
+});
