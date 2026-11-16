@@ -107,6 +107,7 @@ async function iniciar(root: HTMLElement) {
     btnGuardar.disabled = e.deshabilitado;
     textarea.disabled = guardando;
     inputArchivo.disabled = guardando;
+    btnInsertarDiagrama.disabled = guardando;
     btnGuardar.title = e.aviso;
     if (e.aviso && avisar) mostrarEstado(e.aviso);
     else if (!e.aviso && lblEstado.textContent === AVISO_SUBIDAS) mostrarEstado("");
@@ -392,6 +393,7 @@ async function iniciar(root: HTMLElement) {
   // Insertar un diagrama nuevo desde el editor de la página: elegir editor y título, dibujar y guardar.
   const formDiagramaNuevo = dlgDiagramaNuevo.querySelector<HTMLFormElement>("[data-hw-diag-form]")!;
   escuchar(btnInsertarDiagrama, "click", () => {
+    if (guardando) return;
     formDiagramaNuevo.reset();
     dlgDiagramaNuevo.showModal();
     formDiagramaNuevo.querySelector<HTMLInputElement>("input[name=editor]:checked")?.focus();

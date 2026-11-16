@@ -124,6 +124,11 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
         return;
       }
       evento("guardado");
+      if (estado.sucio) {
+        // Se siguió dibujando mientras se subía: el editor sigue abierto para no perder esos cambios.
+        anunciar("Diagrama guardado. Hay cambios nuevos sin guardar.");
+        return;
+      }
       anunciar("Diagrama guardado");
       cerrar();
     }
@@ -194,14 +199,18 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
     let xml = o.fuente ?? "";
     let xmlConocido = o.fuente === null ? false : true;
     let temporizador: ReturnType<typeof setTimeout> | undefined;
+    let peticion = 0; // contador de exportaciones pedidas
+    let activa = 0; // la que espera respuesta (0: ninguna; una vencida queda invalidada)
     const quitarSpinner = () => enviarDrawio(marco.contentWindow, { action: "spinner", show: false });
     // Solo `export` con spinKey: diagrams.net muestra su propio spinner. Un {action:"spinner"} previo lo deja ocupado e ignora el export.
     const pedirExport = () => {
       evento("guardando");
-      enviarDrawio(marco.contentWindow, { action: "export", format: "svg", spinKey: "saving" });
+      const mia = (activa = ++peticion);
+      enviarDrawio(marco.contentWindow, { action: "export", format: "svg", spinKey: "saving", peticion: mia });
       clearTimeout(temporizador);
       temporizador = setTimeout(() => {
-        if (cerrado || !estado.guardando) return;
+        if (cerrado || activa !== mia || !estado.guardando) return;
+        activa = 0;
         quitarSpinner();
         evento("error");
         fallo("diagrams.net no respondió al guardar: no se guardó nada. Inténtalo de nuevo.");
@@ -240,6 +249,10 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
             if (!estado.guardando) pedirExport();
             break;
           case "export": {
+            // diagrams.net devuelve la petición en `message`: una respuesta de una exportación vencida o ajena se ignora.
+            const eco = (msg.message as { peticion?: unknown } | undefined)?.peticion;
+            if (activa === 0 || (typeof eco === "number" && eco !== activa)) break;
+            activa = 0;
             clearTimeout(temporizador);
             if (typeof msg.xml === "string") {
               xml = msg.xml;
