@@ -7,22 +7,22 @@
 // restringido (además de no usar data-pagefind-body), para que un cambio futuro en una página no filtre contenido.
 import { decodificar } from "./lib/decodificar-ruta.mjs";
 
-export const RESTRICTED = { "proyecto-x": ["cyuxSz"] };
+export const RESTRICTED = {};
 
 const lower = (s) => String(s).toLowerCase();
 
-export const isRestricted = (id) => Object.keys(RESTRICTED).some((k) => lower(k) === lower(id ?? ""));
+export const isRestricted = (id, restringidos = RESTRICTED) => Object.keys(restringidos).some((k) => lower(k) === lower(id ?? ""));
 
 // Función pura: ¿puede este login ver esta ruta? Decodifica la ruta en rondas, separa por / y \, descarta segmentos
 // vacíos y ".", y restringe según el primer segmento. Falla cerrado (false para todos): escape mal formado, ruta que no
 // se estabiliza en 5 rondas o cualquier segmento "..".
-export function canAccess(login, pathname) {
+export function canAccess(login, pathname, restringidos = RESTRICTED) {
   const decoded = decodificar(String(pathname ?? ""));
   if (decoded === null) return false;
   const segs = decoded.split(/[/\\]/).filter((s) => s && s !== ".");
   if (segs.includes("..")) return false;
-  const id = Object.keys(RESTRICTED).find((k) => lower(k) === lower(segs[0] ?? ""));
+  const id = Object.keys(restringidos).find((k) => lower(k) === lower(segs[0] ?? ""));
   if (!id) return true;
   if (!login) return false;
-  return RESTRICTED[id].some((l) => lower(l) === lower(login));
+  return restringidos[id].some((l) => lower(l) === lower(login));
 }
