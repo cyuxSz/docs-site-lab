@@ -204,3 +204,11 @@ test("diagrams.net: pedir el SVG envía solo export con spinKey (un spinner prev
   assert.match(src, /action:\s*"export",\s*format:\s*"svg",\s*spinKey:\s*"saving"/);
   assert.match(src, /setTimeout\(/, "si diagrams.net no responde se quita el spinner y se muestra un error");
 });
+
+test("la lectura no enlaza el CSS de Excalidraw: se importa como ?url y se inyecta al montar el editor", () => {
+  const src = readFileSync(resolve(raiz, "src/components/EditorExcalidraw.tsx"), "utf8");
+  assert.doesNotMatch(src, /import\s+["']@excalidraw\/excalidraw\/index\.css["']/, "un import de CSS lo eleva Astro a la página");
+  assert.match(src, /index\.css\?url/);
+  const html = resolve(raiz, "dist/uuv/electronica/index.html");
+  if (existsSync(html)) assert.doesNotMatch(readFileSync(html, "utf8"), /EditorExcalidraw[^"']*\.css/, "el HTML construido no enlaza CSS de Excalidraw");
+});
