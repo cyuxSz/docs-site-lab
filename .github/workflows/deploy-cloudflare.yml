@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       sha:
-        description: "Commit del repo de código (opcional; solo entra en la clave de caché)"
+        description: "Commit del repo de código (opcional; se valida pero no entra en la clave de caché)"
         required: false
         type: string
   repository_dispatch:
@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .content/
-          key: content-${{ hashFiles('projects.json', 'tools/**') }}-${{ env.PROYECTO || 'todos' }}-${{ env.SHA || github.run_id }}
+          key: content-${{ hashFiles('projects.json', 'tools/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             content-${{ hashFiles('projects.json', 'tools/**') }}-
       - name: Build
