@@ -62,6 +62,15 @@ export function fakeRedis() {
       case "INCR": { const v = Number(data.get(a[0]) ?? 0) + 1; data.set(a[0], String(v)); return v; }
       case "EXPIRE": if (!data.has(a[0])) return 0; if (String(a[2] ?? "").toUpperCase() === "NX" && ttl.has(a[0])) return 0; ttl.set(a[0], reloj.ahora() + Number(a[1]) * 1000); return 1;
       case "TTL": return data.has(a[0]) ? (ttl.has(a[0]) ? Math.ceil((ttl.get(a[0]) - reloj.ahora()) / 1000) : -1) : -2;
+      case "PTTL": return data.has(a[0]) ? (ttl.has(a[0]) ? Math.max(0, ttl.get(a[0]) - reloj.ahora()) : -1) : -2;
+      case "TYPE": { const v = data.get(a[0]); return v === undefined ? "none" : typeof v === "string" ? "string" : v instanceof Map ? "hash" : v instanceof Set ? "set" : "list"; }
+      // SCAN cursor [MATCH patrón] [COUNT n]: devuelve todo en una pasada (cursor "0"); MATCH admite * y ?.
+      case "SCAN": {
+        const i = a.findIndex((x) => String(x).toUpperCase() === "MATCH");
+        const patron = i >= 0 ? String(a[i + 1]) : "*";
+        const re = new RegExp(`^${patron.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`, "s");
+        return ["0", [...data.keys()].filter((k) => re.test(k))];
+      }
       case "EVAL": {
         const sc = String(a[0]);
         const nk = Number(a[1]);
