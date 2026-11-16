@@ -85,7 +85,7 @@ En local con `python -m http.server` no corre el login (el middleware solo se ej
 
 Secrets: `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID`. Sin ellos el workflow construye, avisa con `::warning::` y termina en verde sin desplegar. `DOCS_GITHUB_TOKEN` se usa para leer los repos privados.
 
-Con un disparo por proyecto, el build corre `tools/fetch.mjs` con `DOCS_SOLO_PROYECTO=<id>`: vuelve a traer solo ese proyecto y conserva los demás del `.content/` restaurado de la caché (si a otro le falta algo, lo trae de nuevo). Sin la variable (Vercel, push) se descarga todo.
+Con un disparo por proyecto, el build corre `tools/fetch.mjs` con `DOCS_SOLO_PROYECTO=<id>`: vuelve a traer solo ese proyecto y conserva los demás del `.content/` restaurado de la caché, pero solo si están completos y su `sha` sigue siendo el HEAD remoto de su rama (`git ls-remote`); si avanzó, falta algo o la consulta falla, lo trae de nuevo. La clave de caché es única por ejecución e intento (`run_id` y `run_attempt`) y `restore-keys` toma la más reciente. Sin la variable (Vercel, push) se descarga todo.
 
 Quién puede disparar un proyecto lo define `editoresDocs` en `projects.json` (logins de GitHub; sin esa lista nadie puede, se actualiza con el build completo). No llega a `.content/` ni al sitio. El workflow valida proyecto, sha y remitente con `tools/proyecto-valido.mjs` antes de construir.
 
