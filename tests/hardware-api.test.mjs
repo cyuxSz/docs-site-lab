@@ -4,6 +4,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { DEMO } from "./fixtures/acceso-demo.mjs";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
@@ -21,7 +22,7 @@ const PLANTILLAS = {
 };
 const PROYECTOS = [
   { id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR, "Otra"] }, mecanica: { plantilla: "mecanica", editores: [] } } },
-  { id: "proyecto-x", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz"] } } },
+  { id: "restringido-demo", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz"] } } },
   { id: "usv" },
 ];
 
@@ -42,7 +43,7 @@ function cookieDe(login, { exp = Date.now() + 864e5, secret = SECRET } = {}) {
 
 async function montar({ redis = fakeRedis(), env = {}, ahora = () => T0, proyectos = PROYECTOS } = {}) {
   const { crearHandler } = await core();
-  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, proyectos, plantillas: PLANTILLAS, ahora });
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, proyectos, restringidos: DEMO, plantillas: PLANTILLAS, ahora });
   return { handler, redis };
 }
 
@@ -95,10 +96,10 @@ test("401: sin cookie, alterada, caducada o de otro secreto, en todos los métod
 
 test("503 sin SESSION_SECRET fuerte y 503 'no configurado' sin almacén (sin variables de Upstash)", async () => {
   const { crearHandler } = await core();
-  const sinSecreto = crearHandler({ env: { SESSION_SECRET: "corto" }, redis: fakeRedis(), proyectos: PROYECTOS, plantillas: PLANTILLAS });
+  const sinSecreto = crearHandler({ env: { SESSION_SECRET: "corto" }, redis: fakeRedis(), proyectos: PROYECTOS, restringidos: DEMO, plantillas: PLANTILLAS });
   assert.equal((await sinSecreto(req("GET", { login: "ana", query: BASE }))).status, 503);
   for (const redis of [undefined, null]) {
-    const h = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS, plantillas: PLANTILLAS });
+    const h = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS, restringidos: DEMO, plantillas: PLANTILLAS });
     const res = await h(req("GET", { login: "ana", query: BASE }));
     assert.equal(res.status, 503, `redis=${redis}`);
     cabecerasJson(res, "503");
@@ -115,8 +116,8 @@ test("405 para métodos no soportados (PATCH) con cabecera Allow", async () => {
 
 test("404: disciplina no configurada en el proyecto o proyecto sin la clave disciplinas", async () => {
   const { handler } = await montar();
-  for (const query of [{ proyecto: "uuv", disciplina: "software" }, { proyecto: "usv", disciplina: "electronica" }, { proyecto: "proyecto-x", disciplina: "mecanica" }]) {
-    const login = query.proyecto === "proyecto-x" ? "cyuxSz" : "ana";
+  for (const query of [{ proyecto: "uuv", disciplina: "software" }, { proyecto: "usv", disciplina: "electronica" }, { proyecto: "restringido-demo", disciplina: "mecanica" }]) {
+    const login = query.proyecto === "restringido-demo" ? "cyuxSz" : "ana";
     const res = await handler(req("GET", { login, query }));
     assert.equal(res.status, 404, JSON.stringify(query));
     cabecerasJson(res, "404");
@@ -135,11 +136,11 @@ test("400/404: proyecto o disciplina con formato inválido o proyecto inexistent
 
 test("proyecto restringido (canAccess): otro login recibe 403 en lectura y escritura; cyuxSz entra", async () => {
   const { handler } = await montar();
-  const X = { proyecto: "proyecto-x", disciplina: "electronica" };
+  const X = { proyecto: "restringido-demo", disciplina: "electronica" };
   assert.equal((await handler(req("GET", { login: "ana", query: X }))).status, 403);
   assert.equal((await handler(req("POST", { login: "ana", body: { ...X, accion: "inicializar" } }))).status, 403);
   // Un proyecto restringido no revela si la disciplina existe: 403 antes que 404.
-  assert.equal((await handler(req("GET", { login: "ana", query: { proyecto: "proyecto-x", disciplina: "mecanica" } }))).status, 403);
+  assert.equal((await handler(req("GET", { login: "ana", query: { proyecto: "restringido-demo", disciplina: "mecanica" } }))).status, 403);
   const ok = await handler(req("GET", { login: "CyuxSZ", query: X }));
   assert.equal(ok.status, 200);
 });

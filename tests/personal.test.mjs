@@ -52,7 +52,7 @@ test("claves: separadas por proyecto (y por página para lo visto)", () => {
   assert.equal(claveUltima("uuv"), "personal:uuv:ultima");
   assert.equal(claveFavoritos("uuv"), "personal:uuv:favoritos");
   assert.equal(claveVisto("uuv", "/uuv/quickstart/"), "personal:uuv:visto:/uuv/quickstart/");
-  assert.notEqual(claveUltima("uuv"), claveUltima("proyecto-x"));
+  assert.notEqual(claveUltima("uuv"), claveUltima("otro-proyecto"));
 });
 
 // --- Continuar donde te quedaste ---
@@ -61,14 +61,14 @@ test("guardarVisita / ultimaVisita: recuerda la última página por proyecto, si
   assert.equal(ultimaVisita(a, "uuv"), null, "sin visitas no hay tarjeta");
   guardarVisita(a, "uuv", { route: "/uuv/quickstart/", title: "Quickstart", scroll: 0.2 });
   guardarVisita(a, "uuv", { route: "/uuv/packages/uuv_control/", title: "uuv_control", scroll: 0.55 });
-  guardarVisita(a, "proyecto-x", { route: "/proyecto-x/quickstart/", title: "Inicio X", scroll: 0 });
+  guardarVisita(a, "otro-proyecto", { route: "/otro-proyecto/quickstart/", title: "Inicio X", scroll: 0 });
   assert.deepEqual(ultimaVisita(a, "uuv"), { route: "/uuv/packages/uuv_control/", title: "uuv_control", scroll: 0.55 });
-  assert.deepEqual(ultimaVisita(a, "proyecto-x"), { route: "/proyecto-x/quickstart/", title: "Inicio X", scroll: 0 });
+  assert.deepEqual(ultimaVisita(a, "otro-proyecto"), { route: "/otro-proyecto/quickstart/", title: "Inicio X", scroll: 0 });
 });
 
 test("guardarVisita ignora rutas de otro proyecto o externas; ultimaVisita descarta datos corruptos o manipulados", () => {
   const { ls, a } = nuevo();
-  guardarVisita(a, "uuv", { route: "/proyecto-x/quickstart/", title: "X", scroll: 0 });
+  guardarVisita(a, "uuv", { route: "/otro-proyecto/quickstart/", title: "X", scroll: 0 });
   guardarVisita(a, "uuv", { route: "https://evil.example/uuv/", title: "X", scroll: 0 });
   assert.equal(ultimaVisita(a, "uuv"), null);
   const malos = [
@@ -78,7 +78,7 @@ test("guardarVisita ignora rutas de otro proyecto o externas; ultimaVisita desca
     '"texto"',
     JSON.stringify({ route: "//evil.example/uuv/", title: "x", scroll: 0 }),
     JSON.stringify({ route: "javascript:alert(1)", title: "x", scroll: 0 }),
-    JSON.stringify({ route: "/proyecto-x/a/", title: "x", scroll: 0 }),
+    JSON.stringify({ route: "/otro-proyecto/a/", title: "x", scroll: 0 }),
     JSON.stringify({ route: "/uuv/a/", title: 5, scroll: 0 }),
   ];
   for (const malo of malos) {
@@ -120,24 +120,24 @@ test("favoritos: alternar agrega y quita, sin duplicados, en orden de alta y por
   assert.deepEqual(favoritos(a, "uuv"), []);
   assert.equal(alternarFavorito(a, "uuv", { route: "/uuv/quickstart/", title: "Quickstart" }), true);
   assert.equal(alternarFavorito(a, "uuv", { route: "/uuv/glosario/", title: "Glosario" }), true);
-  alternarFavorito(a, "proyecto-x", { route: "/proyecto-x/quickstart/", title: "Inicio X" });
+  alternarFavorito(a, "otro-proyecto", { route: "/otro-proyecto/quickstart/", title: "Inicio X" });
   assert.equal(esFavorito(a, "uuv", "/uuv/quickstart/"), true);
   assert.deepEqual(favoritos(a, "uuv").map((f) => f.route), ["/uuv/quickstart/", "/uuv/glosario/"]);
   assert.equal(alternarFavorito(a, "uuv", { route: "/uuv/quickstart/", title: "Quickstart" }), false, "segunda vez lo quita");
   assert.equal(esFavorito(a, "uuv", "/uuv/quickstart/"), false);
   assert.deepEqual(favoritos(a, "uuv"), [{ route: "/uuv/glosario/", title: "Glosario" }]);
-  assert.deepEqual(favoritos(a, "proyecto-x"), [{ route: "/proyecto-x/quickstart/", title: "Inicio X" }]);
+  assert.deepEqual(favoritos(a, "otro-proyecto"), [{ route: "/otro-proyecto/quickstart/", title: "Inicio X" }]);
 });
 
 test("quitarFavorito: quita desde la lista y no toca otros proyectos; quitar uno inexistente no hace nada", () => {
   const { a } = nuevo();
   alternarFavorito(a, "uuv", { route: "/uuv/a/", title: "A" });
   alternarFavorito(a, "uuv", { route: "/uuv/b/", title: "B" });
-  alternarFavorito(a, "proyecto-x", { route: "/proyecto-x/a/", title: "A" });
+  alternarFavorito(a, "otro-proyecto", { route: "/otro-proyecto/a/", title: "A" });
   quitarFavorito(a, "uuv", "/uuv/a/");
   quitarFavorito(a, "uuv", "/uuv/no-existe/");
   assert.deepEqual(favoritos(a, "uuv"), [{ route: "/uuv/b/", title: "B" }]);
-  assert.equal(favoritos(a, "proyecto-x").length, 1);
+  assert.equal(favoritos(a, "otro-proyecto").length, 1);
 });
 
 test("favoritos: JSON corrupto o entradas ajenas se descartan; tope de MAX_FAVORITOS", () => {
@@ -150,7 +150,7 @@ test("favoritos: JSON corrupto o entradas ajenas se descartan; tope de MAX_FAVOR
       { route: "/uuv/a/", title: "A" },
       { route: "/uuv/a/", title: "A" },
       { route: "https://evil.example/", title: "E" },
-      { route: "/proyecto-x/a/", title: "X" },
+      { route: "/otro-proyecto/a/", title: "X" },
       null,
       "x",
       { route: "/uuv/b/" },
@@ -177,7 +177,7 @@ test("revisarCambio: la primera visita no avisa; avisa solo si la firma cambió;
   assert.equal(revisarCambio(a, "uuv", r, "abc"), false, "sin cambios");
   assert.equal(revisarCambio(a, "uuv", r, "def"), true, "cambió");
   assert.equal(revisarCambio(a, "uuv", r, "def"), false, "ya se vio la nueva versión");
-  assert.equal(revisarCambio(a, "proyecto-x", "/proyecto-x/quickstart/", "def"), false, "otro proyecto es otra primera visita");
+  assert.equal(revisarCambio(a, "otro-proyecto", "/otro-proyecto/quickstart/", "def"), false, "otro proyecto es otra primera visita");
   assert.equal(revisarCambio(a, "uuv", "/uuv/otra/", ""), false, "sin firma nunca avisa");
   assert.equal(revisarCambio(a, "uuv", "/uuv/otra/", "x"), false, "y tampoco cuenta como visita previa");
 });

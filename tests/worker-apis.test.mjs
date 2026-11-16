@@ -4,6 +4,8 @@
 // navegador; ver tests/m2b-hardware-cliente.test.mjs). Vercel no cambia: se comprueba también el modo "blob".
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { DEMO, ID_DEMO } from "./fixtures/acceso-demo.mjs";
+import PROYECTOS_REALES from "../projects.json" with { type: "json" };
 import { createHmac } from "node:crypto";
 import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -17,13 +19,18 @@ const raiz = fileURLToPath(root);
 const leer = (rel) => readFileSync(new URL(rel, root), "utf8");
 const existe = (rel) => existsSync(new URL(rel, root));
 
-const cargarWorker = async () => (await import("../worker/index.mjs")).default;
+// El portal no tiene proyectos restringidos: los tests inyectan la tabla de prueba (tests/fixtures/acceso-demo.mjs).
+const cargarWorker = async () => (await import("../worker/index.mjs")).crearWorker({
+  restringidos: DEMO,
+  // El proyecto de prueba existe solo aquí, con cyuxSz de editor de electrónica, para que el 403 venga de canAccess.
+  proyectos: [...PROYECTOS_REALES, { id: ID_DEMO, disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz", "ana"] } } }],
+});
 const cargarR2 = async () => import("../lib/almacen-r2.mjs");
 
 const SECRET = "w".repeat(40);
 const ORIGIN = "https://docs-site-lab.ejemplo.workers.dev";
 const UPSTASH = "https://upstash.prueba";
-const EDITOR = "cyuxSz"; // editor de uuv/electronica en projects.json y único con acceso a proyecto-x
+const EDITOR = "cyuxSz"; // editor de uuv/electronica en projects.json y único con acceso a restringido-demo (tabla de prueba)
 const ID = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
 const ID2 = "7a1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3b";
 const ID3 = "0b1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3c";
@@ -218,8 +225,8 @@ test("comentarios: escritura desde otro origen → 403; proyecto restringido apl
   const { env } = crearEnv();
   const ajeno = await pedir("/api/comentarios/", { env, login: "ana", method: "POST", origin: "https://evil.example", headers: { "content-type": "application/json" }, body: JSON.stringify({ pagina: "/uuv/arquitectura/", tipo: "duda", texto: "x" }) });
   assert.equal(ajeno.status, 403);
-  assert.equal((await pedir("/api/comentarios/?pagina=%2Fproyecto-x%2Farquitectura%2F", { env, login: "ana" })).status, 403);
-  assert.equal((await pedir("/api/comentarios/?pagina=%2Fproyecto-x%2Farquitectura%2F", { env, login: EDITOR })).status, 200);
+  assert.equal((await pedir("/api/comentarios/?pagina=%2Frestringido-demo%2Farquitectura%2F", { env, login: "ana" })).status, 403);
+  assert.equal((await pedir("/api/comentarios/?pagina=%2Frestringido-demo%2Farquitectura%2F", { env, login: EDITOR })).status, 200);
 });
 
 test("comentarios: sin Upstash configurado → 503 (con sesión)", async () => {
@@ -315,9 +322,9 @@ test("archivos: SVG se sirve como adjunto con la CSP sandbox propia (el Worker n
 test("archivos: no editor → 403; proyecto restringido → 403 sin revelar; nada llega a R2", async () => {
   const { env, r2 } = crearEnv();
   assert.equal((await subir(env, { login: "ana" })).status, 403);
-  assert.equal((await subir(env, { login: "ana", proyecto: "proyecto-x" })).status, 403);
-  assert.equal((await pedir("/api/archivos/?proyecto=proyecto-x&lista=1", { env, login: "ana" })).status, 403);
-  assert.equal((await pedir("/api/archivos/?proyecto=proyecto-x&lista=1", { env, login: EDITOR })).status, 200);
+  assert.equal((await subir(env, { login: "ana", proyecto: "restringido-demo" })).status, 403);
+  assert.equal((await pedir("/api/archivos/?proyecto=restringido-demo&lista=1", { env, login: "ana" })).status, 403);
+  assert.equal((await pedir("/api/archivos/?proyecto=restringido-demo&lista=1", { env, login: EDITOR })).status, 200);
   assert.equal(r2.puts.length, 0);
 });
 
