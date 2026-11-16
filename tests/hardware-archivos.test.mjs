@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { DEMO } from "./fixtures/acceso-demo.mjs";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
@@ -21,7 +22,7 @@ const BLOB_HOST = "https://abc123.private.blob.vercel-storage.com";
 
 const PROYECTOS = [
   { id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR] }, mecanica: { plantilla: "mecanica", editores: ["meca"] } } },
-  { id: "proyecto-x", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz"] } } },
+  { id: "restringido-demo", disciplinas: { electronica: { plantilla: "electronica", editores: ["cyuxSz"] } } },
   { id: "usv" },
 ];
 
@@ -72,7 +73,7 @@ function fakeBlob() {
 
 async function montar({ redis = fakeRedis(), blob = fakeBlob(), env = {} } = {}) {
   const { crearHandler } = await core();
-  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, blob, proyectos: PROYECTOS, ahora: () => T0 });
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, blob, proyectos: PROYECTOS, restringidos: DEMO, ahora: () => T0 });
   return { handler, redis, blob };
 }
 
@@ -153,7 +154,7 @@ test("token: 401 sin sesión, 403 no editor, 403 proyecto restringido, 404 disci
   assert.equal((await pedirToken(m.handler, { login: null })).status, 401);
   assert.equal((await pedirToken(m.handler, { login: "ana" })).status, 403, "no editor");
   assert.equal((await pedirToken(m.handler, { login: "meca" })).status, 403, "editor de otra disciplina");
-  assert.equal((await pedirToken(m.handler, { login: "ana", cp: payload({ proyecto: "proyecto-x" }) })).status, 403, "restringido");
+  assert.equal((await pedirToken(m.handler, { login: "ana", cp: payload({ proyecto: "restringido-demo" }) })).status, 403, "restringido");
   assert.equal((await pedirToken(m.handler, { cp: payload({ disciplina: "software" }) })).status, 404);
   assert.equal((await pedirToken(m.handler, { cp: payload({ proyecto: "usv" }) })).status, 404);
   assert.equal(m.blob.tokens.length, 0);
@@ -201,7 +202,7 @@ test("token: el pathname debe ser exactamente hw/<proy>/<disc>/<uuid>-<nombre sa
   const malos = [
     `hw/uuv/electronica/${ID}-../../x.png`,
     `hw/uuv/electronica/../mecanica/${ID}-placa.png`,
-    `hw/proyecto-x/electronica/${ID}-placa.png`,
+    `hw/restringido-demo/electronica/${ID}-placa.png`,
     `hw/uuv/mecanica/${ID}-placa.png`,
     `hw/uuv/electronica/no-uuid-placa.png`,
     `hw/uuv/electronica/${ID}-otra.png`,
@@ -276,7 +277,7 @@ test("lista: GET ?proyecto&lista=1 devuelve metadatos sin blobUrl; 401 sin sesi�
   const { archivos } = JSON.parse(texto);
   assert.deepEqual(Object.keys(archivos[0]).sort(), ["disciplina", "fecha", "id", "nombre", "subidoPor", "tamano", "tipo"]);
   assert.equal((await m.handler(req("GET", { query: { proyecto: "uuv", lista: "1" } }))).status, 401);
-  assert.equal((await listar(m.handler, "ana", "proyecto-x")).status, 403);
+  assert.equal((await listar(m.handler, "ana", "restringido-demo")).status, 403);
 });
 
 test("proxy: GET ?proyecto&id sirve los bytes con Content-Type de la lista blanca, nosniff e inline (png); nunca la URL del Blob", async () => {
@@ -331,7 +332,7 @@ test("proxy: 401 sin sesión, 403 proyecto restringido, 400 id no uuid, 404 id i
   const m = await montar();
   await subir(m);
   assert.equal((await m.handler(req("GET", { query: { proyecto: "uuv", id: ID } }))).status, 401);
-  assert.equal((await getArchivo(m.handler, ID, "ana", "proyecto-x")).status, 403);
+  assert.equal((await getArchivo(m.handler, ID, "ana", "restringido-demo")).status, 403);
   for (const id of ["../x", "123", ""]) assert.equal((await getArchivo(m.handler, id)).status, 400, id);
   assert.equal((await getArchivo(m.handler, ID2)).status, 404);
   assert.equal(m.blob.leidos.length, 0);
@@ -359,9 +360,9 @@ test("DELETE {proyecto, id}: solo editores de la disciplina del archivo; borra e
 
 test("503 si no hay Blob ni Redis configurados", async () => {
   const { crearHandler } = await core();
-  const sinBlob = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: fakeRedis(), blob: null, proyectos: PROYECTOS });
+  const sinBlob = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: fakeRedis(), blob: null, proyectos: PROYECTOS, restringidos: DEMO });
   assert.equal((await sinBlob(req("GET", { login: "ana", query: { proyecto: "uuv", id: ID } }))).status, 503);
-  const sinRedis = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: null, blob: fakeBlob(), proyectos: PROYECTOS });
+  const sinRedis = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: null, blob: fakeBlob(), proyectos: PROYECTOS, restringidos: DEMO });
   assert.equal((await sinRedis(req("GET", { login: "ana", query: { proyecto: "uuv", lista: "1" } }))).status, 503);
 });
 
@@ -435,7 +436,7 @@ test("callback sin lápida inserta con EVAL y no pisa un existente", async () =>
 
 test("sin acceso al proyecto el 403 va antes del 404 de disciplina", async () => {
   const m = await montar();
-  const cp = payload({ proyecto: "proyecto-x", disciplina: "inexistente" });
-  const res = await pedirToken(m.handler, { login: "ana", pathname: `hw/proyecto-x/inexistente/${ID}-placa.png`, cp });
+  const cp = payload({ proyecto: "restringido-demo", disciplina: "inexistente" });
+  const res = await pedirToken(m.handler, { login: "ana", pathname: `hw/restringido-demo/inexistente/${ID}-placa.png`, cp });
   assert.equal(res.status, 403);
 });

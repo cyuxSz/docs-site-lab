@@ -21,7 +21,7 @@ const RUTA = { id: "control", nombre: "Control", pasos: [paso("quickstart.md"), 
 test("claves: por proyecto, rol y página; la vieja por índice sigue disponible para migrar", () => {
   assert.equal(clavePaso("uuv", "control", "operations/hardware.md"), "rutas:uuv:control:pagina:operations/hardware.md");
   assert.equal(clavePasoIndice("uuv", "control", 3), "rutas:uuv:control:3");
-  assert.notEqual(clavePaso("uuv", "control", "a.md"), clavePaso("proyecto-x", "control", "a.md"));
+  assert.notEqual(clavePaso("uuv", "control", "a.md"), clavePaso("otro-proyecto", "control", "a.md"));
   assert.notEqual(clavePaso("uuv", "control", "a.md"), clavePaso("uuv", "vision", "a.md"));
 });
 
@@ -62,11 +62,11 @@ test("migración: si la escritura de la clave nueva falla, la vieja se conserva 
 });
 
 test("migración: solo con valor '1'; no toca otro rol ni proyecto", () => {
-  const ls = memoria({ "rutas:uuv:control:0": "basura", "rutas:uuv:vision:2": "1", "rutas:proyecto-x:control:2": "1" });
+  const ls = memoria({ "rutas:uuv:control:0": "basura", "rutas:uuv:vision:2": "1", "rutas:otro-proyecto:control:2": "1" });
   const a = almacenSeguro(() => ls);
   assert.deepEqual(leidos(a, "uuv", RUTA), [false, false, false]);
   assert.equal(ls.getItem("rutas:uuv:vision:2"), "1");
-  assert.equal(ls.getItem("rutas:proyecto-x:control:2"), "1");
+  assert.equal(ls.getItem("rutas:otro-proyecto:control:2"), "1");
 });
 
 test("reiniciar borra las claves nuevas y también las viejas por índice de esa ruta", () => {

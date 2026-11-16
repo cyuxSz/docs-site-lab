@@ -4,11 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { DEMO } from "./fixtures/acceso-demo.mjs";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
 const URL_API = `${ORIGIN}/api/comentarios/`;
-const PROYECTOS = [{ id: "uuv" }, { id: "proyecto-x" }];
+const PROYECTOS = [{ id: "uuv" }, { id: "restringido-demo" }];
 const PAG = "/uuv/arquitectura/";
 const PAG2 = "/uuv/packages/uuv_control/";
 const T0 = Date.parse("2026-10-30T12:00:00Z");
@@ -66,7 +67,7 @@ let n = 0;
 const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`;
 async function montar({ redis = fakeRedis(), ahora = () => T0 } = {}) {
   const { crearHandler } = await core();
-  const handler = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS, ahora, uuid });
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS, restringidos: DEMO, ahora, uuid });
   return { handler, redis };
 }
 
@@ -122,11 +123,11 @@ test("índice: un POST (raíz o respuesta) agrega la página a com:idx:<proyecto
 test("índice: escrituras rechazadas (400, 403, 415, CSRF) no tocan el índice", async () => {
   const { handler, redis } = await montar();
   assert.equal((await crear(handler, "ana", PAG, { tipo: "otro" })).res.status, 400);
-  assert.equal((await crear(handler, "ana", "/proyecto-x/secreto/")).res.status, 403, "restringido sin acceso");
+  assert.equal((await crear(handler, "ana", "/restringido-demo/secreto/")).res.status, 403, "restringido sin acceso");
   assert.equal((await handler(escribir("POST", { login: "ana", body: { pagina: PAG, tipo: "duda", texto: "x" }, ct: "text/plain" }))).status, 415);
   assert.equal((await handler(escribir("POST", { login: "ana", body: { pagina: PAG, tipo: "duda", texto: "x" }, origin: "https://evil.example" }))).status, 403);
   assert.deepEqual(idx(redis, "uuv"), []);
-  assert.deepEqual(idx(redis, "proyecto-x"), []);
+  assert.deepEqual(idx(redis, "restringido-demo"), []);
   assert.ok(!redis.comandos.some(([c]) => /^SADD$/i.test(c)));
 });
 
@@ -147,7 +148,7 @@ test("índice: al borrar el último comentario de una página sale del índice (
 
 test("GET ?proyecto: 401 sin sesión, antes de validar nada", async () => {
   const { handler, redis } = await montar();
-  for (const id of ["uuv", "no-existe", "proyecto-x"]) {
+  for (const id of ["uuv", "no-existe", "restringido-demo"]) {
     const res = await porProyecto(handler, null, id);
     assert.equal(res.status, 401, id);
     cabecerasJson(res, "401");
@@ -170,24 +171,24 @@ test("GET ?proyecto: 400 con id que no está en projects.json (exacto), vacío, 
 
 test("GET ?proyecto: restringido sin acceso → 403 sin datos ni lecturas; con acceso (sin mayúsculas) → 200", async () => {
   const { handler, redis } = await montar();
-  sembrar(redis, "/proyecto-x/secreto/", { texto: "dato confidencial", autor: "cyuxSz" });
+  sembrar(redis, "/restringido-demo/secreto/", { texto: "dato confidencial", autor: "cyuxSz" });
   redis.comandos.length = 0;
-  const res = await porProyecto(handler, "ana", "proyecto-x");
+  const res = await porProyecto(handler, "ana", "restringido-demo");
   assert.equal(res.status, 403);
   cabecerasJson(res, "403");
   const cuerpo = await res.text();
   assert.doesNotMatch(cuerpo, /confidencial|secreto|cyuxSz/);
   assert.ok(!redis.comandos.some(([c]) => /^(SMEMBERS|HGETALL|SSCAN|SCAN)$/i.test(c)), "no consulta el almacén antes de comprobar acceso");
-  const ok = await porProyecto(handler, "CYUXSZ", "proyecto-x");
+  const ok = await porProyecto(handler, "CYUXSZ", "restringido-demo");
   assert.equal(ok.status, 200);
-  assert.equal((await ok.json()).paginas[0]?.pagina, "/proyecto-x/secreto/");
+  assert.equal((await ok.json()).paginas[0]?.pagina, "/restringido-demo/secreto/");
 });
 
 test("GET ?proyecto=uuv nunca devuelve páginas de otro proyecto aunque el índice esté manipulado", async () => {
   const { handler, redis } = await montar();
-  sembrar(redis, "/proyecto-x/secreto/", { texto: "dato confidencial" });
+  sembrar(redis, "/restringido-demo/secreto/", { texto: "dato confidencial" });
   sembrar(redis, PAG, { texto: "visible" });
-  for (const intruso of ["/proyecto-x/secreto/", "/uuv/../proyecto-x/secreto/", "uuv/x/", "/uuv/", "/uuv/a b/"]) redis.data.get("com:idx:uuv").add(intruso);
+  for (const intruso of ["/restringido-demo/secreto/", "/uuv/../restringido-demo/secreto/", "uuv/x/", "/uuv/", "/uuv/a b/"]) redis.data.get("com:idx:uuv").add(intruso);
   const res = await porProyecto(handler, "ana", "uuv");
   assert.equal(res.status, 200);
   const body = await res.json();

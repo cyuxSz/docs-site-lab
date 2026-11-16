@@ -91,7 +91,7 @@ test("enlaceGithub: solo https://github.com y rutas relativas sin '..'", () => {
 
 // --- Progreso "revisado" (localStorage por proyecto) ---
 test("claveRevisados: una clave por proyecto", () => {
-  assert.notEqual(claveRevisados("uuv"), claveRevisados("proyecto-x"));
+  assert.notEqual(claveRevisados("uuv"), claveRevisados("otro-proyecto"));
   assert.match(claveRevisados("uuv"), /uuv/);
 });
 
