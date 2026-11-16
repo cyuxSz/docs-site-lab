@@ -212,3 +212,19 @@ test("la lectura no enlaza el CSS de Excalidraw: se importa como ?url y se inyec
   const html = resolve(raiz, "dist/uuv/electronica/index.html");
   if (existsSync(html)) assert.doesNotMatch(readFileSync(html, "utf8"), /EditorExcalidraw[^"']*\.css/, "el HTML construido no enlaza CSS de Excalidraw");
 });
+
+test("revisión de UX: mensajes claros, foco tras guardar, texto de reserva, sandbox del iframe y Escape en Excalidraw", () => {
+  const ed = readFileSync(resolve(raiz, "src/scripts/hardware-editor.ts"), "utf8");
+  const dg = readFileSync(resolve(raiz, "src/scripts/diagramas.ts"), "utf8");
+  assert.match(ed, /Diagrama insertado\. Guarda la página para publicarlo\./);
+  assert.match(ed, /diagrama \? "" : `\$\{nombre\} subido`/, "un diagrama no anuncia nombres de archivo subidos");
+  assert.match(ed, /x\.dataset\.fuente === fuenteNueva/, "el foco vuelve al botón del diagrama repintado");
+  assert.match(ed, /No se pudo mostrar el diagrama/);
+  assert.doesNotMatch(ed + dg, /no se subió nada/);
+  const m = /setAttribute\("sandbox",\s*"([^"]+)"\)/.exec(dg);
+  assert.ok(m, "el iframe de diagrams.net lleva sandbox");
+  const t = m[1].split(" ");
+  for (const k of ["allow-scripts", "allow-same-origin"]) assert.ok(t.includes(k), k);
+  assert.ok(!t.some((x) => /top-navigation/.test(x)), "sin allow-top-navigation");
+  assert.match(dg, /o\.editor === "excalidraw" && lienzo\.contains\(document\.activeElement\)/, "Escape en el lienzo no abre la confirmación");
+});
