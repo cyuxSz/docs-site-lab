@@ -5,7 +5,8 @@
 import { useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { Excalidraw, exportToSvg, serializeAsJSON } from "@excalidraw/excalidraw";
-import "@excalidraw/excalidraw/index.css";
+// ?url: el CSS no se eleva a la página (Astro lo enlazaría en la lectura); se inyecta al montar el editor.
+import estilos from "@excalidraw/excalidraw/index.css?url";
 
 export interface ExcalidrawMontado {
   // Fuente (.excalidraw, JSON) y SVG de lo que hay ahora en el lienzo.
@@ -39,6 +40,13 @@ function Lienzo({ fuente, alCambiar, alListo }: { fuente: string | null; alCambi
 }
 
 export function montarExcalidraw(contenedor: HTMLElement, { fuente, alCambiar }: { fuente: string | null; alCambiar: () => void }): ExcalidrawMontado {
+  if (!document.head.querySelector("link[data-excalidraw-css]")) {
+    const enlace = document.createElement("link");
+    enlace.rel = "stylesheet";
+    enlace.href = estilos;
+    enlace.dataset.excalidrawCss = "";
+    document.head.append(enlace);
+  }
   let api: any = null;
   const raiz = createRoot(contenedor);
   raiz.render(<Lienzo fuente={fuente} alCambiar={alCambiar} alListo={(a) => (api = a)} />);
