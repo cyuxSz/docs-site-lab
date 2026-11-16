@@ -365,9 +365,10 @@ test("worker: la redirección nunca produce un Location a otro sitio", async () 
   }
 });
 
-test("worker: /api/* con sesión responde 501 JSON 'No disponible aún en Cloudflare'", async () => {
+// M2a: comentarios y archivos ya responden en el Worker (tests/worker-apis.test.mjs); solo hardware sigue en 501.
+test("worker: /api/hardware con sesión responde 501 JSON 'No disponible aún en Cloudflare'", async () => {
   const { env, llamadas } = crearEnv();
-  for (const [path, method] of [["/api/comentarios/", "GET"], ["/api/hardware/", "POST"], ["/api/archivos/", "POST"], ["/api", "GET"]]) {
+  for (const [path, method] of [["/api/hardware/", "GET"], ["/api/hardware/", "POST"], ["/api/hardware", "GET"]]) {
     const res = await pedir(path, { env, method, cookie: sesion("ana"), body: method === "POST" ? "{}" : undefined });
     assert.equal(res.status, 501, path);
     assert.match(res.headers.get("content-type") ?? "", /application\/json/);

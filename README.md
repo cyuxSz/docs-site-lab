@@ -91,5 +91,11 @@ Variables (en `.dev.vars` en local; en Cloudflare con `wrangler secret put`):
 - `SESSION_SECRET`: 32+ caracteres aleatorios para firmar la cookie `docs_session`.
 - `ALLOWED_ORG`: organización con acceso. `ALLOWED_USERS`: logins extra separados por coma (opcional).
 
-`/api/*` responde 501 hasta M2. Los Preview se protegerán con Cloudflare Access.
+- `KV_REST_API_URL`, `KV_REST_API_TOKEN`: Upstash Redis (comentarios y metadatos de archivos).
+
+Archivos: el binding R2 `ARCHIVOS` (bucket `docs-hardware`, privado; en `wrangler dev` es local, en `.wrangler/state`). Los archivos se suben directo al Worker (`POST /api/archivos/` binario, `GET ?capacidades=1` anuncia el modo); en Vercel se sigue usando Vercel Blob.
+
+`/api/hardware` responde 501 hasta M2b (el render usa satteri, que no corre en el Worker). Para medir la CPU del render en Node: `node tools/medir-render.mjs [--iteraciones N]`.
+
+Los Preview se protegerán con Cloudflare Access.
 

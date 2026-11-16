@@ -3,6 +3,7 @@
   "main": "worker/index.mjs",
   "compatibility_date": "2026-11-15",
   "compatibility_flags": ["nodejs_compat"],
+  "r2_buckets": [{ "binding": "ARCHIVOS", "bucket_name": "docs-hardware" }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
