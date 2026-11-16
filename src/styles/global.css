@@ -785,6 +785,29 @@ tr[hidden] { display: none; }
 .hw-dialogo-cuerpo { display: grid; gap: 6px; padding: 14px; }
 .hw-pagina { min-width: 0; }
 .hw-lectura img { max-width: 100%; height: auto; }
+/* C1: diagramas. El SVG se muestra con <img> sobre fondo claro fijo para que se lea en el tema oscuro. */
+figure.hw-diagrama { margin: 1.5em 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: white; color: black; overflow-x: auto; }
+figure.hw-diagrama img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+figure.hw-diagrama figcaption { margin-top: 8px; font-size: 13px; color: dimgray; text-align: center; }
+figure.hw-diagrama .hw-diagrama-editar { display: block; margin: 10px auto 0; }
+.hw-diag-opciones { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; border: 0; }
+.hw-diagrama-fallo { margin: 0; padding: 24px; text-align: center; color: dimgray; }
+.hw-diag-opciones label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.hw-diag-opciones input[type="radio"] { width: auto; flex: none; margin: 0; }
+.hw-diag-opciones legend { padding: 0; margin-bottom: 4px; }
+.hw-dlg-diagrama { width: min(1280px, calc(100% - 24px)); height: min(900px, calc(100dvh - 24px)); max-width: none; max-height: none; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); overflow: hidden; }
+.hw-dlg-diagrama[open] { display: flex; flex-direction: column; }
+.hw-dlg-diagrama::backdrop { background: var(--bg); opacity: .7; }
+.hw-dlg-barra { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.hw-dlg-barra h2 { flex: 1; min-width: 0; margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-dlg-diagrama .hw-error, .hw-dlg-diagrama .hw-diag-estado { margin: 0; padding: 6px 12px; }
+.hw-dlg-diagrama .hw-diag-estado:empty { display: none; }
+.hw-dlg-lienzo { flex: 1; min-height: 0; position: relative; }
+.hw-dlg-lienzo > * { width: 100%; height: 100%; }
+.hw-diag-marco { border: 0; background: white; }
+@media (max-width: 640px) {
+  .hw-dlg-diagrama { width: 100%; height: 100dvh; border: 0; border-radius: 0; inset: 0; }
+}
 .hw-lectura pre, .hw-previa pre { overflow-x: auto; }
 @media (max-width: 480px) {
   .hw-barra, .hw-pestanas, .hw-acciones, .hw-subida { gap: 6px; }

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@astrojs/react": "7.0.1",
+    "@excalidraw/excalidraw": "0.18.0",
     "@fontsource-variable/nunito": "5.3.0",
     "@fontsource-variable/raleway": "5.3.0",
     "@fontsource-variable/urbanist": "5.3.0",
