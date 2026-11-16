@@ -1,5 +1,5 @@
 {
-  "name": "docs-site-lab",
+  "name": "docs",
   "main": "worker/index.mjs",
   "compatibility_date": "2026-11-15",
   "compatibility_flags": ["nodejs_compat"],
