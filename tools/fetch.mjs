@@ -8,7 +8,7 @@
 // No llama a ningún LLM. Para repos privados necesita DOCS_GITHUB_TOKEN con permiso de lectura de contenido.
 // DOCS_STRICT=1 (CI) termina con error si algún proyecto falla, salvo repos privados cuando no hay token.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walk, leerDentro } from "./archivos.mjs";
@@ -17,6 +17,7 @@ import { clasificarError, limpiarControl } from "./estado.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 import { historial } from "./historial.mjs";
 import { neutralizeHtml, statusBadges } from "./neutralizar.mjs";
+import { esProyectoValido } from "./proyecto-valido.mjs";
 import { pageRoute, parseRutas } from "./rutas.mjs";
 import { corregirH1, tituloPagina } from "./titulos.mjs";
 
@@ -25,6 +26,7 @@ const OUT = join(ROOT, ".content");
 const WORK = join(ROOT, ".build");
 const TOKEN = process.env.DOCS_GITHUB_TOKEN || "";
 const STRICT = process.env.DOCS_STRICT === "1";
+const SOLO = process.env.DOCS_SOLO_PROYECTO || "";
 const LOCAL = Object.fromEntries((process.env.DOCS_LOCAL_REPOS || "").split(",").filter(Boolean).map((p) => p.split("=")));
 
 const toPosix = (p) => p.split(sep).join(posix.sep);
@@ -57,12 +59,26 @@ async function tokenAlert() {
   }
 }
 
+// URL de clon (con token si hay) o la ruta local de DOCS_LOCAL_REPOS; la usan el clon y la consulta del HEAD remoto.
+const urlDe = (project) => LOCAL[project.id] || `https://${TOKEN ? `x-access-token:${TOKEN}@` : ""}github.com/${project.repo}.git`;
+
+// HEAD remoto de la rama del proyecto (sha) o null si ls-remote falla o no encuentra la rama. Sin imprimir el token.
+function headRemoto(project) {
+  try {
+    const linea = git(["ls-remote", urlDe(project), `refs/heads/${project.branch}`]).split(/\r?\n/)[0] || "";
+    const sha = linea.split(/\s+/)[0];
+    return /^[0-9a-f]{40,64}$/.test(sha) ? sha : null;
+  } catch (err) {
+    console.warn(`⚠ ${project.id}: ls-remote falló (${hideToken(err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0].slice(0, 160)}); se reconstruye`);
+    return null;
+  }
+}
+
 // Trae solo openwiki/ y docs/arch/ con el historial de commits (sin blobs viejos) para fechar cada página.
 function fetchRepo(project) {
   if (LOCAL[project.id]) return LOCAL[project.id];
   const dest = join(WORK, project.id);
-  const auth = TOKEN ? `x-access-token:${TOKEN}@` : "";
-  git(["clone", "--quiet", "--filter=blob:none", "--no-checkout", "--branch", project.branch, `https://${auth}github.com/${project.repo}.git`, dest]);
+  git(["clone", "--quiet", "--filter=blob:none", "--no-checkout", "--branch", project.branch, urlDe(project), dest]);
   git(["-C", dest, "sparse-checkout", "set", "--no-cone", "/openwiki/", "/docs/arch/"]);
   git(["-C", dest, "checkout", "--quiet", project.branch]);
   return dest;
@@ -132,7 +148,11 @@ function rewriteLinks(body, id, rel, repoUrl, sha, links) {
   });
 }
 
+// editoresDocs es solo para CI (quién puede disparar): no llega a .content ni al sitio.
+const publico = ({ editoresDocs, ...resto }) => resto;
+
 function buildProject(project) {
+  project = publico(project);
   const dir = fetchRepo(project);
   const sha = git(["-C", dir, "rev-parse", "HEAD"]);
   const repoUrl = `https://github.com/${project.repo}`;
@@ -237,14 +257,59 @@ function buildProject(project) {
   return summary;
 }
 
-rmSync(OUT, { recursive: true, force: true });
+const projects = JSON.parse(readFileSync(join(ROOT, "projects.json"), "utf8"));
+if (SOLO && !esProyectoValido(SOLO, projects)) {
+  console.error("DOCS_SOLO_PROYECTO no es un proyecto válido de projects.json.");
+  process.exit(1);
+}
+
+// Con DOCS_SOLO_PROYECTO se parte del .content/ previo (el de la caché); sin él o sin previo, descarga completa.
+let previo = null;
+if (SOLO) {
+  try {
+    const txt = leerDentro(OUT, join(OUT, "projects.json"));
+    const prev = txt !== null ? JSON.parse(txt) : null;
+    if (Array.isArray(prev?.projects)) previo = prev.projects;
+  } catch {}
+}
+if (!previo) rmSync(OUT, { recursive: true, force: true });
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(join(OUT, "docs"), { recursive: true });
 
+// Conserva un proyecto de la caché solo si está íntegro (data, páginas y diagramas en disco) y su sha sigue siendo el
+// HEAD remoto de su rama; si no, devuelve null y se reconstruye.
+const conservable = (p) => {
+  const e = previo?.find((x) => x && x.id === p.id);
+  if (!e || e.error || !e.sha) return null;
+  try {
+    const dataTxt = leerDentro(OUT, join(OUT, "data", `${p.id}.json`));
+    if (dataTxt === null) return null;
+    const data = JSON.parse(dataTxt);
+    if (!Array.isArray(data.pageList) || !Array.isArray(data.diagramList)) return null;
+    for (const pg of data.pageList) if (typeof pg?.path !== "string" || !existsSync(join(OUT, "docs", p.id, pg.path))) return null;
+    for (const d of data.diagramList) {
+      const name = typeof d?.file === "string" ? d.file.split("/").pop() : "";
+      if (!name || !existsSync(join(OUT, "arch", p.id, name))) return null;
+    }
+  } catch {
+    return null;
+  }
+  return headRemoto(p) === e.sha ? e : null;
+};
 const alerts = [await tokenAlert()].filter(Boolean);
-const projects = JSON.parse(readFileSync(join(ROOT, "projects.json"), "utf8"));
 const summary = [];
 for (const p of projects) {
+  const cache = SOLO && p.id !== SOLO ? conservable(p) : null;
+  if (cache) {
+    summary.push(cache);
+    console.log(`↺ ${p.id}: desde caché`);
+    continue;
+  }
+  if (previo) {
+    rmSync(join(OUT, "docs", p.id), { recursive: true, force: true });
+    rmSync(join(OUT, "arch", p.id), { recursive: true, force: true });
+    rmSync(join(OUT, "data", `${p.id}.json`), { force: true });
+  }
   try {
     const result = buildProject(p);
     summary.push(result);
@@ -253,7 +318,7 @@ for (const p of projects) {
     const causa = clasificarError(err, { token: Boolean(TOKEN) });
     const linea = hideToken(err instanceof Error ? err.message : String(err)).split(/\r?\n/).find((l) => l.trim()) ?? "";
     console.error(`✗ ${p.id} (${causa}): ${limpiarControl(linea).slice(0, 240) || "error desconocido"}`);
-    summary.push({ ...p, error: true, auth: causa === "sin-token" || causa === "sin-acceso", causa });
+    summary.push({ ...publico(p), error: true, auth: causa === "sin-token" || causa === "sin-acceso", causa });
   }
 }
 writeFileSync(join(OUT, "projects.json"), JSON.stringify({ builtAt: new Date().toISOString(), alerts, projects: summary }, null, 2));
