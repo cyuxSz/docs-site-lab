@@ -97,15 +97,18 @@ El portal también puede servirse desde un Worker de Cloudflare con static asset
 ```bash
 npm run build
 cp .dev.vars.example .dev.vars    # rellena los valores; .dev.vars no se sube a git
+npx wrangler d1 migrations apply docs-site --local   # crea las tablas de D1 local (una vez; los datos quedan en .wrangler/state)
 npm run cf:dev                    # http://localhost:8787
 ```
+
+Almacén: en el Worker el almacén de comentarios, hardware y metadatos de archivos es **D1** (binding `DB`, base `docs-site`, esquema en `migrations/0001_almacen.sql`; el adaptador es `lib/almacen-d1.mjs`). Con `env.DB` el Worker usa siempre D1, aunque haya credenciales de Upstash. Para la base remota (M0): `npx wrangler d1 create docs-site` devuelve un `database_id`; se pega en `d1_databases` de `wrangler.jsonc` (no es un secreto y va en el commit). El workflow aplica las migraciones (`d1 migrations apply docs-site --remote`) antes del deploy. Para copiar los datos de Upstash a D1 en M4: `node tools/migrar-upstash-d1.mjs --salida datos.sql` (solo lee Upstash; usa `KV_REST_API_URL` y `KV_REST_API_TOKEN` del entorno) y después `npx wrangler d1 execute docs-site --remote --file=datos.sql`.
 
 Variables (en `.dev.vars` en local; en Cloudflare con `wrangler secret put`):
 - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`: OAuth App de GitHub (callback `<origen>/auth/callback`).
 - `SESSION_SECRET`: 32+ caracteres aleatorios para firmar la cookie `docs_session`.
 - `ALLOWED_ORG`: organización con acceso. `ALLOWED_USERS`: logins extra separados por coma (opcional).
 
-- `KV_REST_API_URL`, `KV_REST_API_TOKEN`: Upstash Redis (comentarios y metadatos de archivos).
+- `KV_REST_API_URL`, `KV_REST_API_TOKEN`: Upstash Redis (comentarios y metadatos de archivos). Solo hacen falta en Vercel o si el Worker corre sin el binding `DB`; con `DB` el Worker usa D1.
 
 Archivos: el binding R2 `ARCHIVOS` (bucket `docs-hardware`, privado; en `wrangler dev` es local, en `.wrangler/state`). Los archivos se suben directo al Worker (`POST /api/archivos/` binario, `GET ?capacidades=1` anuncia el modo); en Vercel se sigue usando Vercel Blob.
 

@@ -4,6 +4,8 @@
   "compatibility_date": "2026-11-15",
   "compatibility_flags": ["nodejs_compat"],
   "r2_buckets": [{ "binding": "ARCHIVOS", "bucket_name": "docs-hardware" }],
+  // Sin database_id hasta M0: `npx wrangler d1 create docs-site` lo devuelve y se pega aquí (no es un secreto).
+  "d1_databases": [{ "binding": "DB", "database_name": "docs-site", "migrations_dir": "migrations" }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
