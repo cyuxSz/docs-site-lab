@@ -13,6 +13,7 @@ import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walk, leerDentro } from "./archivos.mjs";
 import { citasDe, extraerLineas } from "./citas.mjs";
+import { codigoSalida } from "./salida.mjs";
 import { clasificarError, limpiarControl } from "./estado.mjs";
 import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 import { historial } from "./historial.mjs";
@@ -259,10 +260,10 @@ for (const p of projects) {
 writeFileSync(join(OUT, "projects.json"), JSON.stringify({ builtAt: new Date().toISOString(), alerts, projects: summary }, null, 2));
 rmSync(WORK, { recursive: true, force: true });
 
-if (summary.every((p) => p.error)) process.exit(1);
-// En CI sin el secret, los repos privados fallan por autenticación: eso solo avisa.
-const blocking = summary.filter((p) => p.error && !(p.auth && !TOKEN));
-if (STRICT && blocking.length) {
-  console.error(`Modo estricto: ${blocking.length} proyecto(s) con error.`);
-  process.exit(1);
+// Sin token, los repos privados fallan por autenticación: eso solo avisa (ver tools/salida.mjs).
+const salida = codigoSalida(summary, { token: TOKEN, strict: STRICT });
+if (salida) {
+  const blocking = summary.filter((p) => p.error && !(p.auth && !TOKEN));
+  console.error(blocking.length && STRICT ? `Modo estricto: ${blocking.length} proyecto(s) con error.` : "Todos los proyectos fallaron.");
+  process.exit(salida);
 }
