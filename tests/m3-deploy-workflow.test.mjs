@@ -154,14 +154,21 @@ test("deploy-cloudflare: guarda de secrets → ::warning:: y salida, sin fallar"
 
 test("deploy-cloudflare: wrangler-action deploy solo si la guarda lo permite", () => {
   const ps = pasos(sinComentarios(wf()));
-  const iW = ps.findIndex((p) => /uses:\s*cloudflare\/wrangler-action@/.test(p));
+  const esWrangler = (p) => /uses:\s*cloudflare\/wrangler-action@[0-9a-f]{40}\s*$/m.test(p);
+  const guarda = /if:\s*.*steps\.[\w-]+\.outputs\.listo\s*==\s*'true'/;
+  const iW = ps.findIndex((p) => esWrangler(p) && /command:\s*deploy\s*$/m.test(p));
+  assert.ok(iW >= 0, "hay un paso wrangler-action (SHA fijado) con command: deploy");
   const iBuild = ps.findIndex((p) => /run:\s*npm run build\b/.test(p));
   assert.ok(iW > iBuild, "despliega después del build");
   const w = ps[iW];
-  assert.match(w, /if:\s*.*steps\.[\w-]+\.outputs\.[\w-]+\s*==\s*'true'/);
-  assert.match(w, /command:\s*deploy\s*$/m);
+  assert.match(w, guarda);
   assert.match(w, /apiToken:\s*\$\{\{\s*secrets\.CLOUDFLARE_API_TOKEN\s*\}\}/);
   assert.match(w, /accountId:\s*\$\{\{\s*secrets\.CLOUDFLARE_ACCOUNT_ID\s*\}\}/);
+  // M2c: las migraciones D1 remotas van antes del deploy y con la misma guarda.
+  const iM = ps.findIndex((p) => esWrangler(p) && /command:\s*d1 migrations apply docs-site --remote\s*$/m.test(p));
+  assert.ok(iM >= 0, "hay un paso wrangler-action con d1 migrations apply docs-site --remote");
+  assert.ok(iM < iW, "las migraciones van antes del deploy");
+  assert.match(ps[iM], guarda);
 });
 
 test("ejemplo notify: workflow_dispatch del deploy con proyecto y sha, token por env:", () => {
