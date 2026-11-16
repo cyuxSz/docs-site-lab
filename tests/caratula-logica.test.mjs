@@ -54,8 +54,8 @@ test("tarjetasCaratula: nunca expone editores ni plantillas (van al HTML)", asyn
 test("entradaProyecto: con disciplinas la carátula; sin ellas directo a Software", async () => {
   const { entradaProyecto } = await data();
   assert.equal(entradaProyecto(base({ disciplinas: DISC })), "/uuv/");
-  assert.equal(entradaProyecto(base({ id: "proyecto-x" })), "/proyecto-x/software/");
-  assert.equal(entradaProyecto(base({ id: "proyecto-x", disciplinas: {} })), "/proyecto-x/software/");
+  assert.equal(entradaProyecto(base({ id: "otro-proyecto" })), "/otro-proyecto/software/");
+  assert.equal(entradaProyecto(base({ id: "otro-proyecto", disciplinas: {} })), "/otro-proyecto/software/");
 });
 
 // ---------- precedencia de rutas ----------

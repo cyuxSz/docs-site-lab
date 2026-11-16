@@ -27,7 +27,7 @@ test("esTituloCrudo: solo cuando el título es el slug (carpeta en index.md, arc
   assert.equal(esTituloCrudo("Arquitectura", "architecture/index.md"), false);
   assert.equal(esTituloCrudo("uuv_vision", "packages/uuv_vision.md"), false, "los nombres de paquete con _ son legítimos");
   assert.equal(esTituloCrudo("x_vision", "packages/x_vision.md"), false);
-  assert.equal(esTituloCrudo("Wiki del proyecto X", "index.md"), false);
+  assert.equal(esTituloCrudo("Wiki del proyecto Demo", "index.md"), false);
   assert.equal(esTituloCrudo("overview", "architecture/index.md"), false, "no coincide con la carpeta");
 });
 

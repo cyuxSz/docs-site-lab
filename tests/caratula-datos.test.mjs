@@ -10,13 +10,13 @@ const INDEX = "src/pages/[project]/index.astro";
 test("nombreCorto: parte antes de « · »; sin separador, el nombre entero", async () => {
   const { nombreCorto } = await data();
   assert.equal(nombreCorto("UUV · uuv_software"), "UUV");
-  assert.equal(nombreCorto("Proyecto X"), "Proyecto X");
+  assert.equal(nombreCorto("Proyecto Demo"), "Proyecto Demo");
 });
 
 test("nombreRepo: parte tras « · » o null", async () => {
   const { nombreRepo } = await data();
   assert.equal(nombreRepo("UUV · uuv_software"), "uuv_software");
-  assert.equal(nombreRepo("Proyecto X"), null);
+  assert.equal(nombreRepo("Proyecto Demo"), null);
 });
 
 test("projects.json: descripcionCaratula es texto y la de uuv no lleva año", () => {

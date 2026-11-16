@@ -15,7 +15,7 @@ test("claveRecorrido: separada por proyecto, vista y sección", () => {
   const claves = new Set([
     claveRecorrido("uuv", "ros", null),
     claveRecorrido("uuv", "docs", null),
-    claveRecorrido("proyecto-x", "ros", null),
+    claveRecorrido("otro-proyecto", "ros", null),
     claveRecorrido("uuv", "ros", "control"),
     claveRecorrido("uuv", "ros", "vision"),
   ]);
