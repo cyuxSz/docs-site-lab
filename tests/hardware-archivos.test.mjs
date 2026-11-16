@@ -338,6 +338,19 @@ test("proxy: 401 sin sesión, 403 proyecto restringido, 400 id no uuid, 404 id i
   assert.equal(m.blob.leidos.length, 0);
 });
 
+test("proyecto restringido (tabla inyectada): el login autorizado lista, pide token y lee; otro login → 403 en los tres", async () => {
+  const m = await montar();
+  const cp = payload({ proyecto: "restringido-demo" });
+  const pathname = `hw/restringido-demo/electronica/${ID}-placa.png`;
+  // Cubre las dos llamadas a canAccess del core: token (POST) y lectura (GET lista / proxy).
+  assert.equal((await pedirToken(m.handler, { login: "otro", pathname, cp })).status, 403, "token sin acceso");
+  assert.equal((await listar(m.handler, "otro", "restringido-demo")).status, 403, "lista sin acceso");
+  assert.equal((await getArchivo(m.handler, ID, "otro", "restringido-demo")).status, 403, "proxy sin acceso");
+  assert.equal((await pedirToken(m.handler, { login: "CyuxSZ", pathname, cp })).status, 200, "token con acceso");
+  assert.equal((await listar(m.handler, "cyuxSz", "restringido-demo")).status, 200, "lista con acceso");
+  assert.equal((await getArchivo(m.handler, ID, "cyuxSz", "restringido-demo")).status, 404, "proxy con acceso: pasa el 403 y llega al 404 de id inexistente");
+});
+
 // ---------- Borrado ----------
 
 test("DELETE {proyecto, id}: solo editores de la disciplina del archivo; borra el Blob y los metadatos", async () => {
