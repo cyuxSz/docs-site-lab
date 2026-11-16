@@ -253,6 +253,7 @@ async function iniciar(root: HTMLElement) {
   async function pintarPagina(p: PaginaHw) {
     pagina = p;
     if (await pintarMd(lectura, p.md, p.titulo)) await anadirBotonesDiagrama(p.md);
+    vigilarImagenesDiagrama();
     pintarMetadatos(p);
     document.title = `${p.titulo} · ${etiqueta}`;
     pintarIndice();
@@ -280,6 +281,21 @@ async function iniciar(root: HTMLElement) {
     });
   }
 
+  let fuenteNueva = ""; // id de fuente del último diagrama guardado desde la lectura (para devolverle el foco)
+  // Si el SVG de un diagrama no carga, se muestra un texto en su lugar en vez de una tarjeta blanca vacía.
+  function vigilarImagenesDiagrama() {
+    for (const img of lectura.querySelectorAll<HTMLImageElement>("figure.hw-diagrama img")) {
+      const sustituir = () => {
+        const p = document.createElement("p");
+        p.className = "hw-diagrama-fallo";
+        p.textContent = "No se pudo mostrar el diagrama";
+        img.replaceWith(p);
+      };
+      if (img.complete && img.naturalWidth === 0 && img.currentSrc) sustituir();
+      else escuchar(img, "error", sustituir);
+    }
+  }
+
   const TEXTO_CONFLICTO = resultadoGuardado(409).mensaje;
 
   // Sube la fuente y el SVG como archivos nuevos (UUID nuevos: /api/archivos no sobrescribe) y enlaza el bloque:
@@ -288,13 +304,13 @@ async function iniciar(root: HTMLElement) {
     ctx: { editor: EditorDiagrama; titulo: string; anterior: string | null },
     r: { fuente: string; svg: string },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
-    if (!esSvg(r.svg)) return { ok: false, error: "El SVG exportado no es válido: no se subió nada." };
+    if (!esSvg(r.svg)) return { ok: false, error: "El SVG exportado no es válido: no se guardó nada." };
     const nombres = nombresArchivos(ctx);
     const fuente = new File([r.fuente], nombres.fuente, { type: "application/octet-stream" });
     const svg = new File([r.svg], nombres.svg, { type: "image/svg+xml" });
     for (const a of [fuente, svg]) {
       const v = validarArchivo(a);
-      if (!v.ok) return { ok: false, error: `${a.name}: ${v.error}` };
+      if (!v.ok) return { ok: false, error: `El diagrama no se puede guardar: ${v.error}` };
     }
     const datos = { editor: ctx.editor, fuente: crypto.randomUUID(), svg: crypto.randomUUID(), titulo: limpiarTitulo(ctx.titulo) };
     subidasActivas++;
@@ -311,6 +327,7 @@ async function iniciar(root: HTMLElement) {
       const res = insertarBloque(textarea.value, textarea.selectionStart, datos);
       textarea.value = res.texto;
       textarea.setSelectionRange(res.cursor, res.cursor);
+      lblSubiendo.textContent = "Diagrama insertado. Guarda la página para publicarlo.";
       return { ok: true };
     }
     if (!pagina) return { ok: false, error: TEXTO_CONFLICTO };
@@ -320,6 +337,7 @@ async function iniciar(root: HTMLElement) {
     const res = await api("PUT", { cuerpo: { pagina: pagina.slug, md: nuevoMd, version: pagina.version } });
     if (res.status !== 200 || !res.json?.pagina) return { ok: false, error: resultadoGuardado(res.status).mensaje };
     indice = actualizarTituloIndice(indice, res.json.pagina);
+    fuenteNueva = datos.fuente;
     await pintarPagina(res.json.pagina);
     mostrarEstado("Diagrama guardado");
     if (historial.open) void cargarHistorial();
@@ -362,8 +380,13 @@ async function iniciar(root: HTMLElement) {
     b.disabled = false;
     mostrarEstado("");
     if (texto === null) return;
+    fuenteNueva = "";
     await abrirDiagrama(editor, texto, titulo, fuenteId, b);
-    if (!document.activeElement || document.activeElement === document.body) (lectura.querySelector<HTMLElement>(".hw-diagrama-editar") ?? btnEditar).focus();
+    if (!document.activeElement || document.activeElement === document.body) {
+      // Tras guardar, la página se repinta y el botón de origen ya no existe: se enfoca el del mismo diagrama (id de fuente nuevo).
+      const botones = [...lectura.querySelectorAll<HTMLButtonElement>("button.hw-diagrama-editar")];
+      (botones.find((x) => x.dataset.fuente === fuenteNueva || x.dataset.fuente === fuenteId) ?? botones[0] ?? btnEditar).focus();
+    }
   });
 
   // Insertar un diagrama nuevo desde el editor de la página: elegir editor y título, dibujar y guardar.
@@ -781,16 +804,17 @@ async function iniciar(root: HTMLElement) {
     errorEditor("");
     mostrarEstado("");
     const nombre = String(archivo?.name ?? "archivo");
+    const quien = diagrama ? "El diagrama" : nombre; // en diagramas no se muestran nombres de archivo
     let temporizador: ReturnType<typeof setTimeout> | undefined;
     try {
       const v = validarArchivo(archivo);
       if (!v.ok) {
-        if (diagrama) diagrama.fallo(`${nombre}: ${v.error}`);
+        if (diagrama) diagrama.fallo(`${quien}: ${v.error}`);
         else errorEditor(`${nombre}: ${v.error}`);
         return false;
       }
       const id = diagrama?.id ?? crypto.randomUUID();
-      lblSubiendo.textContent = `Subiendo ${nombre}…`;
+      lblSubiendo.textContent = diagrama ? "Guardando el diagrama…" : `Subiendo ${nombre}…`;
       progreso.value = 0;
       progreso.hidden = false;
       const corte = new AbortController();
@@ -833,13 +857,13 @@ async function iniciar(root: HTMLElement) {
         throw err;
       }
       if (!diagrama) insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
-      lblSubiendo.textContent = `${nombre} subido`;
+      lblSubiendo.textContent = diagrama ? "" : `${nombre} subido`;
       return true;
     } catch (err) {
       // El SDK no expone el estado HTTP del token (400, 403, 413 o 429): se da una causa general.
       const red = err instanceof TypeError;
       lblSubiendo.textContent = "";
-      const texto = err instanceof ErrorSubida ? `${nombre}: ${mensajeError(err.status)}` : red ? `${nombre}: ${mensajeError("red")}` : `No se pudo subir ${nombre}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`;
+      const texto = err instanceof ErrorSubida ? `${quien}: ${mensajeError(err.status)}` : red ? `${quien}: ${mensajeError("red")}` : `No se pudo ${diagrama ? "guardar el diagrama" : `subir ${nombre}`}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`;
       if (diagrama) diagrama.fallo(texto);
       else errorEditor(texto);
       return false;

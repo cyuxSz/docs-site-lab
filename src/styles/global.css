@@ -791,6 +791,7 @@ figure.hw-diagrama img { display: block; max-width: 100%; height: auto; margin: 
 figure.hw-diagrama figcaption { margin-top: 8px; font-size: 13px; color: dimgray; text-align: center; }
 figure.hw-diagrama .hw-diagrama-editar { display: block; margin: 10px auto 0; }
 .hw-diag-opciones { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; border: 0; }
+.hw-diagrama-fallo { margin: 0; padding: 24px; text-align: center; color: dimgray; }
 .hw-diag-opciones label { display: flex; align-items: center; gap: 8px; margin: 0; }
 .hw-diag-opciones input[type="radio"] { width: auto; flex: none; margin: 0; }
 .hw-diag-opciones legend { padding: 0; margin-bottom: 4px; }

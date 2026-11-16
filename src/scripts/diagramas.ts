@@ -104,7 +104,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
       fallo("");
       if (!esSvg(r.svg)) {
         evento("error");
-        fallo("El SVG exportado no es válido: no se subió nada.");
+        fallo("El SVG exportado no es válido: no se guardó nada.");
         alFallar();
         return;
       }
@@ -140,6 +140,8 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
       "cancel",
       (e) => {
         e.preventDefault(); // Escape: pasa por la confirmación
+        // Con el foco en el lienzo de Excalidraw, Escape cancela la herramienta activa: no cierra el diálogo (se cierra con Cerrar).
+        if (o.editor === "excalidraw" && lienzo.contains(document.activeElement)) return;
         void pedirCierre();
       },
       { signal },
@@ -187,6 +189,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
     const marco = document.createElement("iframe");
     marco.title = "Editor diagrams.net";
     marco.className = "hw-diag-marco";
+    marco.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals");
     marco.src = urlDrawio();
     let xml = o.fuente ?? "";
     let xmlConocido = o.fuente === null ? false : true;
@@ -201,7 +204,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
         if (cerrado || !estado.guardando) return;
         quitarSpinner();
         evento("error");
-        fallo("diagrams.net no respondió al guardar: no se subió nada. Inténtalo de nuevo.");
+        fallo("diagrams.net no respondió al guardar: no se guardó nada. Inténtalo de nuevo.");
       }, 20000);
     };
     guardarActual = () => {
@@ -246,7 +249,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
             if (svg === null || !xmlConocido) {
               quitarSpinner();
               evento("error");
-              fallo("diagrams.net no devolvió un SVG válido: no se subió nada.");
+              fallo("diagrams.net no devolvió un SVG válido: no se guardó nada.");
               break;
             }
             void entregar({ fuente: xml, svg }, quitarSpinner).then(() => (cerrado ? undefined : quitarSpinner()));
