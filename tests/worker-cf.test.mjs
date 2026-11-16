@@ -448,7 +448,7 @@ function jsonc(texto) {
 test("wrangler.jsonc: nombre, main, compat fija, nodejs_compat y assets con run_worker_first", () => {
   assert.ok(existe("wrangler.jsonc"), "falta wrangler.jsonc");
   const c = jsonc(leer("wrangler.jsonc"));
-  assert.equal(c.name, "docs-site-lab");
+  assert.equal(c.name, "docs");
   assert.equal(c.main, "worker/index.mjs");
   assert.match(c.compatibility_date, /^\d{4}-\d{2}-\d{2}$/);
   assert.ok(c.compatibility_date >= "2025-01-01", "compatibility_date reciente");
