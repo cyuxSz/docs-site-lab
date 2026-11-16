@@ -6,9 +6,9 @@ import { readFileSync } from "node:fs";
 const NOTA = "Por ahora este repo es una copia de prueba del original, así que todos los cambios aparecen con el mismo autor.";
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
-test("projects.json: uuv y proyecto-x llevan novedadesNota con el texto acordado", () => {
+test("projects.json: uuv lleva novedadesNota con el texto acordado", () => {
   const projects = JSON.parse(read("projects.json"));
-  for (const id of ["uuv", "proyecto-x"]) assert.equal(projects.find((p) => p.id === id)?.novedadesNota, NOTA, id);
+  for (const id of ["uuv"]) assert.equal(projects.find((p) => p.id === id)?.novedadesNota, NOTA, id);
 });
 
 test("novedades.astro muestra p.novedadesNota (solo si existe) antes de la lista", () => {

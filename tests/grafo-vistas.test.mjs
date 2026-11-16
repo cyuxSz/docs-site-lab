@@ -20,7 +20,7 @@ const ESTADO = { vista: "ros", config: "sub_real", seccion: null, legado: false,
 const v = (id, nombre, estado = ESTADO) => ({ id, nombre, creada: 1, estado });
 
 test("claveVistas: una clave por proyecto", () => {
-  assert.notEqual(claveVistas("uuv"), claveVistas("proyecto-x"));
+  assert.notEqual(claveVistas("uuv"), claveVistas("otro-proyecto"));
   assert.match(claveVistas("uuv"), /uuv/);
 });
 
