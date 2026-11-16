@@ -4,6 +4,7 @@
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
 import {
+  alAbortar,
   actualizarTituloIndice,
   clavePagina,
   enlaceArchivo,
@@ -20,6 +21,7 @@ import {
   slugDeTitulo,
   slugUnico,
   urlPagina,
+  urlSubidaDirecta,
   validarArchivo,
   type PaginaIndice,
 } from "../lib/hardware-editor";
@@ -586,6 +588,54 @@ async function iniciar(root: HTMLElement) {
   // se quedaría en 0 sin decir nada.
   const SIN_AVANCE_MS = 45_000;
 
+  // Modo de subida que anuncia el servidor (el HTML es el mismo en Vercel y Cloudflare). Se consulta una vez por página.
+  let modoSubida: Promise<"directa" | "blob"> | null = null;
+  function modoDeSubida(): Promise<"directa" | "blob"> {
+    modoSubida ??= (async () => {
+      // Dentro del límite de inactividad: si el servidor no responde, la consulta se corta y no deja la subida colgada.
+      const cortar = new AbortController();
+      alAbortar(senal, () => cortar.abort());
+      const t = setTimeout(() => cortar.abort(), SIN_AVANCE_MS);
+      try {
+        const r = await fetch("/api/archivos/?capacidades=1", { credentials: "same-origin", signal: cortar.signal });
+        if (!r.ok) return "blob";
+        const j = await r.json();
+        return j?.subida === "directa" ? "directa" : "blob";
+      } catch {
+        // Un fallo de red no se cachea: la siguiente subida vuelve a consultar.
+        modoSubida = null;
+        throw new TypeError("red");
+      } finally {
+        clearTimeout(t);
+      }
+    })();
+    return modoSubida;
+  }
+
+  // Subida directa al Worker con XHR (para tener upload.onprogress). Rechaza con TypeError si no hay red.
+  function subirDirecto(archivo: File, id: string, corte: AbortSignal, alAvanzar: (cargado: number, total: number) => void): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", urlSubidaDirecta(proyecto, disciplina, id, archivo.name));
+      xhr.setRequestHeader("Content-Type", "application/octet-stream");
+      xhr.upload.onprogress = (e) => alAvanzar(e.loaded, e.lengthComputable ? e.total : archivo.size);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new ErrorSubida(xhr.status));
+      };
+      xhr.onerror = () => reject(new TypeError("red"));
+      xhr.onabort = () => reject(new TypeError("abortado"));
+      alAbortar(corte, () => xhr.abort());
+      if (corte.aborted) return reject(new TypeError("abortado"));
+      xhr.send(archivo);
+    });
+  }
+  class ErrorSubida extends Error {
+    constructor(readonly status: number) {
+      super(`HTTP ${status}`);
+    }
+  }
+
   async function subir(archivo: File) {
     errorEditor("");
     mostrarEstado("");
@@ -611,18 +661,31 @@ async function iniciar(root: HTMLElement) {
         }, SIN_AVANCE_MS);
       };
       armar();
-      escuchar(senal, "abort", () => corte.abort());
+      alAbortar(senal, () => corte.abort());
       try {
-        await upload(rutaBlob(proyecto, disciplina, id, archivo.name), archivo, {
-          access: "private",
-          handleUploadUrl: "/api/archivos/",
-          clientPayload: JSON.stringify({ proyecto, disciplina, nombre: archivo.name, tamano: archivo.size }),
-          abortSignal: corte.signal,
-          onUploadProgress: ({ loaded, total }) => {
-            armar();
-            progreso.value = porcentaje(loaded, total);
-          },
+        // Cada subida puede cancelar su espera de la consulta compartida (corte), para llegar siempre al finally.
+        const cancelada = new Promise<never>((_, rechazar) => {
+          if (corte.signal.aborted) return rechazar(new TypeError("abortado"));
+          alAbortar(corte.signal, () => rechazar(new TypeError("abortado")));
         });
+        cancelada.catch(() => {});
+        if ((await Promise.race([modoDeSubida(), cancelada])) === "directa") {
+          await subirDirecto(archivo, id, corte.signal, (cargado, total) => {
+            armar();
+            progreso.value = porcentaje(cargado, total);
+          });
+        } else {
+          await upload(rutaBlob(proyecto, disciplina, id, archivo.name), archivo, {
+            access: "private",
+            handleUploadUrl: "/api/archivos/",
+            clientPayload: JSON.stringify({ proyecto, disciplina, nombre: archivo.name, tamano: archivo.size }),
+            abortSignal: corte.signal,
+            onUploadProgress: ({ loaded, total }) => {
+              armar();
+              progreso.value = porcentaje(loaded, total);
+            },
+          });
+        }
       } catch (err) {
         if (sinAvance) throw new TypeError("sin avance");
         throw err;
@@ -633,7 +696,8 @@ async function iniciar(root: HTMLElement) {
       // El SDK no expone el estado HTTP del token (400, 403, 413 o 429): se da una causa general.
       const red = err instanceof TypeError;
       lblSubiendo.textContent = "";
-      errorEditor(red ? `${nombre}: ${mensajeError("red")}` : `No se pudo subir ${nombre}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`);
+      if (err instanceof ErrorSubida) errorEditor(`${nombre}: ${mensajeError(err.status)}`);
+      else errorEditor(red ? `${nombre}: ${mensajeError("red")}` : `No se pudo subir ${nombre}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`);
     } finally {
       clearTimeout(temporizador);
       progreso.value = 0;
