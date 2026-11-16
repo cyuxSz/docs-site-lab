@@ -1,12 +1,14 @@
 // Worker de Cloudflare: login de GitHub (lib/login-core.mjs) delante de los static assets de dist/.
-// Las cabeceras de vercel.json no existen aquí, así que se aplican a mano. Las APIs llegan en M2 (hoy responden 501).
+// Las cabeceras de vercel.json no existen aquí, así que se aplican a mano.
 import { manejarLogin } from "../lib/login-core.mjs";
 import { decodificar } from "../lib/decodificar-ruta.mjs";
 import { crearHandler as crearComentarios } from "../lib/comentarios-core.mjs";
 import { crearHandler as crearArchivos } from "../lib/archivos-core.mjs";
 import { crearAlmacenR2 } from "../lib/almacen-r2.mjs";
+import { crearHandler as crearHardware } from "../lib/hardware-core.mjs";
 import proyectos from "../projects.json" with { type: "json" };
-// hardware-core no se importa aquí: arrastra satteri, que no puede correr en el Worker (M2b).
+import electronica from "../plantillas/electronica.json" with { type: "json" };
+import mecanica from "../plantillas/mecanica.json" with { type: "json" };
 
 const GLOBALES = {
   "Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
@@ -45,7 +47,9 @@ function handlerDe(env, nombre) {
     h[nombre] =
       nombre === "comentarios"
         ? crearComentarios({ env, proyectos })
-        : crearArchivos({ env, proyectos, blob: env.ARCHIVOS ? crearAlmacenR2(env.ARCHIVOS) : null });
+        : nombre === "hardware"
+          ? crearHardware({ env, proyectos, plantillas: { electronica, mecanica } })
+          : crearArchivos({ env, proyectos, blob: env.ARCHIVOS ? crearAlmacenR2(env.ARCHIVOS) : null });
   }
   return h[nombre];
 }
@@ -53,7 +57,7 @@ function handlerDe(env, nombre) {
 async function atenderApi(request, env, path) {
   if (path === "/api/comentarios" || path === "/api/comentarios/") return handlerDe(env, "comentarios")(request);
   if (path === "/api/archivos" || path === "/api/archivos/") return handlerDe(env, "archivos")(request);
-  if (path === "/api/hardware" || path === "/api/hardware/") return Response.json({ error: "No disponible aún en Cloudflare" }, { status: 501 });
+  if (path === "/api/hardware" || path === "/api/hardware/") return handlerDe(env, "hardware")(request);
   return Response.json({ error: "No encontrado" }, { status: 404 });
 }
 

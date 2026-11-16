@@ -109,7 +109,16 @@ Variables (en `.dev.vars` en local; en Cloudflare con `wrangler secret put`):
 
 Archivos: el binding R2 `ARCHIVOS` (bucket `docs-hardware`, privado; en `wrangler dev` es local, en `.wrangler/state`). Los archivos se suben directo al Worker (`POST /api/archivos/` binario, `GET ?capacidades=1` anuncia el modo); en Vercel se sigue usando Vercel Blob.
 
-`/api/hardware` responde 501 hasta M2b (el render usa satteri, que no corre en el Worker). Para medir la CPU del render en Node: `node tools/medir-render.mjs [--iteraciones N]`.
+`/api/hardware` ya responde en el Worker (igual que comentarios y archivos). El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica), en Vercel y en Cloudflare; el servidor devuelve el Markdown tal cual.
+
+Entorno local con Upstash simulado (sin cuenta): en otra terminal `node tools/upstash-local.mjs --token x` (escucha solo en 127.0.0.1:8079; `--puerto N` lo cambia), y en `.dev.vars`:
+
+```
+KV_REST_API_URL=http://127.0.0.1:8079
+KV_REST_API_TOKEN=x
+```
+
+y luego `npm run cf:dev`. Para medir la CPU de satteri (el dato que motivó renderizar en el navegador): `node tools/medir-render.mjs [--iteraciones N]`.
 
 Los Preview se protegerán con Cloudflare Access.
 

@@ -365,15 +365,15 @@ test("worker: la redirección nunca produce un Location a otro sitio", async () 
   }
 });
 
-// M2a: comentarios y archivos ya responden en el Worker (tests/worker-apis.test.mjs); solo hardware sigue en 501.
-test("worker: /api/hardware con sesión responde 501 JSON 'No disponible aún en Cloudflare'", async () => {
+// M2b: /api/hardware ya lo atiende hardware-core en el Worker (tests/m2b-hardware-cliente.test.mjs). Sin Upstash → 503.
+test("worker: /api/hardware con sesión ya no responde 501; sin Upstash → 503 JSON con las cabeceras de API", async () => {
   const { env, llamadas } = crearEnv();
-  for (const [path, method] of [["/api/hardware/", "GET"], ["/api/hardware/", "POST"], ["/api/hardware", "GET"]]) {
-    const res = await pedir(path, { env, method, cookie: sesion("ana"), body: method === "POST" ? "{}" : undefined });
-    assert.equal(res.status, 501, path);
+  for (const [path, method] of [["/api/hardware/?proyecto=uuv&disciplina=electronica", "GET"], ["/api/hardware?proyecto=uuv&disciplina=electronica", "GET"]]) {
+    const res = await pedir(path, { env, method, cookie: sesion("ana") });
+    assert.equal(res.status, 503, path);
     assert.match(res.headers.get("content-type") ?? "", /application\/json/);
-    assert.deepEqual(await res.json(), { error: "No disponible aún en Cloudflare" });
-    assert.equal(res.headers.get("cache-control"), "private, no-store");
+    assert.notDeepEqual(await res.json(), { error: "No disponible aún en Cloudflare" });
+    assert.match(res.headers.get("cache-control") ?? "", /no-store/);
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   }
   assert.equal(llamadas.length, 0);

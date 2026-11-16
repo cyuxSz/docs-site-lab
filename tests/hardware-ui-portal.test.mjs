@@ -75,17 +75,17 @@ test("hardware-editor.ts: lógica en src/lib/hardware-editor.ts; fetch same-orig
   assert.match(js, /cache:\s*["']no-store["']/);
   assert.match(js, /\.editable\b/, "usa `editable` del índice");
   assert.doesNotMatch(js, /editores/);
-  for (const a of ["inicializar", "crear", "reordenar", "restaurar", "previsualizar"]) assert.match(js, new RegExp(`accion:\\s*["']${a}["']`), a);
+  for (const a of ["inicializar", "crear", "reordenar", "restaurar"]) assert.match(js, new RegExp(`accion:\\s*["']${a}["']`), a);
   assert.match(js, /"PUT"/);
   assert.match(js, /"DELETE"/);
   assert.match(js, /revisiones=1|revisiones:\s*["']1["']/);
   assert.match(js, /version/);
 });
 
-test("hardware-editor.ts: DOM seguro; el html del API entra solo por DOMParser en un único punto", () => {
+test("hardware-editor.ts: DOM seguro; el HTML (renderizado y saneado en el navegador, M2b) entra en un único punto", () => {
   const js = leer(SCRIPT);
-  assert.doesNotMatch(js, /\.innerHTML\s*=|outerHTML|insertAdjacentHTML|document\.write/);
-  assert.equal((js.match(/new DOMParser\(\)/g) ?? []).length, 1, "un único punto de entrada de HTML");
+  assert.doesNotMatch(js, /\.innerHTML\s*=|outerHTML|insertAdjacentHTML|document\.write|new DOMParser/);
+  assert.equal((js.match(/\.fragmento\(/g) ?? []).length, 1, "un único punto de entrada de HTML");
   assert.match(js, /textContent/);
 });
 
