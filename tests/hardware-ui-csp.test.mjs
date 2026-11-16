@@ -13,6 +13,7 @@ test("CSP: directivas exactas; connect-src solo añade https://vercel.com/api/bl
     "default-src 'self'",
     "img-src 'self' data:",
     "connect-src 'self' https://vercel.com/api/blob/",
+    "frame-src https://embed.diagrams.net", // C1: iframe de diagrams.net (ver tests/c1-diagramas-csp.test.mjs)
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
