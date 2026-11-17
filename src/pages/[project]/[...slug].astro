@@ -84,6 +84,16 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             ))}
           </ol>
         </nav>
+        {!esRutas && toc.length > 1 && (
+          <nav class="toc-movil" data-toc-movil aria-label="En esta página" data-pagefind-ignore="all">
+            <details>
+              <summary>En esta página</summary>
+              <ul class="toc">
+                {toc.map((h) => <li class={h.depth === 3 ? "toc-sub" : undefined}><a href={`#${h.slug}`}>{h.text}</a></li>)}
+              </ul>
+            </details>
+          </nav>
+        )}
         <div data-pagina data-proyecto={p.id} data-route={route} data-title={entry.data.title} data-firma={firma} data-pagefind-ignore="all">
           <div class="aviso-cambio" role="status" hidden>
             <span>Esta página cambió desde tu última visita · <a href={`/${p.id}/novedades/`}>ver en Novedades</a></span>
@@ -196,7 +206,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             </div>
           )}
         </dl>
-        {toc.length > 1 && (
+        {!esRutas && toc.length > 1 && (
           <nav class="toc-box" aria-labelledby="toc-title">
             <p class="toc-title" id="toc-title">En esta página</p>
             <ul class="toc">

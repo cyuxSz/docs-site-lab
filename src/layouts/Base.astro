@@ -78,20 +78,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
     <slot />
 
     <footer class="footer">
-      <h3>¿Cómo se actualiza?</h3>
-      {esDisciplina ? (
-        <ol>
-          <li>Esta documentación se edita en la propia web: quien tiene permiso de escritura usa «Editar» en cada página.</li>
-          <li>Cada cambio guarda una versión nueva y el historial permite restaurar las anteriores.</li>
-          <li>No hace falta hacer merge ni reconstruir el portal: los cambios se ven al guardar.</li>
-        </ol>
-      ) : (
-        <ol>
-          <li>Cada repo guarda su documentación en <code>openwiki/</code> y <code>docs/arch/</code>, junto al código.</li>
-          <li>El CI confirma que las citas y el grafo ROS siguen coincidiendo con el código.</li>
-          <li>Al hacer merge a <code>main</code>, el repo avisa a este portal y se reconstruye solo.</li>
-        </ol>
-      )}
+      <p class="footer-acerca"><a href="/acerca/">Acerca de esta documentación · cómo se actualiza</a></p>
       <slot name="footer" />
     </footer>
 

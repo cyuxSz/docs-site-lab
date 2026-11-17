@@ -181,10 +181,11 @@ test("script: la subida nunca falla en silencio (todo en try/catch, aborta sin a
   assert.match(sub, /progreso\.value = 0;\s*progreso\.hidden = true/);
 });
 
-test("Base: el pie de disciplina no dice que todo vive en openwiki/; las pestañas llevan la activa a la vista", () => {
+// Menos ruido 2: «¿Cómo se actualiza?» salió del pie y vive en /acerca/ (con las dos variantes: repo y disciplinas).
+test("Acerca de: la explicación de disciplinas no dice que todo vive en openwiki/; las pestañas llevan la activa a la vista", () => {
   const base = leer("src/layouts/Base.astro");
   assert.match(base, /esDisciplina/);
-  assert.match(base, /se edita en la propia web/);
+  assert.match(leer("src/pages/acerca.astro"), /se edita en la propia web/);
   assert.match(base, /\.ptabs a\[aria-current\]"\)[^]*scrollLeft[^]*prefers-reduced-motion/);
 });
 
