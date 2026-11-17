@@ -19,7 +19,7 @@ import { almacenSeguro } from "../lib/rutas";
 import { FILTROS_INICIALES, ocultoPorEstado, leerFiltrosUrl, escribirFiltrosUrl, estiloEstado, insignias, GRIS_SIN_USO, type FiltrosEstado } from "../lib/estados";
 import { encuadre, aMinimapa, aGrafo, rectVista, minimapaVisible, claveMinimapa, type Encuadre } from "../lib/minimapa";
 import { claveRecorrido, guardarPaso, pasoGuardado, borrarPaso, textoRetomar, accionTecla } from "../lib/recorrido";
-import { idsConPlan, planDisponible, claveLayout, etiquetaPlan, notaPlan, LEYENDA_PLAN } from "../lib/plan";
+import { idsConPlan, planDisponible, planInicialParaNodo, claveLayout, etiquetaPlan, notaPlan, LEYENDA_PLAN } from "../lib/plan";
 import { AVISO_LEGADO, configDelRecorrido, configInicial, recorridoActivo } from "../lib/legado";
 import { navegarLista, accionMenu } from "../lib/menu";
 import { compararConfigs, miembrosConfig, textoResumen, estiloComparar, leerCompararUrl, escribirCompararUrl } from "../lib/comparar";
@@ -330,6 +330,15 @@ export default function RoboticsGraph({ projectId, views }: Props) {
     if (!initial.config && config === "all") setConfig(configInicial(data.configs, tour, data.nodes));
     const propio = data.configs.find((c) => c.id === initial.config)?.tour?.length;
     if (tour.length && tourConfig && !propio && !initial.node && !storage.get(TOUR_SEEN)) setTourStep(0);
+  }, [capas, data]);
+
+  // ?node= hacia un nodo solo-plan: sin el plan activo el grafo no lo mostraría.
+  useEffect(() => {
+    if (!capas || !data || !initial.node) return;
+    const cfg = initial.config ?? configInicial(data.configs, tour, data.nodes);
+    const r = planInicialParaNodo({ nodo: nodeById.get(initial.node), planFlow: planFlow.length, seccion: initial.seccion, config: data.configs.find((c) => c.id === cfg) });
+    if (r.showPlan) setShowPlan(true);
+    if (r.config) setConfig(r.config);
   }, [capas, data]);
 
   // Comparar: unión de las dos configuraciones, clasificada por lado.

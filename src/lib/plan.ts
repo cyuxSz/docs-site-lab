@@ -34,6 +34,14 @@ export function idsConPlan(visibles: Set<string>, planFlow: { source: string; ta
 export const planDisponible = (o: { planFlow: number; seccion: string | null; config?: { id: string; legado?: boolean } }) =>
   o.planFlow > 0 && !o.seccion && !o.config?.legado;
 
+// Estado inicial del plan al abrir ?node=: un nodo solo-plan solo se ve con el plan activo, que exige una configuración no
+// legada y ninguna sección. Devuelve showPlan y la configuración a usar (null = la actual sirve).
+export function planInicialParaNodo(o: { nodo?: { soloPlan?: boolean } | null; planFlow: number; seccion: string | null; config?: { id: string; legado?: boolean } }) {
+  if (!o.nodo?.soloPlan || o.seccion) return { showPlan: false, config: null as string | null };
+  if (planDisponible({ planFlow: o.planFlow, seccion: null, config: o.config })) return { showPlan: true, config: null as string | null };
+  return { showPlan: o.planFlow > 0, config: o.planFlow > 0 ? "all" : null };
+}
+
 // Clave de posición: igual que antes sin plan; "plan:<filtro>" con plan (las secciones no tienen plan).
 export function claveLayout(o: { seccion: string | null; showOld: boolean; config: string; plan: boolean }) {
   if (o.seccion) return `seccion:${o.seccion}${o.showOld ? ":old" : ""}`;
