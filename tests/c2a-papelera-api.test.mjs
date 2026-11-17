@@ -101,7 +101,7 @@ for (const [nombre, crear] of Object.entries(BACKENDS)) {
     assert.ok(Array.isArray(papelera), "papelera es una lista");
     assert.deepEqual(papelera.map((e) => e.slug), ["potencia", "pcb"], "la borrada más recientemente va primero");
     for (const e of papelera) {
-      assert.deepEqual(Object.keys(e).sort(), ["borradoPor", "borrado", "id", "revisiones", "slug", "titulo", "version"], `campos de ${e.slug}`);
+      assert.deepEqual(Object.keys(e).sort(), ["borrado", "borradoPor", "id", "revisiones", "slug", "titulo", "version"], `campos de ${e.slug}`);
       assert.match(e.id, ID, "id <slug>:<marca de tiempo>");
       assert.ok(e.id.startsWith(`${e.slug}:`));
       assert.equal(e.borradoPor, EDITOR);

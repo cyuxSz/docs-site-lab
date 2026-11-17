@@ -90,7 +90,8 @@ test("hardware-editor.ts: DOM seguro; el HTML (renderizado y saneado en el naveg
 });
 
 test("hardware-editor.ts: el error de guardado sale de resultadoGuardado (409 conserva el texto; ver fase1b-cubic.test.mjs)", () => {
-  assert.match(leer(SCRIPT), /resultadoGuardado\(r\.status\)\.mensaje/);
+  // C2a: la firma pasa el cuerpo y el fallo (409 candado / versión, timeout); ver c2a-api-cliente.test.mjs.
+  assert.match(leer(SCRIPT), /resultadoGuardado\(r\.status,\s*r\)\.mensaje/);
 });
 
 test("hardware-editor.ts: subida con upload() de @vercel/blob/client, privada, a /api/archivos/ con pathname canónico", () => {
