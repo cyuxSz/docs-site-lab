@@ -84,7 +84,7 @@ export const ORIGEN_DRAWIO = "https://embed.diagrams.net";
 const EVENTOS_DRAWIO = new Set(["init", "load", "save", "export", "exit", "autosave", "configure"]);
 
 export function urlDrawio(): string {
-  return `${ORIGEN_DRAWIO}/?embed=1&proto=json&spin=1&lang=es&saveAndExit=0&noExitBtn=0`;
+  return `${ORIGEN_DRAWIO}/?embed=1&proto=json&spin=1&lang=es&saveAndExit=0&noExitBtn=0&libraries=1&libs=general;electrical`;
 }
 
 // Mensaje de diagrams.net ya validado, o null. Exige origen exacto, que venga del iframe abierto y un JSON en texto con un `event` conocido.

@@ -37,6 +37,27 @@ Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acces
 
 Los enlaces viejos `/<id>/#/p/<ruta>.md` se redirigen en el navegador; `/<id>/wiki/` y `/<id>/content/*` con `vercel.json`.
 
+## Mini tutoriales
+Además de las rutas por rol (`openwiki/rutas.md`, cuyo formato no cambia: es retrocompatible), cada archivo `openwiki/rutas/<slug>.md` es un mini tutorial que el portal muestra en `/<id>/rutas/<slug>/` y lista en `/<id>/rutas/`. El progreso se guarda solo en el navegador.
+
+```markdown
+---
+type: tutorial
+title: Probar un motor desde la Jetson
+description: Del launch al motor girando, paso a paso.
+disciplina: electronica   # obligatoria: software | electronica | mecanica
+rol: electronica          # opcional: id de un "## Rol" de rutas.md
+---
+# Probar un motor desde la Jetson
+
+## Paso: Ubica el banco de pruebas
+Objetivo: saber qué Arduino controla cada motor.
+Enlace: [Hardware](../operations/hardware.md#probar-motores)
+Hecho cuando: identificas el pin de cada uno de los 6 motores.
+```
+
+`Enlace:` admite uno por paso: una página de la wiki (ruta relativa a un `.md` de `openwiki/`, con `#ancla` opcional), `grafo:?node=<id>&config=<id>&seccion=<id>` (solo esos parámetros) o `hardware:<disciplina>/<slug>` (disciplina de `projects.json`, slug `[a-z0-9-]`). Cualquier otro enlace, y los pasos sin `Objetivo:`, `Enlace:` o `Hecho cuando:`, se ignoran con un aviso en el build. Un tutorial sin pasos válidos o sin disciplina válida no sale en la lista ni como checklist, pero su archivo se sigue publicando como página normal de la wiki. El nombre de archivo no puede ser `index` ni llevar `:`.
+
 ## Proyectos restringidos
 `access.config.js` es la única fuente de verdad (`RESTRICTED`, `isRestricted`, `canAccess`); lo importan `middleware.js`, las APIs y el build. Hoy no hay proyectos restringidos: `RESTRICTED = {}`. Para restringir uno, se añade `{ "<id>": ["<login>"] }` (id de `projects.json`, logins de GitHub sin distinguir mayúsculas). Los demás miembros reciben un 403 "Este proyecto es privado", su contenido no entra al índice de Pagefind y su tarjeta en la portada solo muestra nombre e insignia. **Ojo:** esto solo protege el portal; si el repo fuente es público o tiene su propio despliegue, hay que protegerlo aparte.
 
@@ -64,7 +85,9 @@ Cada proyecto puede documentar disciplinas de hardware con contenido guardado so
 - **Páginas** (`/api/hardware/`): Markdown con versiones, revisiones y papelera. Usan el mismo Upstash Redis que los comentarios; no requieren nada más.
 - **Archivos** (`/api/archivos/`): suben directo a Vercel Blob y sus metadatos viven en el mismo Upstash Redis (`KV_REST_API_URL`/`KV_REST_API_TOKEN` o `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`); sin él responde 503. Para activarlos: Vercel → Storage → crear un **Blob store privado** y conectarlo al proyecto (esto crea `BLOB_READ_WRITE_TOKEN`); después, volver a desplegar. Con un store público las URLs serían accesibles sin login: debe ser privado. Los archivos se sirven por el portal (con sesión), nunca por la URL del Blob.
 - **Interfaz**: cada disciplina configurada añade una pestaña (`/<proyecto>/electronica/?p=<pagina>`). Los editores ven Editar, Nueva página, Subir/Bajar, Borrar, Historial y Adjuntar; el resto solo lee.
-- **Diagramas**: un bloque ```` ```diagrama ```` (`editor: excalidraw|drawio`, `fuente: <uuid>`, `svg: <uuid>`, `titulo:` opcional) muestra un SVG editable; los editores lo crean con "Insertar diagrama" y lo editan desde la lectura (Excalidraw 0.18.0, cargado solo al editar y con sus fuentes en `dist/excalidraw/fonts/`; diagrams.net en un iframe de `embed.diagrams.net`). Cada guardado sube dos archivos nuevos (fuente y SVG). La CSP `<meta>` añade solo `frame-src https://embed.diagrams.net`: las cabeceras CSP globales (Worker y `vercel.json`) no deben definir directivas de carga.
+- **PDF y BOM (D1a)**: ```` ```pdf ```` (`archivo: <uuid>`, `titulo:` opcional) muestra el PDF en un `<iframe>` del mismo origen (solo `/api/archivos` de tipo PDF responde con `frame-ancestors 'self'` y `X-Frame-Options: SAMEORIGIN`) y siempre deja el enlace "Abrir PDF". ```` ```bom ```` lleva un CSV en línea (referencia, descripcion, cantidad, costo_unitario; opcionales proveedor y enlace) y se ve como tabla con totales y "Exportar CSV" (celdas neutralizadas contra inyección de fórmulas). El editor los inserta con "Insertar PDF" e "Insertar BOM".
+- **Diagramas**: un bloque ```` ```diagrama ```` (`editor: excalidraw|drawio`, `fuente: <uuid>`, `svg: <uuid>`, `titulo:` opcional) muestra un SVG editable; los editores lo crean con "Insertar diagrama" y lo editan desde la lectura (Excalidraw 0.18.0, cargado solo al editar y con sus fuentes en `dist/excalidraw/fonts/`; diagrams.net en un iframe de `embed.diagrams.net`). Cada guardado sube dos archivos nuevos (fuente y SVG). La CSP `<meta>` añade solo `frame-src 'self' https://embed.diagrams.net` (el `'self'` es para el visor de PDF, ver abajo): las cabeceras CSP globales (Worker y `vercel.json`) no deben definir directivas de carga.
+- **Editor**: vista previa en vivo (lado a lado en escritorio, por pestañas en móvil), Ctrl/Cmd+S para guardar sin salir, aviso de cambios sin guardar y papelera con interfaz (botón Papelera, solo editores) para restaurar páginas borradas.
 - **Probar en un navegador**: `npm run build` y `node tests/fixtures/servidor-hardware.mjs` (127.0.0.1:4330, Redis y Blob en memoria; `?como=ana` cambia de usuario). El servidor reescribe la API de Blob a `/__blob`; la subida real solo se puede probar en un preview de Vercel (el SDK sube con stream y Chrome lo exige sobre HTTP/2).
 
 ## Avisos en la portada

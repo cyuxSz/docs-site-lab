@@ -1,0 +1,48 @@
+---
+// Sección "Mini tutoriales" de /<id>/rutas/: tarjetas agrupadas por disciplina. Sin JS se ven todos como enlaces;
+// src/scripts/tutoriales.ts filtra por disciplina y por rol y pinta el progreso (todo con textContent).
+import { agruparPorDisciplina, type Tutorial } from "../lib/tutoriales.ts";
+
+interface Props {
+  projectId: string;
+  tutoriales: Tutorial[];
+}
+const { projectId, tutoriales } = Astro.props;
+const grupos = agruparPorDisciplina(tutoriales);
+const datos = tutoriales.map(({ id, rol, disciplina, route, pasos }) => ({ id, rol, disciplina, route, pasos: pasos.map((s) => ({ id: s.id })) }));
+---
+<section class="tutoriales" aria-labelledby="tutoriales-titulo" data-proyecto={projectId} data-tutoriales={JSON.stringify(datos)}>
+  <h2 id="tutoriales-titulo">Mini tutoriales</h2>
+  <fieldset class="tutoriales-filtro">
+    <legend>Disciplina</legend>
+    <label><input type="radio" name="tutorial-disciplina" value="todas" checked /> Todas</label>
+    {grupos.map((g) => (
+      <label><input type="radio" name="tutorial-disciplina" value={g.id} /> {g.etiqueta}</label>
+    ))}
+  </fieldset>
+  <p class="tutoriales-conteo muted" aria-live="polite" data-conteo>{tutoriales.length} {tutoriales.length === 1 ? "tutorial" : "tutoriales"}</p>
+  <p class="tutoriales-otros muted" aria-live="polite" data-otros>
+    <span data-otros-texto></span>
+    <button type="button" class="btn" data-ver-todos hidden>Ver todos</button>
+  </p>
+  {grupos.map((g) => (
+    <div class="tutoriales-grupo" data-grupo={g.id}>
+      <h3>{g.etiqueta}</h3>
+      <ul class="tutoriales-tarjetas">
+        {g.tutoriales.map((t) => (
+          <li class="tutorial-tarjeta" data-tutorial={t.id}>
+            <div class="tutorial-texto">
+              <a class="tutorial-titulo" href={t.route} data-astro-prefetch>{t.titulo}</a>
+              {t.descripcion && <span class="muted">{t.descripcion}</span>}
+              <span class="muted tutorial-estado" data-estado>{t.pasos.length} {t.pasos.length === 1 ? "paso" : "pasos"}</span>
+            </div>
+            <a class="btn tutorial-accion" href={t.route} data-accion data-astro-prefetch>Abrir</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ))}
+</section>
+<script>
+  import "../scripts/tutoriales";
+</script>

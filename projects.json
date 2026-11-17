@@ -13,6 +13,7 @@
     "kind": "submarino",
     "tagline": "Vehículo submarino autónomo",
     "theme": { "accent": "#49C1D2", "deep": "#0491AD", "warm": "#F0900D" },
+    "hwPaginas": { "hw:zed": "electronica/sensores-actuadores" },
     "tour": [
       { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2i: además de ver, calcula dónde está el sub." },
       { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },

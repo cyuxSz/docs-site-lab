@@ -789,6 +789,11 @@ tr[hidden] { display: none; }
 .hw-historial li { gap: 6px; }
 .hw-restaurar { justify-self: start; padding: 3px 10px; font-size: 13px; }
 .hw-comentarios { margin-top: 32px; }
+.hw-usado-por { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); min-width: 0; }
+.hw-usado-por h2 { font-size: 18px; margin: 0 0 8px; }
+.hw-usado-por ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.hw-usado-por li { min-width: 0; overflow-wrap: anywhere; }
+.hw-usado-por .hw-usado-nodos { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; color: var(--muted); }
 .hw-dialogo-cuerpo { display: grid; gap: 6px; padding: 14px; }
 .hw-pagina { min-width: 0; }
 .hw-lectura img { max-width: 100%; height: auto; }
@@ -797,6 +802,31 @@ figure.hw-diagrama { margin: 1.5em 0; padding: 12px; border: 1px solid var(--lin
 figure.hw-diagrama img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 figure.hw-diagrama figcaption { margin-top: 8px; font-size: 13px; color: dimgray; text-align: center; }
 figure.hw-diagrama .hw-diagrama-editar { display: block; margin: 10px auto 0; }
+/* D1a: visores. El PDF se enmarca con el visor del navegador (mismo origen); "Abrir PDF" queda siempre como respaldo (móvil). */
+figure.hw-pdf { margin: 1.5em 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+figure.hw-pdf iframe { display: block; width: 100%; height: min(70vh, 900px); min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+figure.hw-pdf > a { display: inline-block; margin-top: 8px; }
+figure.hw-pdf iframe + a { margin-top: 10px; }
+figure.hw-pdf figcaption { margin-top: 6px; font-size: 13px; color: var(--muted); }
+figure.hw-bom { margin: 1.5em 0; min-width: 0; max-width: 100%; overflow-x: auto; }
+figure.hw-bom:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+figure.hw-bom table { display: table; overflow: visible; width: 100%; min-width: 36rem; margin: 0; }
+figure.hw-bom th, figure.hw-bom td { vertical-align: top; }
+figure.hw-bom td:nth-child(n+3):nth-child(-n+5), figure.hw-bom thead th:nth-child(n+3):nth-child(-n+5), figure.hw-bom tfoot th:nth-child(n+3):nth-child(-n+5) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+figure.hw-bom tfoot th, figure.hw-bom tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+figure.hw-bom .hw-bom-exportar { margin-top: 10px; }
+/* La BOM no es una tabla de tarjetas: deshace la regla responsive de .prose para conservar el layout de tabla (la figura se desplaza). */
+@media (max-width: 640px) {
+  .prose figure.hw-bom table { display: table; overflow: visible; }
+  .prose figure.hw-bom thead { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: table-header-group; }
+  .prose figure.hw-bom tbody { display: table-row-group; }
+  .prose figure.hw-bom tfoot { display: table-footer-group; }
+  .prose figure.hw-bom tr { display: table-row; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+  .prose figure.hw-bom :is(td, th) { display: table-cell; position: static; min-height: 0; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .prose figure.hw-bom td::before { content: none; }
+  .prose figure.hw-bom td:empty { display: table-cell; }
+}
+@media (max-width: 600px) { figure.hw-pdf iframe { height: min(60vh, 520px); min-height: 280px; } }
 .hw-diag-opciones { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; border: 0; }
 .hw-diagrama-fallo { margin: 0; padding: 24px; text-align: center; color: dimgray; }
 .hw-diag-opciones label { display: flex; align-items: center; gap: 8px; margin: 0; }
@@ -864,3 +894,55 @@ main.caratula { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 .footer-acerca { margin: 0 0 8px; }
 .footer-acerca a { color: var(--muted); text-decoration: none; }
 .footer-acerca a:hover, .footer-acerca a:focus-visible { text-decoration: underline; }
+
+/* Editor de hardware: cuerpo de dos paneles (pestañas en móvil, lado a lado en escritorio) */
+.hw-editor-cuerpo { display: grid; gap: 12px; min-width: 0; }
+.hw-editor-cuerpo > * { min-width: 0; }
+@media (min-width: 64rem) {
+  .hw-editor-cuerpo { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .hw-pestanas { display: none; }
+  .hw-editor-cuerpo .hw-previa { max-height: 36rem; overflow: auto; }
+}
+
+/* Papelera */
+.hw-papelera { width: 36rem; }
+.hw-papelera-cuerpo { padding: 10px 14px; }
+.hw-papelera-estado { margin: 0 0 8px; color: var(--muted); }
+.hw-papelera-estado:empty { display: none; }
+.hw-papelera-lista { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
+.hw-papelera-item { border-bottom: 1px solid var(--line); }
+.hw-papelera-info { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.hw-papelera-meta { color: var(--muted); font-size: 13px; }
+.hw-papelera-restaurar { flex: none; }
+.hw-papelera-restaurar:focus-visible, .hw-papelera .atajos-bar button:focus-visible, [data-hw-abrir-papelera]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Mini tutoriales: lista en /<id>/rutas/ y checklist en /<id>/rutas/<slug>/. */
+.tutoriales { margin-top: 32px; max-width: 820px; }
+.tutoriales-filtro { display: flex; flex-wrap: wrap; gap: 8px 16px; border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+.tutoriales-filtro legend { font-weight: 700; margin-bottom: 8px; padding: 0; }
+.tutoriales-filtro label { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; }
+.tutoriales-filtro input { accent-color: var(--accent); width: 18px; height: 18px; }
+.tutoriales-filtro input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tutoriales-conteo { margin: 0 0 12px; font-size: 14px; }
+.tutoriales-grupo[hidden], .tutorial-tarjeta[hidden] { display: none; }
+.tutoriales-tarjetas { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
+.tutorial-tarjeta { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--glass); min-width: 0; }
+.tutorial-texto { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.tutorial-titulo { font-weight: 700; }
+.tutorial-accion { white-space: nowrap; min-height: 24px; }
+.tutorial-titulo:focus-visible, .tutorial-accion:focus-visible, .tutorial-paso a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tutorial { max-width: 820px; }
+.tutorial-meta { margin: 0 0 12px; }
+.tutorial-pasos { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 12px; }
+.tutorial-paso { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--glass); min-width: 0; overflow-wrap: anywhere; scroll-margin-top: 80px; }
+.tutorial-paso h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.tutorial-paso p { margin: 4px 0; }
+.tutorial-check { display: flex; align-items: flex-start; gap: 8px; }
+.tutorial-check input { accent-color: var(--accent); width: 18px; height: 18px; flex: none; margin-top: 2px; }
+.tutorial-check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tutorial-progreso { display: grid; gap: 6px; margin-bottom: 14px; }
+.tutorial-progreso progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.tutorial-contador { margin: 0; color: var(--muted); font-size: 14px; }
+.tutorial-acciones { display: flex; flex-wrap: wrap; gap: 10px; }
+.tutorial-acciones .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 480px) { .tutorial-tarjeta { grid-template-columns: 1fr; } }

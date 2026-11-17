@@ -67,3 +67,12 @@ test("migas: sección sin índice va sin enlace; la sección raíz (Empezar) no 
   ]);
   assert.deepEqual(migas(PAGES, "/uuv/quickstart/", PROJ), [{ label: "UUV · uuv_software", href: "/uuv/" }, { label: "Software", href: "/uuv/software/" }, { label: "Inicio rápido" }]);
 });
+
+test("migas: una página de rutas/ usa el título de rutas.md como sección, enlazada, no el nombre de la carpeta", () => {
+  const pages = [...PAGES, page("rutas.md", "Rutas por rol", "guide"), page("rutas/motor.md", "Probar un motor", "guide")];
+  assert.deepEqual(migas(pages, "/uuv/rutas/motor/", PROJ), [
+    { label: "UUV · uuv_software", href: "/uuv/" }, { label: "Software", href: "/uuv/software/" },
+    { label: "Rutas por rol", href: "/uuv/rutas/" },
+    { label: "Probar un motor" },
+  ]);
+});

@@ -1,7 +1,7 @@
 // C1: CSP para los editores de diagramas.
 // - La CSP de las páginas va en <meta> (astro.config.mjs) y está dentro de dist/, así que es la misma en Vercel y en el
-//   Worker de Cloudflare. Se añade solo `frame-src https://embed.diagrams.net` (diagrams.net en iframe). Sin 'self' en
-//   frame-src: el portal no enmarca páginas propias.
+//   Worker de Cloudflare. Se añade solo `frame-src https://embed.diagrams.net` (diagrams.net en iframe). D1a añade 'self' en
+//   frame-src para el visor de PDF (/api/archivos); las páginas propias siguen sin poder enmarcarse (frame-ancestors 'none').
 // - Excalidraw no necesita nada nuevo: sus fuentes se sirven desde este origen (EXCALIDRAW_ASSET_PATH, 'self') y el SVG se
 //   exporta sin incrustar fuentes, así que no corre el subsetting WASM/embind (que usa new Function → 'unsafe-eval') ni su
 //   Worker. Prohibido 'unsafe-eval', comodines y CDNs.
@@ -17,7 +17,7 @@ const DIRECTIVAS = [
   "default-src 'self'",
   "img-src 'self' data:",
   "connect-src 'self' https://vercel.com/api/blob/",
-  "frame-src https://embed.diagrams.net",
+  "frame-src 'self' https://embed.diagrams.net", // D1a: 'self' para el visor de PDF
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -40,15 +40,17 @@ function permiteFrame(p, url, origenPagina) {
   return lista.some((f) => (f === "'self'" ? u.origin === origenPagina : f === "*" ? true : /^https?:\/\//.test(f) && new URL(f).origin === u.origin));
 }
 
-test("<meta> CSP: directivas exactas, con frame-src solo para embed.diagrams.net", () => {
+test("<meta> CSP: directivas exactas, con frame-src solo para el propio origen y embed.diagrams.net", () => {
   assert.deepEqual(config.security.csp.directives, DIRECTIVAS);
 });
 
-test("<meta> CSP: el iframe de diagrams.net se permite; otros orígenes y el propio no", () => {
+test("<meta> CSP: se permiten el iframe de diagrams.net y el propio origen (PDF); otros orígenes no", () => {
   const p = politica(config.security.csp.directives);
   const pagina = "https://docs-site-lab.ejemplo.workers.dev";
   assert.equal(permiteFrame(p, "https://embed.diagrams.net/?embed=1&proto=json", pagina), true);
-  for (const u of ["https://app.diagrams.net/", "https://evil.example/", "http://embed.diagrams.net/", `${pagina}/uuv/arch/x.html`]) assert.equal(permiteFrame(p, u, pagina), false, u);
+  assert.equal(permiteFrame(p, `${pagina}/api/archivos/?proyecto=uuv&id=x`, pagina), true, "D1a: PDF del propio origen");
+  // Las páginas propias (p. ej. /uuv/arch/x.html) las bloquea su frame-ancestors 'none', no el frame-src.
+  for (const u of ["https://app.diagrams.net/", "https://evil.example/", "http://embed.diagrams.net/"]) assert.equal(permiteFrame(p, u, pagina), false, u);
 });
 
 test("<meta> CSP: sin 'unsafe-eval', sin comodines, sin CDNs; scripts y estilos sin cambios", () => {
@@ -92,5 +94,5 @@ test("el HTML construido lleva la misma CSP en Vercel y Cloudflare: viene del <m
   const w = leer("worker/index.mjs");
   assert.doesNotMatch(w, /embed\.diagrams\.net/, "el Worker no lleva su propia lista de frames");
   assert.doesNotMatch(leer("vercel.json"), /embed\.diagrams\.net/);
-  assert.match(leer("astro.config.mjs"), /frame-src https:\/\/embed\.diagrams\.net/);
+  assert.match(leer("astro.config.mjs"), /frame-src 'self' https:\/\/embed\.diagrams\.net/);
 });

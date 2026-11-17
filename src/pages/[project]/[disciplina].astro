@@ -3,6 +3,7 @@
 // (src/scripts/hardware-editor.ts) lee y, con permiso de escritura, escribe por /api/hardware/ con la sesión del usuario.
 import Base from "../../layouts/Base.astro";
 import Comentarios from "../../components/Comentarios.astro";
+import { usadoPor, enlacesHardware } from "../../lib/hw-enlaces";
 import { builtProjects, project as load, projectNav } from "../../lib/data";
 
 export function getStaticPaths() {
@@ -12,10 +13,12 @@ export function getStaticPaths() {
 const disciplina = Astro.params.disciplina as "electronica" | "mecanica";
 const p = load(Astro.params.project!);
 const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.etiqueta ?? disciplina;
+const enlacesHw = enlacesHardware(p, p.ros?.nodes ?? []).enlaces;
+const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
 ---
 <Base title={`${etiqueta} · ${p.name}`} description={`Documentación de ${etiqueta.toLowerCase()} de ${p.name}.`} project={projectNav(p)} current={disciplina}>
   <div class="container">
-    <div class="doc doc-wiki" data-hw-proyecto={p.id} data-hw-disciplina={disciplina} data-hw-etiqueta={etiqueta}>
+    <div class="doc doc-wiki" data-hw-proyecto={p.id} data-hw-disciplina={disciplina} data-hw-etiqueta={etiqueta} data-hw-usado-por={JSON.stringify(usado)}>
       <div class="barra-caja barra-caja-izq">
         <button type="button" class="barra-btn" data-barra="izq" aria-controls="barra-izq" aria-expanded="true" aria-label="Ocultar navegación" title="Ocultar navegación"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg></button>
         <nav class="sidenav" id="barra-izq" aria-label={`Páginas de ${etiqueta}`} data-pagefind-ignore="all">
@@ -24,6 +27,7 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
             <ul class="hw-indice" data-hw-indice></ul>
             <p class="hw-nueva" data-hw-solo-editor hidden>
               <button type="button" class="btn" data-hw-nueva>Nueva página</button>
+              <button type="button" class="btn" data-hw-abrir-papelera aria-haspopup="dialog">Papelera</button>
             </p>
           </div>
         </nav>
@@ -54,21 +58,32 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
           </div>
           <article class="prose hw-lectura" data-hw-lectura data-pagefind-ignore="all"></article>
 
+          <section class="hw-usado-por" data-hw-usado-por-seccion hidden aria-labelledby="hw-usado-por-titulo">
+            <h2 id="hw-usado-por-titulo">Usado por</h2>
+            <ul data-hw-usado-por-lista></ul>
+          </section>
+
           <form class="hw-editor" data-hw-editor hidden novalidate>
             <div class="hw-pestanas" role="tablist" aria-label="Modo del editor">
               <button type="button" class="btn" role="tab" id="hw-tab-escribir" aria-selected="true" aria-controls="hw-panel-escribir" data-hw-tab="escribir">Escribir</button>
               <button type="button" class="btn" role="tab" id="hw-tab-previa" aria-selected="false" aria-controls="hw-panel-previa" tabindex="-1" data-hw-tab="previa">Vista previa</button>
             </div>
-            <div class="campo hw-panel" id="hw-panel-escribir" role="tabpanel" aria-labelledby="hw-tab-escribir">
-              <label for="hw-md">Contenido en Markdown</label>
-              <textarea id="hw-md" name="md" rows="22" spellcheck="false" autocomplete="off" aria-describedby="hw-ayuda-md"></textarea>
-              <p class="hw-ayuda" id="hw-ayuda-md">Puedes pegar o arrastrar imágenes y archivos sobre el texto.</p>
+            <div class="hw-editor-cuerpo">
+              <div class="campo hw-panel" id="hw-panel-escribir" role="tabpanel" aria-labelledby="hw-tab-escribir">
+                <label for="hw-md">Contenido en Markdown</label>
+                <textarea id="hw-md" name="md" rows="22" spellcheck="false" autocomplete="off" aria-describedby="hw-ayuda-md"></textarea>
+                <p class="hw-ayuda" id="hw-ayuda-md">Puedes pegar o arrastrar imágenes y archivos sobre el texto. Guarda con <kbd>Ctrl</kbd>+<kbd>S</kbd> (o <kbd>Cmd</kbd>+<kbd>S</kbd>) sin salir del editor.</p>
+              </div>
+              <div class="prose hw-previa" id="hw-panel-previa" role="tabpanel" aria-labelledby="hw-tab-previa" data-hw-previa tabindex="0" hidden></div>
             </div>
-            <div class="prose hw-previa" id="hw-panel-previa" role="tabpanel" aria-labelledby="hw-tab-previa" data-hw-previa tabindex="0" hidden></div>
             <div class="hw-subida">
               <input type="file" id="hw-archivo" class="hw-archivo" />
               <label for="hw-archivo" class="btn">Adjuntar</label>
               <button type="button" class="btn" data-hw-insertar-diagrama aria-haspopup="dialog">Insertar diagrama</button>
+              <input type="file" class="hw-archivo" data-hw-archivo-pdf accept=".pdf,application/pdf" tabindex="-1" aria-hidden="true" />
+              <button type="button" class="btn" data-hw-insertar-pdf>Insertar PDF</button>
+              <input type="file" class="hw-archivo" data-hw-archivo-bom accept=".csv,text/csv" tabindex="-1" aria-hidden="true" />
+              <button type="button" class="btn" data-hw-insertar-bom>Insertar BOM</button>
               <progress class="hw-progreso" data-hw-progreso max="100" value="0" aria-label="Progreso de la subida" hidden></progress>
               <span class="hw-subiendo" data-hw-subiendo aria-live="polite"></span>
             </div>
@@ -123,6 +138,16 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
     <div class="atajos-bar">
       <button type="button" data-hw-ok>Borrar</button>
       <button type="button" data-hw-no>Cancelar</button>
+    </div>
+  </dialog>
+  <dialog class="atajos-dialog hw-papelera" id="hw-papelera" aria-labelledby="hw-papelera-titulo">
+    <div class="atajos-bar"><h2 id="hw-papelera-titulo">Papelera</h2></div>
+    <div class="hw-papelera-cuerpo">
+      <p class="hw-ayuda hw-papelera-estado" data-hw-papelera-estado aria-live="polite"></p>
+      <ul class="hw-papelera-lista" data-hw-papelera-lista></ul>
+    </div>
+    <div class="atajos-bar">
+      <button type="button" data-hw-no>Cerrar</button>
     </div>
   </dialog>
   <dialog class="atajos-dialog" id="hw-descartar" aria-labelledby="hw-descartar-titulo">

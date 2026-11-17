@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import type { PanoramaCaja } from "./panorama";
 import type { Ruta } from "./rutas";
+import type { Tutorial } from "./tutoriales.ts";
 import { sugerenciasBusqueda } from "./lectura.ts";
 import { join } from "node:path";
 
@@ -75,6 +76,8 @@ export interface ProjectSummary {
   resumenInicio?: string;
   // Documentación de hardware por disciplina (API /api/hardware): plantilla inicial y logins que pueden editar.
   disciplinas?: Record<string, { plantilla: string; editores: string[] }>;
+  // Página de hardware de cada nodo hw:* del grafo ("hw:zed": "electronica/sensores-actuadores"); el build la valida.
+  hwPaginas?: Record<string, string>;
   // Aviso opcional arriba de /<id>/novedades/.
   novedadesNota?: string;
   // Portada y colores del proyecto (como cada vehículo en vanttec.com). image: ruta en public/; sin ella se dibuja
@@ -113,6 +116,7 @@ export interface ProjectData extends ProjectSummary {
   ros: RosGraph | null;
   // Rutas de lectura por rol (tools/rutas.mjs); solo está si openwiki/rutas.md trae pasos válidos.
   rutas?: Ruta[];
+  tutoriales?: Tutorial[];
 }
 
 export interface ProjectTheme {
