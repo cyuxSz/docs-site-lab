@@ -792,7 +792,7 @@ figure.hw-diagrama figcaption { margin-top: 8px; font-size: 13px; color: dimgray
 figure.hw-diagrama .hw-diagrama-editar { display: block; margin: 10px auto 0; }
 /* D1a: visores. El PDF se enmarca con el visor del navegador (mismo origen); "Abrir PDF" queda siempre como respaldo (móvil). */
 figure.hw-pdf { margin: 1.5em 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); }
-figure.hw-pdf iframe { display: block; width: 100%; height: min(70vh, 900px); min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: white; }
+figure.hw-pdf iframe { display: block; width: 100%; height: min(70vh, 900px); min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
 figure.hw-pdf > a { display: inline-block; margin-top: 8px; }
 figure.hw-pdf iframe + a { margin-top: 10px; }
 figure.hw-pdf figcaption { margin-top: 6px; font-size: 13px; color: var(--muted); }

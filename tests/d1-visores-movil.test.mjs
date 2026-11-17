@@ -43,3 +43,9 @@ test("montarVisores: con navigator.pdfViewerEnabled === false no hay iframe y qu
     assert.ok(win.document.querySelector("figure.hw-pdf a"));
   }
 });
+
+test("CSS: el iframe del PDF usa el fondo del tema (no blanco fijo en tema oscuro)", () => {
+  const regla = /figure\.hw-pdf iframe \{([^}]*)\}/.exec(css)[1];
+  assert.match(regla, /background: var\(--surface\)/);
+  assert.doesNotMatch(regla, /white|#fff/i);
+});
