@@ -66,7 +66,22 @@ test("C1 la línea lleva fecha (time datetime), afirmaciones solo si hay y el en
   assert.match(linea, /entry\.data\.claims\s*>\s*0\s*&&/, "afirmaciones solo si hay");
   assert.match(linea, /afirmaciones/i);
   assert.match(linea, /href=\{entry\.data\.source\}/);
-  assert.match(linea, /Fuente|Ver en GitHub/);
+  assert.match(linea, /Fuente|GitHub/);
+});
+
+test("C1 la línea cabe en una línea a 1280 px: textos visibles cortos y nombres accesibles completos", () => {
+  const linea = bloque(read(SLUG), "data-pagina-meta");
+  // Afirmaciones: visible «N afirmaciones verificadas»; «contra el código» solo para lector de pantalla.
+  assert.match(linea, /afirmaciones verificadas<span class="sr-only"> contra el código<\/span>/);
+  assert.doesNotMatch(linea, /verificadas contra el código/);
+  // Fuente: visible «GitHub ↗» (flecha decorativa), nombre accesible completo y se abre en otra pestaña.
+  const a = linea.match(/<a\b[^>]*href=\{entry\.data\.source\}[^>]*>[\s\S]*?<\/a>/)?.[0] ?? "";
+  assert.ok(a, "falta el enlace a la fuente");
+  assert.match(a, /aria-label="Ver en GitHub \(se abre en otra pestaña\)"/);
+  assert.match(a, /target="_blank"/);
+  assert.match(a, /rel="[^"]*\bnoopener\b[^"]*"/);
+  assert.match(a, />\s*GitHub\s*<span aria-hidden="true">↗<\/span>\s*<\/a>$/, "texto visible «GitHub ↗» con la flecha oculta al lector");
+  assert.doesNotMatch(linea, />Ver en GitHub</, "el texto visible largo desaparece");
 });
 
 test("C1 el panel derecho ya no repite Actualizado, Afirmaciones, Fuente, Mejorar ni Historial (conserva nodos e índice)", () => {
