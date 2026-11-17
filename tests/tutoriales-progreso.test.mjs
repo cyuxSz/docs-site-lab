@@ -64,7 +64,8 @@ test("marcarPaso / hechos: guarda por id de paso; si el tutorial reordena pasos,
 
 test("estadoTutorial: 'N de M', siguiente paso y estado sin-empezar / en-curso / completo", () => {
   const [marcarPaso, estadoTutorial] = ["marcarPaso", "estadoTutorial"].map(fn);
-  const a = almacenSeguro(() => memoria());
+  const m = memoria();
+  const a = almacenSeguro(() => m);
   let e = estadoTutorial(a, "uuv", MOTOR);
   assert.equal(e.estado, "sin-empezar");
   assert.equal(e.texto, "0 de 3");
@@ -82,7 +83,8 @@ test("estadoTutorial: 'N de M', siguiente paso y estado sin-empezar / en-curso /
 
 test("enlaceReanudar y textoAccion: reanudar va al ancla del primer paso sin hacer; completo no tiene ancla", () => {
   const [marcarPaso, estadoTutorial, enlaceReanudar, textoAccion] = ["marcarPaso", "estadoTutorial", "enlaceReanudar", "textoAccion"].map(fn);
-  const a = almacenSeguro(() => memoria());
+  const m = memoria();
+  const a = almacenSeguro(() => m);
   assert.equal(enlaceReanudar(MOTOR, estadoTutorial(a, "uuv", MOTOR)), "/uuv/rutas/motor/#paso-a");
   assert.equal(textoAccion(estadoTutorial(a, "uuv", MOTOR)), "Empezar");
   marcarPaso(a, "uuv", "motor", "a", true);
