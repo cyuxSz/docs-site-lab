@@ -51,7 +51,7 @@ export const ATAJOS: { teclas: string[]; descripcion: string }[] = [
   { teclas: ["?"], descripcion: "Mostrar esta ayuda" },
   { teclas: ["["], descripcion: "Mostrar u ocultar la navegación" },
   { teclas: ["]"], descripcion: "Mostrar u ocultar el índice" },
-  { teclas: ["f"], descripcion: "Modo enfoque" },
+  { teclas: ["f"], descripcion: "Modo lectura (enfoque: oculta las barras laterales)" },
   { teclas: ["Ctrl", "K"], descripcion: "Buscar en la documentación" },
   { teclas: ["/"], descripcion: "Buscar en la documentación" },
 ];

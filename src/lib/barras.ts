@@ -39,6 +39,14 @@ export function barras(e: EstadoBarras, ev: EventoBarras): EstadoBarras {
   }
 }
 
+// Texto para la región viva al entrar o salir del modo lectura (enfoque); null si no cambia.
+export function anuncioLectura(antes: EstadoBarras, despues: EstadoBarras): string | null {
+  if (antes.enfoque === despues.enfoque) return null;
+  return despues.enfoque
+    ? "Modo lectura activado: barras laterales plegadas. Pulsa F o Escape para salir."
+    : "Modo lectura desactivado: barras laterales restauradas.";
+}
+
 // Etiqueta (aria-label y title) del botón de ese lado: lo que haría al pulsarlo.
 export function etiquetaBarra(e: EstadoBarras, lado: Lado, movil: boolean): string {
   return `${visible(e, lado, movil) ? "Ocultar" : "Mostrar"} ${lado === "izq" ? "navegación" : "índice"}`;

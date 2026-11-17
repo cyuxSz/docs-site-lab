@@ -3,7 +3,7 @@
 interface Props { pagina: string }
 const { pagina } = Astro.props;
 ---
-<section class="comentarios" data-pagefind-ignore="all" aria-labelledby="comentarios-titulo" data-pagina={pagina}>
+<section class="comentarios" id="comentarios" data-pagefind-ignore="all" aria-labelledby="comentarios-titulo" data-pagina={pagina}>
   <h2 id="comentarios-titulo">
     <button type="button" class="comentarios-toggle" data-comentarios-toggle aria-expanded="false" aria-controls="comentarios-cuerpo">
       <span aria-hidden="true" data-comentarios-signo>+</span>
