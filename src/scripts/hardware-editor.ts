@@ -35,6 +35,7 @@ import {
   validarArchivo,
   type PaginaIndice,
 } from "../lib/hardware-editor";
+import { bloquePdf, bomDeArchivo, bloqueBom, insertarBloqueTexto, tituloDeArchivo } from "../lib/visores";
 
 interface PaginaHw {
   slug: string;
@@ -107,6 +108,10 @@ async function iniciar(root: HTMLElement) {
   const dlgBorrar = $<HTMLDialogElement>("#hw-borrar");
   const dlgDescartar = $<HTMLDialogElement>("#hw-descartar");
   const btnInsertarDiagrama = $<HTMLButtonElement>("[data-hw-insertar-diagrama]");
+  const btnInsertarPdf = $<HTMLButtonElement>("[data-hw-insertar-pdf]");
+  const btnInsertarBom = $<HTMLButtonElement>("[data-hw-insertar-bom]");
+  const inputPdf = $<HTMLInputElement>("[data-hw-archivo-pdf]");
+  const inputBom = $<HTMLInputElement>("[data-hw-archivo-bom]");
   const dlgDiagramaNuevo = $<HTMLDialogElement>("#hw-diagrama-nuevo");
 
   let indice: PaginaIndice[] = [];
@@ -124,6 +129,8 @@ async function iniciar(root: HTMLElement) {
     textarea.disabled = guardando;
     inputArchivo.disabled = guardando;
     btnInsertarDiagrama.disabled = guardando;
+    btnInsertarPdf.disabled = guardando;
+    btnInsertarBom.disabled = guardando;
     btnGuardar.title = e.aviso;
     if (e.aviso && avisar) mostrarEstado(e.aviso);
     else if (!e.aviso && lblEstado.textContent === AVISO_SUBIDAS) mostrarEstado("");
@@ -173,7 +180,25 @@ async function iniciar(root: HTMLElement) {
       frag.prepend(h1);
     }
     destino.replaceChildren(frag);
+    // Iframe del PDF y botón "Exportar CSV": los crea montarVisores con createElement a partir de los bloques (no vienen del HTML).
+    try {
+      const { montarVisores } = await import("../lib/hardware-md");
+      montarVisores(destino, md, { proyecto, slug: pagina?.slug ?? "", vistaPrevia: destino === previa, descargar: descargarCsv });
+    } catch {
+      /* sin visores: quedan el enlace "Abrir PDF" y la tabla */
+    }
     return true;
+  }
+  function descargarCsv(nombre: string, csv: string) {
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombre;
+    a.hidden = true;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
   function mostrarEstado(texto: string) {
     lblEstado.textContent = texto;
@@ -575,6 +600,8 @@ async function iniciar(root: HTMLElement) {
     const lado = mqLado.matches;
     panelEscribir.hidden = !lado && modo !== "escribir";
     btnInsertarDiagrama.hidden = !lado && modo !== "escribir";
+    btnInsertarPdf.hidden = !lado && modo !== "escribir";
+    btnInsertarBom.hidden = !lado && modo !== "escribir";
     previa.hidden = !lado && modo !== "previa";
   }
 
@@ -892,7 +919,8 @@ async function iniciar(root: HTMLElement) {
   }
 
   // `diagrama`: la subida es de un diagrama (C1): usa el id dado, no inserta enlace en el textarea y entrega el error a `fallo`.
-  async function subir(archivo: File, diagrama?: { id: string; fallo: (texto: string) => void }): Promise<boolean> {
+  // `bloque` (D1a): la subida es de un PDF para un bloque ```pdf: exige tipo pdf, no inserta el enlace normal y entrega el id a `alSubir`.
+  async function subir(archivo: File, diagrama?: { id: string; fallo: (texto: string) => void }, bloque?: { tipo: string; alSubir: (id: string) => void }): Promise<boolean> {
     errorEditor("");
     mostrarEstado("");
     const nombre = String(archivo?.name ?? "archivo");
@@ -900,9 +928,10 @@ async function iniciar(root: HTMLElement) {
     let temporizador: ReturnType<typeof setTimeout> | undefined;
     try {
       const v = validarArchivo(archivo);
-      if (!v.ok) {
-        if (diagrama) diagrama.fallo(`${quien}: ${v.error}`);
-        else errorEditor(`${nombre}: ${v.error}`);
+      if (!v.ok || (bloque && v.tipo !== bloque.tipo)) {
+        const motivo = !v.ok ? v.error : "Solo se admiten archivos PDF";
+        if (diagrama) diagrama.fallo(`${quien}: ${motivo}`);
+        else errorEditor(`${nombre}: ${motivo}`);
         return false;
       }
       const id = diagrama?.id ?? crypto.randomUUID();
@@ -948,7 +977,8 @@ async function iniciar(root: HTMLElement) {
         if (sinAvance) throw new TypeError("sin avance");
         throw err;
       }
-      if (!diagrama) insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
+      if (bloque) bloque.alSubir(id);
+      else if (!diagrama) insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
       lblSubiendo.textContent = diagrama ? "" : `${nombre} subido`;
       return true;
     } catch (err) {
@@ -980,6 +1010,57 @@ async function iniciar(root: HTMLElement) {
       }
     }
   }
+
+  // Inserta un bloque (```pdf o ```bom) en el cursor, separado por líneas en blanco, y refresca la vista previa.
+  function insertarBloqueEnTexto(bloque: string) {
+    if (guardando) return;
+    const r = insertarBloqueTexto(textarea.value, textarea.selectionStart, bloque);
+    textarea.value = r.texto;
+    textarea.setSelectionRange(r.cursor, r.cursor);
+    textarea.dispatchEvent(new Event("input"));
+  }
+  escuchar(btnInsertarPdf, "click", () => {
+    if (!guardando) inputPdf.click();
+  });
+  escuchar(inputPdf, "change", async () => {
+    const archivo = inputPdf.files?.[0];
+    inputPdf.value = "";
+    if (!archivo || guardando) return;
+    subidasActivas++;
+    actualizarGuardar();
+    try {
+      await subir(archivo, undefined, { tipo: "pdf", alSubir: (id) => insertarBloqueEnTexto(bloquePdf({ archivo: id, titulo: tituloDeArchivo(archivo.name) })) });
+    } finally {
+      subidasActivas--;
+      actualizarGuardar();
+    }
+    textarea.focus();
+  });
+  escuchar(btnInsertarBom, "click", () => {
+    if (!guardando) inputBom.click();
+  });
+  escuchar(inputBom, "change", async () => {
+    const archivo = inputBom.files?.[0];
+    inputBom.value = "";
+    if (!archivo || guardando) return;
+    errorEditor("");
+    mostrarEstado("");
+    let texto = "";
+    try {
+      texto = archivo.size <= 64 * 1024 ? await archivo.text() : "";
+    } catch {
+      errorEditor(`${archivo.name}: no se pudo leer el archivo`);
+      return;
+    }
+    const r = bomDeArchivo(archivo, texto);
+    if (!r.ok) {
+      errorEditor(`${archivo.name}: ${r.error}`);
+      return;
+    }
+    insertarBloqueEnTexto(bloqueBom(r.bom));
+    lblSubiendo.textContent = "BOM insertado. Guarda la página para publicarlo.";
+    textarea.focus();
+  });
 
   escuchar(inputArchivo, "change", async () => {
     const archivos = [...(inputArchivo.files ?? [])];

@@ -72,6 +72,10 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
               <input type="file" id="hw-archivo" class="hw-archivo" />
               <label for="hw-archivo" class="btn">Adjuntar</label>
               <button type="button" class="btn" data-hw-insertar-diagrama aria-haspopup="dialog">Insertar diagrama</button>
+              <input type="file" class="hw-archivo" data-hw-archivo-pdf accept=".pdf,application/pdf" tabindex="-1" aria-hidden="true" />
+              <button type="button" class="btn" data-hw-insertar-pdf>Insertar PDF</button>
+              <input type="file" class="hw-archivo" data-hw-archivo-bom accept=".csv,text/csv" tabindex="-1" aria-hidden="true" />
+              <button type="button" class="btn" data-hw-insertar-bom>Insertar BOM</button>
               <progress class="hw-progreso" data-hw-progreso max="100" value="0" aria-label="Progreso de la subida" hidden></progress>
               <span class="hw-subiendo" data-hw-subiendo aria-live="polite"></span>
             </div>

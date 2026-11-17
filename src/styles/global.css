@@ -790,6 +790,19 @@ figure.hw-diagrama { margin: 1.5em 0; padding: 12px; border: 1px solid var(--lin
 figure.hw-diagrama img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 figure.hw-diagrama figcaption { margin-top: 8px; font-size: 13px; color: dimgray; text-align: center; }
 figure.hw-diagrama .hw-diagrama-editar { display: block; margin: 10px auto 0; }
+/* D1a: visores. El PDF se enmarca con el visor del navegador (mismo origen); "Abrir PDF" queda siempre como respaldo (móvil). */
+figure.hw-pdf { margin: 1.5em 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+figure.hw-pdf iframe { display: block; width: 100%; height: 70vh; min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: white; }
+figure.hw-pdf > a { display: inline-block; margin-top: 8px; }
+figure.hw-pdf iframe + a { margin-top: 10px; }
+figure.hw-pdf figcaption { margin-top: 6px; font-size: 13px; color: var(--muted); }
+figure.hw-bom { margin: 1.5em 0; min-width: 0; }
+figure.hw-bom table { display: block; max-width: 100%; overflow-x: auto; margin: 0; }
+figure.hw-bom th, figure.hw-bom td { vertical-align: top; }
+figure.hw-bom td:nth-child(n+3):nth-child(-n+5), figure.hw-bom thead th:nth-child(n+3):nth-child(-n+5), figure.hw-bom tfoot th:nth-child(n+3):nth-child(-n+5) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+figure.hw-bom tfoot th, figure.hw-bom tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
+figure.hw-bom .hw-bom-exportar { margin-top: 10px; }
+@media (max-width: 600px) { figure.hw-pdf iframe { height: 60vh; min-height: 280px; } }
 .hw-diag-opciones { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; border: 0; }
 .hw-diagrama-fallo { margin: 0; padding: 24px; text-align: center; color: dimgray; }
 .hw-diag-opciones label { display: flex; align-items: center; gap: 8px; margin: 0; }
