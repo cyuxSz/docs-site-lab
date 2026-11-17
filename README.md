@@ -37,6 +37,27 @@ Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acces
 
 Los enlaces viejos `/<id>/#/p/<ruta>.md` se redirigen en el navegador; `/<id>/wiki/` y `/<id>/content/*` con `vercel.json`.
 
+## Mini tutoriales
+Además de las rutas por rol (`openwiki/rutas.md`, cuyo formato no cambia: es retrocompatible), cada archivo `openwiki/rutas/<slug>.md` es un mini tutorial que el portal muestra en `/<id>/rutas/<slug>/` y lista en `/<id>/rutas/`. El progreso se guarda solo en el navegador.
+
+```markdown
+---
+type: tutorial
+title: Probar un motor desde la Jetson
+description: Del launch al motor girando, paso a paso.
+disciplina: electronica   # obligatoria: software | electronica | mecanica
+rol: electronica          # opcional: id de un "## Rol" de rutas.md
+---
+# Probar un motor desde la Jetson
+
+## Paso: Ubica el banco de pruebas
+Objetivo: saber qué Arduino controla cada motor.
+Enlace: [Hardware](../operations/hardware.md#probar-motores)
+Hecho cuando: identificas el pin de cada uno de los 6 motores.
+```
+
+`Enlace:` admite uno por paso: una página de la wiki (ruta relativa a un `.md` de `openwiki/`, con `#ancla` opcional), `grafo:?node=<id>&config=<id>&seccion=<id>` (solo esos parámetros) o `hardware:<disciplina>/<slug>` (disciplina de `projects.json`, slug `[a-z0-9-]`). Cualquier otro enlace, y los pasos sin `Objetivo:`, `Enlace:` o `Hecho cuando:`, se ignoran con un aviso en el build. Un tutorial sin pasos válidos o sin disciplina válida no sale.
+
 ## Proyectos restringidos
 `access.config.js` es la única fuente de verdad (`RESTRICTED`, `isRestricted`, `canAccess`); lo importan `middleware.js`, las APIs y el build. Hoy no hay proyectos restringidos: `RESTRICTED = {}`. Para restringir uno, se añade `{ "<id>": ["<login>"] }` (id de `projects.json`, logins de GitHub sin distinguir mayúsculas). Los demás miembros reciben un 403 "Este proyecto es privado", su contenido no entra al índice de Pagefind y su tarjeta en la portada solo muestra nombre e insignia. **Ojo:** esto solo protege el portal; si el repo fuente es público o tiene su propio despliegue, hay que protegerlo aparte.
 

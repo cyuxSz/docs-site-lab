@@ -24,7 +24,11 @@ interface Storage {
   key?(i: number): string | null;
 }
 
-export function almacenSeguro(getStorage: () => Storage | null | undefined): Almacen {
+export function almacenSeguro(obtener: () => Storage | null | undefined): Almacen {
+  // Un almacén que ya respondió se reutiliza (en el navegador localStorage es siempre el mismo objeto); si falla o
+  // devuelve null se vuelve a pedir en la siguiente operación.
+  let guardado: Storage | null | undefined;
+  const getStorage = () => (guardado ??= obtener());
   return {
     get(k) {
       try {
