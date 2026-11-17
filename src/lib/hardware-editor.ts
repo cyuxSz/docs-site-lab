@@ -96,17 +96,47 @@ export function estadoGuardar(subidasActivas: number, guardando: boolean): { des
   return { deshabilitado: subiendo || guardando, aviso: subiendo ? AVISO_SUBIDAS : "" };
 }
 
+// Mientras hay un guardado en vuelo no se puede cancelar ni cerrar: la respuesta debe llegar a la misma sesión de edición.
+export function estadoCancelar(guardando: boolean): { deshabilitado: boolean; ariaDisabled: "true" | "false" } {
+  return { deshabilitado: guardando, ariaDisabled: guardando ? "true" : "false" };
+}
+
+export const MENSAJE_CANDADO = "Hay otro guardado en curso. Tu texto sigue aquí; intenta guardar de nuevo en unos segundos.";
+
+export interface RespuestaApi {
+  status: number;
+  json: any;
+  fallo?: "red" | "timeout";
+}
+
+// Mensaje según el estado: el 409 por candado (codigo "candado") invita a reintentar; el de versión pide recargar.
+export function mensajeRespuesta(status: number, extra?: { json?: any; fallo?: string }): string {
+  if (status === 409 && extra?.json?.codigo === "candado") return MENSAJE_CANDADO;
+  if (status === 0) return mensajeError(extra?.fallo === "timeout" ? "timeout" : "red");
+  return mensajeError(status);
+}
+
 // Ante un 409 se conserva el texto del editor y se muestra el mensaje de conflicto.
-export function resultadoGuardado(status: number): { conservarTexto: boolean; mensaje: string } {
-  return { conservarTexto: status !== 200, mensaje: status === 200 ? "" : mensajeError(status === 0 ? "red" : status) };
+export function resultadoGuardado(status: number, extra?: { json?: any; fallo?: string }): { conservarTexto: boolean; mensaje: string } {
+  return { conservarTexto: status !== 200, mensaje: status === 200 ? "" : mensajeRespuesta(status, extra) };
+}
+
+export const MENSAJE_PAPELERA_EXISTE = "Ya hay una página con ese nombre. Renombra o borra la actual antes de restaurar esta.";
+export const MENSAJE_PAPELERA_404 = "Esa entrada ya no está en la papelera (puede que otra persona la restaurara).";
+
+export function resultadoRestaurarPapelera(status: number, extra?: { json?: any; fallo?: string }): { ok: boolean; mensaje: string } {
+  if (status === 200) return { ok: true, mensaje: "" };
+  if (status === 409 && extra?.json?.codigo === "existe") return { ok: false, mensaje: MENSAJE_PAPELERA_EXISTE };
+  if (status === 404) return { ok: false, mensaje: MENSAJE_PAPELERA_404 };
+  return { ok: false, mensaje: mensajeRespuesta(status, extra) };
 }
 
 export const MENSAJE_BORRADO_409 = "Alguien cambió la página; recárgala antes de borrar";
 
 // Borrado: solo 200 quita la página del índice local; un 409 muestra su texto propio y no toca nada.
-export function resultadoBorrado(status: number): { quitarDelIndice: boolean; mensaje: string } {
+export function resultadoBorrado(status: number, extra?: { json?: any; fallo?: string }): { quitarDelIndice: boolean; mensaje: string } {
   if (status === 200) return { quitarDelIndice: true, mensaje: "" };
-  return { quitarDelIndice: false, mensaje: status === 409 ? MENSAJE_BORRADO_409 : mensajeError(status === 0 ? "red" : status) };
+  return { quitarDelIndice: false, mensaje: status === 409 && extra?.json?.codigo !== "candado" ? MENSAJE_BORRADO_409 : mensajeRespuesta(status, extra) };
 }
 
 export function porcentaje(cargado: number, total: number): number {
@@ -124,6 +154,7 @@ export function mensajeError(estado: number | string): string {
     case 413: return "El contenido es demasiado grande.";
     case 429: return "Demasiadas acciones seguidas. Espera un momento y vuelve a intentarlo.";
     case 503: return "El servicio no está disponible. Inténtalo más tarde.";
+    case "timeout": return "El servidor tardó demasiado en responder (más de 20 s). Inténtalo de nuevo.";
     case "red": return "No hay conexión con el servidor. Revisa tu red e inténtalo de nuevo.";
     default: return "Algo salió mal. Inténtalo de nuevo.";
   }
@@ -134,4 +165,97 @@ export function mensajeError(estado: number | string): string {
 export function alAbortar(senal: AbortSignal, fn: () => void): void {
   if (senal.aborted) return fn();
   senal.addEventListener("abort", fn, { once: true });
+}
+
+export const TIMEOUT_API_MS = 20_000;
+
+// fetch con plazo: un AbortController propio (que también obedece a la señal de la página) cubre la petición y la lectura
+// del JSON. Nunca lanza: devuelve { status: 0, fallo } si no hay red o se agota el tiempo.
+export async function pedirApi(
+  fetchFn: (url: string, init: RequestInit) => Promise<any>,
+  url: string,
+  init: RequestInit = {},
+  { timeoutMs = TIMEOUT_API_MS, senal }: { timeoutMs?: number; senal?: AbortSignal } = {},
+): Promise<RespuestaApi> {
+  const ctl = new AbortController();
+  let agotado = false;
+  const plazo = setTimeout(() => {
+    agotado = true;
+    ctl.abort();
+  }, timeoutMs);
+  if (senal) alAbortar(senal, () => ctl.abort());
+  try {
+    const res = await fetchFn(url, { ...init, signal: ctl.signal });
+    let json: any = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      if (agotado) throw e;
+      json = null;
+    }
+    return { status: res.status, json };
+  } catch {
+    return { status: 0, json: null, fallo: agotado ? "timeout" : "red" };
+  } finally {
+    clearTimeout(plazo);
+  }
+}
+
+// Un solo guardado a la vez: mientras hay uno en curso, intentar() devuelve null y no llama a fn.
+export function crearCerrojoGuardado(): { intentar: <T>(fn: () => Promise<T>) => Promise<T> | null; ocupado: () => boolean } {
+  let ocupado = false;
+  return {
+    ocupado: () => ocupado,
+    intentar<T>(fn: () => Promise<T>): Promise<T> | null {
+      if (ocupado) return null;
+      ocupado = true;
+      return (async () => {
+        try {
+          return await fn();
+        } finally {
+          ocupado = false;
+        }
+      })();
+    },
+  };
+}
+
+// Ctrl+S / Cmd+S (también con Bloq Mayús); no con Alt (AltGr), Mayús ni durante una composición IME.
+export function esAtajoGuardar(e: { key: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean; isComposing?: boolean }): boolean {
+  return !!(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !e.isComposing && String(e.key).toLowerCase() === "s";
+}
+
+export function debeAvisarSalida({ editando, actual, base }: { editando: boolean; actual: string; base: string }): boolean {
+  return editando && actual !== base;
+}
+
+// Enlace que navega dentro de la misma disciplina (mismo origen y ruta /<proyecto>/<disciplina>/), sin anclas.
+export function esEnlaceDeLaDisciplina(href: string, actual: string, proyecto: string, disciplina: string): boolean {
+  try {
+    const destino = new URL(href, actual);
+    const origen = new URL(actual);
+    if (destino.origin !== origen.origin || destino.hash) return false;
+    return destino.pathname === `/${proyecto}/${disciplina}/`;
+  } catch {
+    return false;
+  }
+}
+
+export const MEDIA_LADO_A_LADO = "(min-width: 64rem)";
+export const DEBOUNCE_PREVIA_MS = 150;
+
+export function crearDebounce<A extends unknown[]>(fn: (...args: A) => void, ms: number): ((...args: A) => void) & { cancelar: () => void } {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  const d = ((...args: A) => {
+    if (t !== null) clearTimeout(t);
+    t = setTimeout(() => {
+      t = null;
+      fn(...args);
+    }, ms);
+  }) as ((...args: A) => void) & { cancelar: () => void };
+  d.cancelar = () => {
+    if (t !== null) clearTimeout(t);
+    t = null;
+  };
+  return d;
 }

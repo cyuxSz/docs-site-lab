@@ -24,6 +24,7 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
             <ul class="hw-indice" data-hw-indice></ul>
             <p class="hw-nueva" data-hw-solo-editor hidden>
               <button type="button" class="btn" data-hw-nueva>Nueva página</button>
+              <button type="button" class="btn" data-hw-abrir-papelera aria-haspopup="dialog">Papelera</button>
             </p>
           </div>
         </nav>
@@ -59,12 +60,14 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
               <button type="button" class="btn" role="tab" id="hw-tab-escribir" aria-selected="true" aria-controls="hw-panel-escribir" data-hw-tab="escribir">Escribir</button>
               <button type="button" class="btn" role="tab" id="hw-tab-previa" aria-selected="false" aria-controls="hw-panel-previa" tabindex="-1" data-hw-tab="previa">Vista previa</button>
             </div>
-            <div class="campo hw-panel" id="hw-panel-escribir" role="tabpanel" aria-labelledby="hw-tab-escribir">
-              <label for="hw-md">Contenido en Markdown</label>
-              <textarea id="hw-md" name="md" rows="22" spellcheck="false" autocomplete="off" aria-describedby="hw-ayuda-md"></textarea>
-              <p class="hw-ayuda" id="hw-ayuda-md">Puedes pegar o arrastrar imágenes y archivos sobre el texto.</p>
+            <div class="hw-editor-cuerpo">
+              <div class="campo hw-panel" id="hw-panel-escribir" role="tabpanel" aria-labelledby="hw-tab-escribir">
+                <label for="hw-md">Contenido en Markdown</label>
+                <textarea id="hw-md" name="md" rows="22" spellcheck="false" autocomplete="off" aria-describedby="hw-ayuda-md"></textarea>
+                <p class="hw-ayuda" id="hw-ayuda-md">Puedes pegar o arrastrar imágenes y archivos sobre el texto. Guarda con <kbd>Ctrl</kbd>+<kbd>S</kbd> (o <kbd>Cmd</kbd>+<kbd>S</kbd>) sin salir del editor.</p>
+              </div>
+              <div class="prose hw-previa" id="hw-panel-previa" role="tabpanel" aria-labelledby="hw-tab-previa" data-hw-previa tabindex="0" hidden></div>
             </div>
-            <div class="prose hw-previa" id="hw-panel-previa" role="tabpanel" aria-labelledby="hw-tab-previa" data-hw-previa tabindex="0" hidden></div>
             <div class="hw-subida">
               <input type="file" id="hw-archivo" class="hw-archivo" />
               <label for="hw-archivo" class="btn">Adjuntar</label>
@@ -123,6 +126,16 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
     <div class="atajos-bar">
       <button type="button" data-hw-ok>Borrar</button>
       <button type="button" data-hw-no>Cancelar</button>
+    </div>
+  </dialog>
+  <dialog class="atajos-dialog hw-papelera" id="hw-papelera" aria-labelledby="hw-papelera-titulo">
+    <div class="atajos-bar"><h2 id="hw-papelera-titulo">Papelera</h2></div>
+    <div class="hw-papelera-cuerpo">
+      <p class="hw-ayuda hw-papelera-estado" data-hw-papelera-estado aria-live="polite"></p>
+      <ul class="hw-papelera-lista" data-hw-papelera-lista></ul>
+    </div>
+    <div class="atajos-bar">
+      <button type="button" data-hw-no>Cerrar</button>
     </div>
   </dialog>
   <dialog class="atajos-dialog" id="hw-descartar" aria-labelledby="hw-descartar-titulo">
