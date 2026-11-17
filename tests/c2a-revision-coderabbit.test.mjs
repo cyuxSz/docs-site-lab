@@ -19,6 +19,6 @@ test("resultadoBorrado: 409 por candado muestra MENSAJE_CANDADO; sin cuerpo sigu
 
 test("script: msg y borrar leen el cuerpo (codigo) y salidaConfirmada se restablece en pageshow", () => {
   assert.match(js, /const msg = [^]{0,200}mensajeRespuesta\(/);
-  assert.match(js, /codigo === "candado"[^]{0,120}msg(r)/);
+  assert.match(js, /codigo === "candado"[^]{0,120}msg\(r\)/);
   assert.match(js, /"pageshow"[^]{0,200}salidaConfirmada = false/);
 });
