@@ -83,7 +83,7 @@ function resolverWiki(dest, { project, pages, from }) {
   if (!abs.startsWith("openwiki/")) return { error: "apunta fuera de openwiki/" };
   const page = abs.slice("openwiki/".length).replace(/(^|\/)$/, "$1index.md");
   if (!pages.includes(page)) return { error: `apunta a una página que no existe (${page})` };
-  return { route: pageRoute(project, page) + anchor.replace(/[^#\w\-.%]/g, ""), page };
+  return { route: pageRoute(project, page) + anchor.replace(/[^#\p{L}\p{N}_\-.%]/gu, ""), page };
 }
 
 // Enlace de un paso: wiki, grafo: o hardware:. Devuelve { enlace } o { error }.
@@ -127,6 +127,11 @@ const limpiarValor = (v) => (v == null ? "" : String(v).replace(/\s+#.*$/, "").t
 export function parseTutorial(body, { project, pages, from, meta = {}, disciplinas = [], roles = [] }) {
   const avisos = [];
   const id = from.replace(/^.*\//, "").replace(/\.md$/, "");
+  // El id va en las claves de localStorage (separadas por ":") y en rutas/<id>/: sin ":" y sin chocar con rutas.md.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) || id === "index") {
+    avisos.push(`Tutorial ${id}: el nombre de archivo no es válido (no puede ser index ni llevar ":" o espacios); no se muestra.`);
+    return { tutorial: null, avisos };
+  }
   const disciplina = limpiarValor(meta.disciplina);
   if (!DISCIPLINAS_TUTORIAL.includes(disciplina)) {
     avisos.push(`Tutorial ${id}: falta la disciplina o no es válida (software, electronica o mecanica); no se muestra.`);
@@ -138,7 +143,7 @@ export function parseTutorial(body, { project, pages, from, meta = {}, disciplin
     rol = null;
   }
   const pasos = [];
-  const usados = new Map();
+  const usados = new Set();
   const bloques = body.split(/^##\s+Paso:\s*/m).slice(1);
   for (const bloque of bloques) {
     const [primera, ...resto] = bloque.split(/\r?\n/);
@@ -159,9 +164,10 @@ export function parseTutorial(body, { project, pages, from, meta = {}, disciplin
       continue;
     }
     const base = slugRol(titulo) || "paso";
-    const n = (usados.get(base) ?? 0) + 1;
-    usados.set(base, n);
-    pasos.push({ id: n === 1 ? base : `${base}-${n}`, titulo, objetivo: campos.Objetivo, enlace: r.enlace, hecho: campos["Hecho cuando"] });
+    let pid = base;
+    for (let n = 2; usados.has(pid); n++) pid = `${base}-${n}`;
+    usados.add(pid);
+    pasos.push({ id: pid, titulo, objetivo: campos.Objetivo, enlace: r.enlace, hecho: campos["Hecho cuando"] });
   }
   if (!pasos.length) {
     avisos.push(`Tutorial ${id}: no tiene pasos válidos y no se muestra.`);

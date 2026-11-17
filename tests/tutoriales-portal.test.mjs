@@ -125,3 +125,13 @@ test("TutorialesLista explica los tutoriales ocultos por el rol y ofrece verlos 
   assert.match(src, /ocultosPorRol\(/);
   assert.match(src, /de otros roles/);
 });
+
+test("página de tutorial: el índice lateral sale de los pasos válidos, no del Markdown completo", () => {
+  const src = read(SLUG);
+  assert.match(src, /tutorial\.pasos\.map\([^\n]*paso-/);
+});
+
+test("script: usa el respaldo en memoria del almacén; README aclara que el tutorial inválido sigue como página normal", () => {
+  assert.match(read(SCRIPT), /almacenConRespaldo\(almacenSeguro\(/);
+  assert.match(read("README.md"), /página normal de la wiki/);
+});

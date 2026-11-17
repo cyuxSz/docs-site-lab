@@ -38,7 +38,6 @@ const route = `/${p.id}/${Astro.params.slug}/`;
 // Proyecto restringido: la exclusión real del índice es data-pagefind-ignore="all" en el body (Base.astro); no se debe quitar (access.config.js).
 const restricted = isRestricted(p.id);
 // Índice "En esta página": h2 y, sangrados, h3.
-const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 const pkg = entry.data.path.startsWith("packages/") ? entry.data.path.replace(/^packages\/|\.md$/g, "") : null;
 const historial = p.pageList.find((x) => x.path === entry.data.path)?.historial ?? [];
 const rosNodes = pkg && p.ros ? p.ros.nodes.filter((n) => n.category === "ros2_node" && n.package === pkg) : [];
@@ -55,6 +54,10 @@ const citas = p.repoUrl && p.sha ? citasDe(entry.body ?? "", p.repoUrl, p.sha).f
 const esRutas = entry.data.path === "rutas.md" && Boolean(p.rutas?.length || p.tutoriales?.length);
 // Mini tutoriales: la página openwiki/rutas/<slug>.md de un tutorial válido se vuelve checklist.
 const tutorial = p.tutoriales?.find((t) => t.page === entry.data.path);
+// Índice lateral: en un tutorial, solo sus pasos válidos (el Markdown puede traer pasos que el parser descartó).
+const toc = tutorial
+  ? tutorial.pasos.map((s) => ({ depth: 2, text: s.titulo, slug: `paso-${s.id}` }))
+  : headings.filter((h) => h.depth === 2 || h.depth === 3);
 const rutasDePagina = esRutas ? [] : (p.rutas ?? []).filter((r) => r.pasos.some((s) => s.page === entry.data.path));
 const firma = firmaPagina(entry.data.updated, p.pageList.find((x) => x.path === entry.data.path)?.commit);
 // Tiempo de lectura y nivel, calculados en el build (heurística documentada en lib/lectura.ts).

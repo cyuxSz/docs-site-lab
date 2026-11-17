@@ -1,9 +1,9 @@
 // Mini tutoriales en el navegador: lista en /<id>/rutas/ (filtros, estado, reanudar) y checklist en /<id>/rutas/<slug>/.
 // Los textos son los del HTML ya renderizado; aquí solo se usa textContent, nunca HTML.
 import { almacenSeguro, type Almacen } from "../lib/rutas.ts";
-import { enlaceReanudar, estadoTutorial, filtrarTutoriales, hechos, ocultosPorRol, marcarPaso, reiniciarTutorial, textoAccion, type Tutorial } from "../lib/tutoriales.ts";
+import { almacenConRespaldo, enlaceReanudar, estadoTutorial, filtrarTutoriales, hechos, ocultosPorRol, marcarPaso, reiniciarTutorial, textoAccion, type Tutorial } from "../lib/tutoriales.ts";
 
-const alm: Almacen = almacenSeguro(() => localStorage);
+const alm: Almacen = almacenConRespaldo(almacenSeguro(() => localStorage));
 const parse = <T,>(s: string | undefined, vacio: T): T => {
   try {
     return JSON.parse(s ?? "") as T;

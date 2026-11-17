@@ -159,3 +159,33 @@ test("ocultosPorRol: cuántos tutoriales esconde solo el filtro de rol (respeta 
   assert.equal(ocultos(TODOS, { rol: "software", disciplina: "electronica" }), 1);
   assert.equal(ocultos(TODOS, { rol: "software", disciplina: "mecanica" }), 0);
 });
+
+test("reiniciarTutorial: un tutorial no borra el de otro cuyo id empieza igual", () => {
+  const [marcarPaso, reiniciarTutorial, hechos] = ["marcarPaso", "reiniciarTutorial", "hechos"].map(fn);
+  const a = almacenSeguro(() => memoria());
+  const s = memoria();
+  const b = almacenSeguro(() => s);
+  const largo = tut("motor-2", "electronica", null, ["a"]);
+  marcarPaso(b, "uuv", "motor-2", "a", true);
+  reiniciarTutorial(b, "uuv", MOTOR);
+  assert.deepEqual(hechos(b, "uuv", largo), [true]);
+  void a;
+});
+
+test("almacenConRespaldo: con el almacén bloqueado, lo marcado en esta visita se recuerda en memoria", () => {
+  const [con, marcarPaso, hechos, reiniciarTutorial] = ["almacenConRespaldo", "marcarPaso", "hechos", "reiniciarTutorial"].map(fn);
+  const roto = () => {
+    throw new Error("SecurityError");
+  };
+  const a = con(almacenSeguro(roto));
+  marcarPaso(a, "uuv", "motor", "b", true);
+  assert.deepEqual(hechos(a, "uuv", MOTOR), [false, true, false]);
+  reiniciarTutorial(a, "uuv", MOTOR);
+  assert.deepEqual(hechos(a, "uuv", MOTOR), [false, false, false]);
+  // Con almacén sano no guarda nada aparte: lo que borra otra pestaña no resucita.
+  const s = memoria();
+  const b = con(almacenSeguro(() => s));
+  marcarPaso(b, "uuv", "motor", "a", true);
+  s.removeItem("tutoriales:uuv:motor:paso:a");
+  assert.deepEqual(hechos(b, "uuv", MOTOR), [false, false, false]);
+});

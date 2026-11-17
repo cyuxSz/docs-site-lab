@@ -22,6 +22,25 @@ export type EstadoTutorial = "sin-empezar" | "en-curso" | "completo";
 
 export const claveTutorialPaso = (p: string, t: string, paso: string) => `tutoriales:${p}:${t}:paso:${paso}`;
 
+// Capa de tutoriales sobre el almacén seguro: si escribir no queda (almacén bloqueado o sin cuota), recuerda
+// en memoria lo marcado durante esta visita. No cambia almacenSeguro.
+export function almacenConRespaldo(base: Almacen): Almacen {
+  const mem = new Map<string, string>();
+  return {
+    get: (k) => base.get(k) ?? mem.get(k) ?? null,
+    set(k, v) {
+      base.set(k, v);
+      if (base.get(k) === v) mem.delete(k);
+      else mem.set(k, v);
+    },
+    remove(k) {
+      base.remove(k);
+      mem.delete(k);
+    },
+    claves: () => [...new Set([...(base.claves?.() ?? []), ...mem.keys()])],
+  };
+}
+
 export function marcarPaso(alm: Almacen, p: string, t: string, paso: string, hecho: boolean) {
   if (hecho) alm.set(claveTutorialPaso(p, t, paso), "1");
   else alm.remove(claveTutorialPaso(p, t, paso));

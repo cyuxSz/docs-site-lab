@@ -111,3 +111,27 @@ test("retrocompatible: rutas.md se parsea igual aunque la wiki tenga openwiki/ru
   const conTutorial = T.parseRutas("## Electrónica\n1. [Probar un motor](rutas/motor-uno.md): tutorial guiado.\n", { project: "uuv", pages: PAGES_TUT });
   assert.deepEqual(conTutorial.rutas[0].pasos[0], { route: "/uuv/rutas/motor-uno/", page: "rutas/motor-uno.md", title: "Probar un motor", nota: "tutorial guiado." });
 });
+
+const cuerpo = (...titulos) => titulos.map((t) => `## Paso: ${t}\nObjetivo: o.\nEnlace: [Q](../quickstart.md)\nHecho cuando: h.\n`).join("\n");
+
+test("parseTutorial: el id de paso nunca se repite aunque un título se parezca al sufijo de otro", () => {
+  const { tutorial } = parseTutorial(cuerpo("Conectar", "Conectar", "Conectar 2"), { ...OPCIONES, meta: META_MOTOR });
+  const ids = tutorial.pasos.map((p) => p.id);
+  assert.equal(new Set(ids).size, 3, JSON.stringify(ids));
+});
+
+test("parseTutorial: el ancla de un enlace wiki conserva los caracteres Unicode", () => {
+  const b = "## Paso: Cámara\nObjetivo: o.\nEnlace: [H](../operations/hardware.md#cámara-zed-2i)\nHecho cuando: h.\n";
+  const { tutorial } = parseTutorial(b, { ...OPCIONES, meta: META_MOTOR });
+  assert.equal(tutorial.pasos[0].enlace.href, "/uuv/operations/hardware/#cámara-zed-2i");
+  const raro = parseTutorial(b.replace("#cámara-zed-2i", "#a\"><b"), { ...OPCIONES, meta: META_MOTOR });
+  assert.match(raro.tutorial.pasos[0].enlace.href, /^[^"<>\s]+$/);
+});
+
+test("parseTutorial: rutas/index.md (choca con rutas.md) y ids con ':' no salen y avisan", () => {
+  for (const from of ["rutas/index.md", "rutas/a:b.md"]) {
+    const { tutorial, avisos } = parseTutorial(TUTORIAL_MOTOR, { ...OPCIONES, from, meta: META_MOTOR });
+    assert.equal(tutorial, null, from);
+    assert.ok(avisos.length > 0, from);
+  }
+});
