@@ -150,3 +150,12 @@ test("src/lib/tutoriales.ts reutiliza el almacén y el progreso de src/lib/rutas
   assert.match(src, /from\s+["']\.\/rutas(\.ts)?["']/);
   assert.doesNotMatch(src, /function\s+almacenSeguro|localStorage/, "el almacén se inyecta; no se accede a localStorage aquí");
 });
+
+test("ocultosPorRol: cuántos tutoriales esconde solo el filtro de rol (respeta la disciplina)", () => {
+  const ocultos = fn("ocultosPorRol");
+  assert.equal(ocultos(TODOS, { rol: "software" }), 1);
+  assert.equal(ocultos(TODOS, { rol: "electronica" }), 1);
+  assert.equal(ocultos(TODOS, { rol: null }), 0);
+  assert.equal(ocultos(TODOS, { rol: "software", disciplina: "electronica" }), 1);
+  assert.equal(ocultos(TODOS, { rol: "software", disciplina: "mecanica" }), 0);
+});

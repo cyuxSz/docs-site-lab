@@ -6,13 +6,14 @@ import type { Tutorial } from "../lib/tutoriales.ts";
 interface Props {
   projectId: string;
   tutorial: Tutorial;
+  rolNombre?: string;
 }
-const { projectId, tutorial } = Astro.props;
+const { projectId, tutorial, rolNombre } = Astro.props;
 const n = tutorial.pasos.length;
 const etiqueta: Record<string, string> = { software: "Software", electronica: "Electrónica", mecanica: "Mecánica" };
 ---
 <div class="tutorial" data-proyecto={projectId} data-tutorial={JSON.stringify({ id: tutorial.id, route: tutorial.route, pasos: tutorial.pasos.map((s) => ({ id: s.id })) })}>
-  <p class="tutorial-meta muted">{etiqueta[tutorial.disciplina] ?? tutorial.disciplina}{tutorial.rol && ` · rol ${tutorial.rol}`}</p>
+  <p class="tutorial-meta muted">{etiqueta[tutorial.disciplina] ?? tutorial.disciplina}{tutorial.rol && ` · rol ${rolNombre ?? tutorial.rol}`}</p>
   <ol class="tutorial-pasos">
     {tutorial.pasos.map((s, i) => (
       <li class="tutorial-paso" id={`paso-${s.id}`}>

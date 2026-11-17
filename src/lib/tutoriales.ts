@@ -56,6 +56,10 @@ export function filtrarTutoriales(ts: Tutorial[], { rol, disciplina }: { rol?: s
   return ts.filter((t) => (!rol || !t.rol || t.rol === rol) && (!d || t.disciplina === d));
 }
 
+// Cuántos tutoriales esconde solo el filtro de rol (con la disciplina ya aplicada).
+export const ocultosPorRol = (ts: Tutorial[], { rol, disciplina }: { rol?: string | null; disciplina?: string | null } = {}): number =>
+  filtrarTutoriales(ts, { disciplina }).length - filtrarTutoriales(ts, { rol, disciplina }).length;
+
 export const DISCIPLINAS = [
   { id: "software", etiqueta: "Software" },
   { id: "electronica", etiqueta: "Electrónica" },

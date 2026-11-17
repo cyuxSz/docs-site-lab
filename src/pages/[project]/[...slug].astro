@@ -122,7 +122,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             <>
               <h1>{tutorial.titulo}</h1>
               {tutorial.descripcion && <p class="lead">{tutorial.descripcion}</p>}
-              <TutorialPasos projectId={p.id} tutorial={tutorial} />
+              <TutorialPasos projectId={p.id} tutorial={tutorial} rolNombre={p.rutas?.find((r) => r.id === tutorial.rol)?.nombre} />
             </>
           ) : <Content />}
         </article>

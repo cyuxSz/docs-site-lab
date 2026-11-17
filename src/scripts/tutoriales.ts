@@ -1,7 +1,7 @@
 // Mini tutoriales en el navegador: lista en /<id>/rutas/ (filtros, estado, reanudar) y checklist en /<id>/rutas/<slug>/.
 // Los textos son los del HTML ya renderizado; aquí solo se usa textContent, nunca HTML.
 import { almacenSeguro, type Almacen } from "../lib/rutas.ts";
-import { enlaceReanudar, estadoTutorial, filtrarTutoriales, hechos, marcarPaso, reiniciarTutorial, textoAccion, type Tutorial } from "../lib/tutoriales.ts";
+import { enlaceReanudar, estadoTutorial, filtrarTutoriales, hechos, ocultosPorRol, marcarPaso, reiniciarTutorial, textoAccion, type Tutorial } from "../lib/tutoriales.ts";
 
 const alm: Almacen = almacenSeguro(() => localStorage);
 const parse = <T,>(s: string | undefined, vacio: T): T => {
@@ -22,9 +22,12 @@ if (lista) {
   const conteo = lista.querySelector<HTMLElement>("[data-conteo]");
   let rol: string | null = document.querySelector<HTMLInputElement>(".rutas input[name='rol']:checked")?.value ?? null;
   let disciplina = "todas";
+  let verTodos = false;
+  const otros = lista.querySelector<HTMLElement>("[data-otros-texto]");
+  const btnTodos = lista.querySelector<HTMLButtonElement>("[data-ver-todos]");
 
   const pintar = () => {
-    const visibles = new Set(filtrarTutoriales(todos, { rol, disciplina }).map((t) => t.id));
+    const visibles = new Set(filtrarTutoriales(todos, { rol: verTodos ? null : rol, disciplina }).map((t) => t.id));
     for (const t of todos) {
       const li = lista.querySelector<HTMLElement>(`[data-tutorial="${CSS.escape(t.id)}"]`);
       if (!li) continue;
@@ -39,6 +42,9 @@ if (lista) {
       }
     }
     for (const g of lista.querySelectorAll<HTMLElement>("[data-grupo]")) g.hidden = !g.querySelector("[data-tutorial]:not([hidden])");
+    const n = verTodos ? 0 : ocultosPorRol(todos, { rol, disciplina });
+    if (otros) otros.textContent = n ? `Hay ${n} ${n === 1 ? "tutorial" : "tutoriales"} de otros roles.` : "";
+    if (btnTodos) btnTodos.hidden = !n;
     if (conteo) conteo.textContent = `${visibles.size} ${visibles.size === 1 ? "tutorial" : "tutoriales"}`;
   };
 
@@ -48,9 +54,16 @@ if (lista) {
     disciplina = r.value;
     pintar();
   });
+  btnTodos?.addEventListener("click", () => {
+    verTodos = true;
+    pintar();
+    btnTodos.hidden = true;
+    lista.querySelector<HTMLElement>("input[name='tutorial-disciplina']:checked")?.focus();
+  });
   // RutasRol avisa del rol elegido; los tutoriales sin rol siempre salen.
   document.addEventListener("rutas:rol", (e) => {
     rol = (e as CustomEvent<{ rol: string }>).detail?.rol ?? null;
+    verTodos = false;
     pintar();
   });
   pintar();

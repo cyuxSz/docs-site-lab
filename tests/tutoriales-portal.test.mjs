@@ -107,3 +107,21 @@ test("README: documenta el formato de openwiki/rutas/<slug>.md y que rutas.md si
   assert.match(src, /disciplina:/);
   assert.match(src, /retrocompatible|no cambia/i);
 });
+
+test("TutorialPasos muestra la etiqueta del rol (la de RutasRol), no el id crudo", () => {
+  const pasos = read(PASOS);
+  assert.match(pasos, /rolNombre/);
+  assert.doesNotMatch(pasos, /rol \$\{tutorial\.rol\}/);
+  assert.match(read(SLUG), /<TutorialPasos[^>]*rolNombre=\{/);
+  assert.match(read(SLUG), /p\.rutas\?\.find\([^\n]*\?\.nombre/);
+});
+
+test("TutorialesLista explica los tutoriales ocultos por el rol y ofrece verlos todos (aria-live)", () => {
+  const lista = read(LISTA);
+  assert.match(lista, /data-otros/);
+  assert.match(lista, /data-ver-todos/);
+  assert.match(lista, /Ver todos/);
+  const src = read(SCRIPT);
+  assert.match(src, /ocultosPorRol\(/);
+  assert.match(src, /de otros roles/);
+});

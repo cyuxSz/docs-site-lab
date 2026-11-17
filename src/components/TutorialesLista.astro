@@ -21,6 +21,10 @@ const datos = tutoriales.map(({ id, rol, disciplina, route, pasos }) => ({ id, r
     ))}
   </fieldset>
   <p class="tutoriales-conteo muted" aria-live="polite" data-conteo>{tutoriales.length} {tutoriales.length === 1 ? "tutorial" : "tutoriales"}</p>
+  <p class="tutoriales-otros muted" aria-live="polite" data-otros>
+    <span data-otros-texto></span>
+    <button type="button" class="btn" data-ver-todos hidden>Ver todos</button>
+  </p>
   {grupos.map((g) => (
     <div class="tutoriales-grupo" data-grupo={g.id}>
       <h3>{g.etiqueta}</h3>
