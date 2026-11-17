@@ -100,7 +100,7 @@ test("@media print: oculta barra, navegación, botones y bloques personales", ()
   const p = bloque(css, "@media print {");
   assert.ok(p, "falta @media print en global.css");
   const ocultos = reglasDecl(p, "display: none");
-  for (const sel of [".topbar", ".ptabs", ".sidenav", ".migas", ".toc-box", ".prevnext", ".to-top", ".copy-btn", ".anchor", ".favorito-btn", ".aviso-cambio", ".ruta-paso", ".lectura-ajustes", ".resaltado-barra", ".continuar", ".favoritos", ".search-dialog", ".atajos-dialog", ".popover", ".meta .acciones"]) {
+  for (const sel of [".topbar", ".ptabs", ".sidenav", ".migas", ".toc-box", ".prevnext", ".to-top", ".copy-btn", ".anchor", ".favorito-btn", ".aviso-cambio", ".ruta-paso", ".lectura-ajustes", ".resaltado-barra", ".continuar", ".favoritos", ".search-dialog", ".atajos-dialog", ".popover", ".pagina-menu"]) {
     assert.ok(ocultos.includes(sel), `@media print oculta ${sel}`);
   }
   assert.match(ocultos, /display:\s*none\s*!important/);

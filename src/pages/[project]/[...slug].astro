@@ -113,6 +113,36 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
           {!restricted && <meta data-pagefind-filter="tipo[content]" content={TYPE_LABEL[entry.data.type] ?? entry.data.type} />}
           {!restricted && pkg && <meta data-pagefind-filter="paquete[content]" content={pkg} />}
           <p class="eyebrow page-eyebrow">{p.tagline ?? p.name}{section && ` · ${section}`}</p>
+          <div class="pagina-meta" data-pagina-meta data-pagefind-ignore>
+            <p class="pagina-meta-linea">
+              <span>Actualizado {entry.data.updated ? <time datetime={entry.data.updated} data-hace>{fmtDate(entry.data.updated)}</time> : fmtDate(entry.data.updated)}{entry.data.author && <span class="muted"> · {entry.data.author}</span>}</span>
+              {entry.data.claims > 0 && <span>{entry.data.claims} afirmaciones verificadas<span class="sr-only"> contra el código</span></span>}
+              {entry.data.owner && <span>Responsable: {entry.data.owner}</span>}
+              <a href={entry.data.source} aria-label="Ver en GitHub (se abre en otra pestaña)" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+            </p>
+            <button type="button" class="pagina-menu-btn" data-pagina-menu-btn aria-expanded="false" aria-controls="pagina-menu" aria-label="Más acciones de la página: editar, reportar e historial"><span aria-hidden="true">⋯</span></button>
+            <div class="pagina-menu" id="pagina-menu" data-pagefind-ignore hidden>
+              <a href={editar}>Editar en GitHub</a>
+              <a href={urlReportar(p.repo, pageRef)} data-reportar data-repo={p.repo} data-title={pageRef.title} data-route={pageRef.route} data-path={pageRef.path}>Reportar un error</a>
+              {historial.length > 0 && (
+                <details class="historial">
+                  <summary>Historial</summary>
+                  <ol>
+                    {historial.map((c) => (
+                      <li>
+                        <span>{c.mensaje}</span>
+                        <span class="hist-meta"><time datetime={c.fecha}>{fmtDate(c.fecha)}</time> · {c.autor}</span>
+                        <span class="hist-enlaces">
+                          <a href={c.url} aria-label={`Commit ${c.sha}`}><code>{c.corto}</code></a>
+                          <a href={c.diff} aria-label={`Ver diff del commit ${c.corto}`}>ver diff</a>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </div>
+          </div>
           <p class="lectura-meta" data-pagefind-ignore><span>{minutos} min de lectura</span><span data-nivel={nivel.nivel}>{nivel.etiqueta}</span></p>
           {esRutas ? (
             <>
@@ -153,23 +183,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
       <button type="button" class="barra-btn" data-barra="der" aria-controls="barra-der" aria-expanded="true" aria-label="Ocultar índice" title="Ocultar índice"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg></button>
       <aside class="meta" id="barra-der" aria-label="Datos de la página" data-pagefind-ignore="all">
         <dl>
-          <div>
-            <dt>Actualizado</dt>
-            <dd>
-              {entry.data.updated ? <time datetime={entry.data.updated} data-hace>{fmtDate(entry.data.updated)}</time> : fmtDate(entry.data.updated)}
-              {entry.data.author && <span class="muted"> · {entry.data.author}</span>}
-            </dd>
-          </div>
-          {entry.data.claims > 0 && <div><dt>Afirmaciones</dt><dd>{entry.data.claims} verificadas contra el código</dd></div>}
-          {entry.data.owner && <div><dt>Responsable</dt><dd>{entry.data.owner}</dd></div>}
-          <div><dt>Fuente</dt><dd><a href={entry.data.source}>Ver en GitHub</a></dd></div>
-          <div>
-            <dt>Mejorar esta página</dt>
-            <dd class="acciones">
-              <a href={editar}>Editar en GitHub</a>
-              <a href={urlReportar(p.repo, pageRef)} data-reportar data-repo={p.repo} data-title={pageRef.title} data-route={pageRef.route} data-path={pageRef.path}>Reportar un error</a>
-            </dd>
-          </div>
           {rosNodes.length > 0 && (
             <div>
               <dt>Nodos en el grafo</dt>
@@ -183,23 +196,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             </div>
           )}
         </dl>
-        {historial.length > 0 && (
-          <details class="historial">
-            <summary>Historial</summary>
-            <ol>
-              {historial.map((c) => (
-                <li>
-                  <span>{c.mensaje}</span>
-                  <span class="hist-meta"><time datetime={c.fecha}>{fmtDate(c.fecha)}</time> · {c.autor}</span>
-                  <span class="hist-enlaces">
-                    <a href={c.url} aria-label={`Commit ${c.sha}`}><code>{c.corto}</code></a>
-                    <a href={c.diff} aria-label={`Ver diff del commit ${c.corto}`}>ver diff</a>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </details>
-        )}
         {toc.length > 1 && (
           <nav class="toc-box" aria-labelledby="toc-title">
             <p class="toc-title" id="toc-title">En esta página</p>
@@ -213,6 +209,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
     </div>
   </div>
   <div class="barras-velo" data-barras-velo hidden></div>
+  <div class="sr-only" data-anuncio-lectura role="status" aria-live="polite" data-pagefind-ignore="all"></div>
   {hasMermaid && (
     <script>
       import { renderMermaid } from "../../scripts/mermaid";
@@ -226,5 +223,6 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
     import "../../scripts/lectura";
     import "../../scripts/comentarios";
     import "../../scripts/barras";
+    import "../../scripts/menu-pagina";
   </script>
 </Base>

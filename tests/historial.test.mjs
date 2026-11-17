@@ -116,9 +116,12 @@ test("src/lib/data.ts: PageInfo.historial opcional", () => {
   assert.match(read("src/lib/data.ts"), /historial\?:\s*Commit\[\]/);
 });
 
-test("página de wiki: <details> 'Historial' en el panel derecho, solo si hay commits, con enlaces al commit y 'ver diff'", () => {
+// Lote "Menos ruido": el historial pasa del panel derecho al menú "⋯" de la página (#pagina-menu).
+test("página de wiki: <details> 'Historial' en el menú ⋯ de la página, solo si hay commits, con enlaces al commit y 'ver diff'", () => {
   const src = read("src/pages/[project]/[...slug].astro");
-  const aside = src.slice(src.indexOf('<aside class="meta"'), src.indexOf("</aside>", src.indexOf('<aside class="meta"')));
+  const ini = src.indexOf('id="pagina-menu"');
+  assert.ok(ini >= 0, "falta el menú id=\"pagina-menu\"");
+  const aside = src.slice(ini, src.indexOf("</details>", ini) + 10);
   assert.match(aside, /<details class="historial"/);
   assert.match(aside, /<summary>Historial<\/summary>/);
   assert.match(src, /historial\.length\s*>\s*0\s*&&/);

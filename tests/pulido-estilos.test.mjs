@@ -51,10 +51,13 @@ test("tarjetas de paquetes: las insignias van en .card-badges (flex, wrap y gap)
 });
 
 // ---------- 4. Ceros ocultos ----------
-test("panel lateral: 'verificadas contra el código' solo con claims > 0", () => {
-  const i = PAGINA.indexOf("verificadas contra el código");
+test("línea de metadatos: 'afirmaciones verificadas' solo con claims > 0 y 'contra el código' solo para lector de pantalla", () => {
+  const i = PAGINA.indexOf("afirmaciones verificadas");
   assert.ok(i > 0);
   assert.match(PAGINA.slice(Math.max(0, i - 160), i), /entry\.data\.claims\s*>\s*0\s*&&/);
+  // Texto visible corto; la frase completa sigue disponible en sr-only (no solo en title, que no siempre se anuncia).
+  assert.match(PAGINA.slice(i, i + 200), /afirmaciones verificadas<span class="sr-only"> contra el código<\/span>/);
+  assert.doesNotMatch(PAGINA, /afirmaciones verificadas contra el código/, "'contra el código' ya no es texto visible");
 });
 
 test("tarjetas de paquetes: 'N afirmaciones' solo con claims > 0", () => {
