@@ -105,7 +105,7 @@ export interface RespuestaApi {
 }
 
 // Mensaje según el estado: el 409 por candado (codigo "candado") invita a reintentar; el de versión pide recargar.
-function mensajeDe(status: number, extra?: { json?: any; fallo?: string }): string {
+export function mensajeRespuesta(status: number, extra?: { json?: any; fallo?: string }): string {
   if (status === 409 && extra?.json?.codigo === "candado") return MENSAJE_CANDADO;
   if (status === 0) return mensajeError(extra?.fallo === "timeout" ? "timeout" : "red");
   return mensajeError(status);
@@ -113,7 +113,7 @@ function mensajeDe(status: number, extra?: { json?: any; fallo?: string }): stri
 
 // Ante un 409 se conserva el texto del editor y se muestra el mensaje de conflicto.
 export function resultadoGuardado(status: number, extra?: { json?: any; fallo?: string }): { conservarTexto: boolean; mensaje: string } {
-  return { conservarTexto: status !== 200, mensaje: status === 200 ? "" : mensajeDe(status, extra) };
+  return { conservarTexto: status !== 200, mensaje: status === 200 ? "" : mensajeRespuesta(status, extra) };
 }
 
 export const MENSAJE_PAPELERA_EXISTE = "Ya hay una página con ese nombre. Renombra o borra la actual antes de restaurar esta.";
@@ -123,15 +123,15 @@ export function resultadoRestaurarPapelera(status: number, extra?: { json?: any;
   if (status === 200) return { ok: true, mensaje: "" };
   if (status === 409 && extra?.json?.codigo === "existe") return { ok: false, mensaje: MENSAJE_PAPELERA_EXISTE };
   if (status === 404) return { ok: false, mensaje: MENSAJE_PAPELERA_404 };
-  return { ok: false, mensaje: mensajeDe(status, extra) };
+  return { ok: false, mensaje: mensajeRespuesta(status, extra) };
 }
 
 export const MENSAJE_BORRADO_409 = "Alguien cambió la página; recárgala antes de borrar";
 
 // Borrado: solo 200 quita la página del índice local; un 409 muestra su texto propio y no toca nada.
-export function resultadoBorrado(status: number): { quitarDelIndice: boolean; mensaje: string } {
+export function resultadoBorrado(status: number, extra?: { json?: any; fallo?: string }): { quitarDelIndice: boolean; mensaje: string } {
   if (status === 200) return { quitarDelIndice: true, mensaje: "" };
-  return { quitarDelIndice: false, mensaje: status === 409 ? MENSAJE_BORRADO_409 : mensajeError(status === 0 ? "red" : status) };
+  return { quitarDelIndice: false, mensaje: status === 409 && extra?.json?.codigo !== "candado" ? MENSAJE_BORRADO_409 : mensajeRespuesta(status, extra) };
 }
 
 export function porcentaje(cargado: number, total: number): number {

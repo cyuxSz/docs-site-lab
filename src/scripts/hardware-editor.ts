@@ -21,6 +21,7 @@ import {
   estadoGuardar,
   MEDIA_LADO_A_LADO,
   mensajeError,
+  mensajeRespuesta,
   moverEnOrden,
   paginaActual,
   pedirApi,
@@ -150,11 +151,7 @@ async function iniciar(root: HTMLElement) {
     }
     return pedirApi(fetch, `/api/hardware/${metodo === "GET" ? `?${params}` : ""}`, init, { senal });
   }
-  const msg = (r: number | { status: number; fallo?: string }) => {
-    const status = typeof r === "number" ? r : r.status;
-    if (status === 0) return mensajeError(typeof r !== "number" && r.fallo === "timeout" ? "timeout" : "red");
-    return mensajeError(status);
-  };
+  const msg = (r: number | { status: number; json?: any; fallo?: string }) => (typeof r === "number" ? mensajeRespuesta(r) : mensajeRespuesta(r.status, r));
 
   // ---------- DOM ----------
   // Render del Markdown en el navegador (marked + DOMPurify), carga diferida y memoizada. Se dispara al iniciar,
@@ -827,7 +824,7 @@ async function iniciar(root: HTMLElement) {
     mostrarError("");
     if (!(await preguntar(dlgBorrar))) return;
     const r = await api("DELETE", { cuerpo: { pagina: slug, version: pagina.version } });
-    const res = resultadoBorrado(r.status);
+    const res = r.json?.codigo === "candado" ? { quitarDelIndice: false, mensaje: msg(r) } : resultadoBorrado(r.status);
     if (!res.quitarDelIndice) {
       mostrarError(res.mensaje);
       return;
@@ -1123,6 +1120,10 @@ async function iniciar(root: HTMLElement) {
     void subirVarios(archivos);
   });
 
+  // Al volver desde la bfcache la página sigue viva: el aviso de salida debe volver a funcionar.
+  escuchar(globalThis, "pageshow", () => {
+    salidaConfirmada = false;
+  });
   escuchar(globalThis, "beforeunload", (e) => {
     if (!salidaConfirmada && hayCambios()) {
       e.preventDefault();
