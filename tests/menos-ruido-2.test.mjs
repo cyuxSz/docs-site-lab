@@ -321,3 +321,14 @@ test("C4 global.css: .toc-movil oculto por defecto y visible solo bajo 900 px; f
   assert.match(medias(c, "print"), /\.toc-movil/);
   for (const l of c.split("\n").filter((x) => x.includes(".toc-movil"))) assert.doesNotMatch(l, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `usa tokens: ${l.trim()}`);
 });
+
+test("C4: la regla móvil display:block de .toc-movil va DESPUÉS de la base display:none (si no, la base gana por orden)", () => {
+  const src = css();
+  const base = src.search(/^\.toc-movil \{[^}]*display:\s*none/m);
+  assert.ok(base >= 0, "existe la regla base con display: none");
+  const media = src.match(/@media \(max-width: 899\.98px\) \{\s*\.toc-movil \{[^}]*display:\s*block/);
+  assert.ok(media, "existe la regla display: block dentro de la media móvil");
+  assert.ok(src.indexOf(media[0]) > base, "la media móvil aparece después de la base");
+  const antes = src.slice(0, base);
+  assert.doesNotMatch(antes, /\.toc-movil \{ display: block/, "no queda otra regla display:block previa");
+});

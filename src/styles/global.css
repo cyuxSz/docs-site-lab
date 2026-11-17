@@ -682,7 +682,6 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
   .barra-caja { display: contents; }
   .barra-btn { display: none; }
   .barras-movil { display: flex; gap: 4px; margin-bottom: 8px; }
-  .toc-movil { display: block; }
   .doc-wiki .sidenav, .doc-wiki .meta { position: fixed; top: 0; bottom: 0; z-index: 40; width: min(320px, 85vw); max-height: none; margin: 0; padding: 16px; overflow-y: auto; background: var(--surface); box-shadow: var(--shadow); visibility: hidden; transition: transform .2s ease, visibility .2s; }
   .doc-wiki .sidenav { left: 0; border: 0; border-inline-end: 1px solid var(--line); border-radius: 0; transform: translateX(-100%); }
   .doc-wiki .meta { right: 0; grid-column: auto; border-inline-start: 1px solid var(--line); transform: translateX(100%); }
@@ -856,6 +855,7 @@ main.caratula { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 .toc-movil .toc a:hover { color: var(--accent); }
 .toc-movil .toc a[aria-current="true"] { color: var(--accent-strong); font-weight: 600; }
 .toc-movil .toc-sub a { padding-left: 14px; font-size: 13px; }
+@media (max-width: 899.98px) { .toc-movil { display: block; } }
 
 .footer-acerca { margin: 0 0 8px; }
 .footer-acerca a { color: var(--muted); text-decoration: none; }
