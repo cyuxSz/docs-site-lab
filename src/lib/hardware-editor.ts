@@ -96,6 +96,11 @@ export function estadoGuardar(subidasActivas: number, guardando: boolean): { des
   return { deshabilitado: subiendo || guardando, aviso: subiendo ? AVISO_SUBIDAS : "" };
 }
 
+// Mientras hay un guardado en vuelo no se puede cancelar ni cerrar: la respuesta debe llegar a la misma sesión de edición.
+export function estadoCancelar(guardando: boolean): { deshabilitado: boolean; ariaDisabled: "true" | "false" } {
+  return { deshabilitado: guardando, ariaDisabled: guardando ? "true" : "false" };
+}
+
 export const MENSAJE_CANDADO = "Hay otro guardado en curso. Tu texto sigue aquí; intenta guardar de nuevo en unos segundos.";
 
 export interface RespuestaApi {

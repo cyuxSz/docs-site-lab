@@ -204,3 +204,29 @@ test("global.css: lado a lado desde 64rem (pestañas ocultas) y papelera con tok
   assert.ok(pap.length, "estilos .hw-papelera");
   for (const r of pap) assert.doesNotMatch(r, /#[0-9a-f]{3,8}\b|rgb\(/i, `sin colores fijos: ${r}`);
 });
+
+// ---------- Revisión CodeRabbit: cancelar durante el guardado y vista previa tras inserciones ----------
+
+test("estadoCancelar: bloquea Cancelar con aria-disabled mientras se guarda", () => {
+  const { estadoCancelar } = L();
+  assert.deepEqual(estadoCancelar(true), { deshabilitado: true, ariaDisabled: "true" });
+  assert.deepEqual(estadoCancelar(false), { deshabilitado: false, ariaDisabled: "false" });
+});
+
+test("el script ignora Cancelar y abrirEditor durante el guardado y refleja el estado en el botón", () => {
+  const s = leer(SCRIPT).replace(/\r\n/g, "\n");
+  const i = s.indexOf('escuchar(btnCancelar, "click"');
+  assert.ok(i > 0);
+  const bloque = s.slice(i, s.indexOf("\n  });", i));
+  assert.equal((bloque.match(/if \(guardando\) return;/g) ?? []).length, 2, "antes y después del diálogo de descartar");
+  const j = s.indexOf("function abrirEditor()");
+  assert.match(s.slice(j, j + 200), /if \(guardando\) return;/, "abrirEditor no abre otra sesión en vuelo");
+  assert.match(s, /btnCancelar\.disabled = c\.deshabilitado/);
+  assert.match(s, /btnCancelar\.setAttribute\("aria-disabled", c\.ariaDisabled\)/);
+});
+
+test("insertar y la inserción de diagramas repintan la vista previa tras asignar textarea.value", () => {
+  const s = leer(SCRIPT).replace(/\r\n/g, "\n");
+  const asign = [...s.matchAll(/textarea\.value = (?:res|r)\.texto;\n\s*textarea\.setSelectionRange[^\n]*\n\s*previaViva\(\);/g)];
+  assert.equal(asign.length, 2);
+});
