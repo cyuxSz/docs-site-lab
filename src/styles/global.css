@@ -460,7 +460,11 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 .pagina-menu-btn:hover, .pagina-menu-btn[aria-expanded="true"] { border-color: var(--accent); }
 .pagina-menu-btn:focus-visible, .pagina-menu a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pagina-menu { position: absolute; top: 100%; right: 0; z-index: 20; display: grid; gap: 6px; min-width: 200px; max-width: min(360px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; }
-.pagina-menu[hidden] { display: none; }
+/* Sin JS el panel se ve (aunque lleve hidden) y el botón ⋯ no; tema-inline.js pone data-js en <html> antes de pintar. */
+html:not([data-js]) .pagina-menu-btn { display: none; }
+html:not([data-js]) .pagina-menu { position: static; display: grid; max-height: none; }
+html:not([data-js]) .pagina-menu[hidden] { display: grid !important; } /* gana al [hidden] global con !important */
+html[data-js] .pagina-menu[hidden] { display: none; }
 
 /* Bloques de código con botón Copiar y anclas de encabezados */
 .code-wrap { position: relative; margin: 16px 0; }
