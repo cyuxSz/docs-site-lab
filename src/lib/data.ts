@@ -147,11 +147,11 @@ const SECTIONS: [string, string][] = [
 
 export function sections(pages: PageInfo[]) {
   const visible = pages.filter((p) => p.type !== "meta");
-  const groups = new Map<string, { label: string; pages: PageInfo[] }>();
-  for (const [dir, label] of SECTIONS) groups.set(dir, { label, pages: [] });
+  const groups = new Map<string, { id: string; label: string; pages: PageInfo[] }>();
+  for (const [dir, label] of SECTIONS) groups.set(dir, { id: dir || "raiz", label, pages: [] });
   for (const p of visible) {
     const dir = p.path.includes("/") ? p.path.split("/")[0] : "";
-    if (!groups.has(dir)) groups.set(dir, { label: visible.find((x) => x.type === "index" && x.path === `${dir}/index.md`)?.title ?? dir, pages: [] });
+    if (!groups.has(dir)) groups.set(dir, { id: dir || "raiz", label: visible.find((x) => x.type === "index" && x.path === `${dir}/index.md`)?.title ?? dir, pages: [] });
     groups.get(dir)!.pages.push(p);
   }
   for (const g of groups.values()) g.pages.sort((a, b) => Number(b.type === "index") - Number(a.type === "index") || a.title.localeCompare(b.title, "es"));

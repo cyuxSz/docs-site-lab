@@ -2,6 +2,7 @@
 // Navegación de la wiki por secciones. En celular queda plegada detrás de un botón; el estado inicial lo decide
 // el CSS (no un script después de pintar) para no mover la página al cargar.
 import { sections, type PageInfo } from "../lib/data";
+import { grupoActual } from "../lib/nav-grupos";
 
 interface Props {
   projectId: string;
@@ -14,19 +15,21 @@ interface Props {
   id?: string;
 }
 const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas, id } = Astro.props;
+const grupos = sections(pages);
+const actual = grupoActual(grupos, currentRoute);
 ---
 <nav class="sidenav" id={id} data-proyecto={projectId} aria-label={`Páginas de ${projectName}`} data-pagefind-ignore="all">
   <button class="sidenav-toggle" type="button" aria-expanded="false" aria-controls="sidenav-list">Páginas de {projectName}</button>
   <div class="sidenav-list" id="sidenav-list">
-    {sections(pages).map((s) => (
-      <div>
-        <h2>{s.label}</h2>
+    {grupos.map((s) => (
+      <details class="nav-grupo" data-nav-grupo={s.id} open={s.id === actual}>
+        <summary>{s.label}</summary>
         <ul>
           {s.pages.filter((p) => !(rutas && p.path === "rutas.md")).map((p) => (
             <li><a href={p.route} data-astro-prefetch aria-current={p.route === currentRoute ? "page" : undefined}>{p.type === "index" ? `Resumen de ${s.label.toLowerCase()}` : p.title}</a></li>
           ))}
         </ul>
-      </div>
+      </details>
     ))}
     <div class="favoritos" data-favoritos-lista data-proyecto={projectId} hidden>
       <h2>Favoritos</h2>
@@ -43,6 +46,7 @@ const { projectId, projectName, pages, currentRoute, hasDiagrams, rutas, id } = 
 <script>
   import "../scripts/personal";
   import "../scripts/contador-nav";
+  import "../scripts/nav-grupos";
   document.querySelectorAll<HTMLButtonElement>(".sidenav-toggle").forEach((b) =>
     b.addEventListener("click", () => {
       const open = b.closest(".sidenav")!.classList.toggle("open");
