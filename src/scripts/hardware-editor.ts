@@ -8,16 +8,25 @@ import {
   alAbortar,
   actualizarTituloIndice,
   clavePagina,
+  crearCerrojoGuardado,
+  crearDebounce,
+  debeAvisarSalida,
+  DEBOUNCE_PREVIA_MS,
   enlaceArchivo,
+  esAtajoGuardar,
+  esEnlaceDeLaDisciplina,
   insertarEnTexto,
   AVISO_SUBIDAS,
   estadoGuardar,
+  MEDIA_LADO_A_LADO,
   mensajeError,
   moverEnOrden,
   paginaActual,
+  pedirApi,
   porcentaje,
   resultadoBorrado,
   resultadoGuardado,
+  resultadoRestaurarPapelera,
   rutaBlob,
   slugDeTitulo,
   slugUnico,
@@ -38,6 +47,7 @@ interface PaginaHw {
 interface Respuesta {
   status: number;
   json: any;
+  fallo?: "red" | "timeout";
 }
 
 // Inicialización idempotente: una sola instancia viva por carga de página. Si el script vuelve a ejecutarse (o la
@@ -72,6 +82,10 @@ async function iniciar(root: HTMLElement) {
   const btnEditar = $<HTMLButtonElement>("[data-hw-editar]");
   const btnBorrar = $<HTMLButtonElement>("[data-hw-borrar]");
   const btnNueva = $<HTMLButtonElement>("[data-hw-nueva]");
+  const btnPapelera = $<HTMLButtonElement>("[data-hw-abrir-papelera]");
+  const dlgPapelera = $<HTMLDialogElement>("#hw-papelera");
+  const listaPapelera = dlgPapelera.querySelector<HTMLElement>("[data-hw-papelera-lista]")!;
+  const estadoPapelera = dlgPapelera.querySelector<HTMLElement>("[data-hw-papelera-estado]")!;
   const form = $<HTMLFormElement>("[data-hw-editor]");
   const textarea = $<HTMLTextAreaElement>("#hw-md");
   const previa = $("[data-hw-previa]");
@@ -102,6 +116,8 @@ async function iniciar(root: HTMLElement) {
   let editando = false;
   let subidasActivas = 0;
   let guardando = false;
+  let salidaConfirmada = false; // el usuario eligió "Descartar": no debe salir además el aviso nativo
+  const cerrojo = crearCerrojoGuardado();
   function actualizarGuardar(avisar = false) {
     const e = estadoGuardar(subidasActivas, guardando);
     btnGuardar.disabled = e.deshabilitado;
@@ -122,18 +138,13 @@ async function iniciar(root: HTMLElement) {
       init.headers = { "content-type": "application/json" };
       init.body = JSON.stringify({ proyecto, disciplina, ...opciones.cuerpo });
     }
-    try {
-      const res = await fetch(`/api/hardware/${metodo === "GET" ? `?${params}` : ""}`, init);
-      let json: any = null;
-      try {
-        json = await res.json();
-      } catch {}
-      return { status: res.status, json };
-    } catch {
-      return { status: 0, json: null };
-    }
+    return pedirApi(fetch, `/api/hardware/${metodo === "GET" ? `?${params}` : ""}`, init, { senal });
   }
-  const msg = (status: number) => mensajeError(status === 0 ? "red" : status);
+  const msg = (r: number | { status: number; fallo?: string }) => {
+    const status = typeof r === "number" ? r : r.status;
+    if (status === 0) return mensajeError(typeof r !== "number" && r.fallo === "timeout" ? "timeout" : "red");
+    return mensajeError(status);
+  };
 
   // ---------- DOM ----------
   // Render del Markdown en el navegador (marked + DOMPurify), carga diferida y memoizada. Se dispara al iniciar,
@@ -231,7 +242,7 @@ async function iniciar(root: HTMLElement) {
     mostrarEstado("");
     const r = await api("POST", { cuerpo: { accion: "reordenar", orden } });
     if (r.status !== 200 || !Array.isArray(r.json?.paginas)) {
-      mostrarError(msg(r.status));
+      mostrarError(msg(r));
       return;
     }
     indice = r.json.paginas;
@@ -346,7 +357,7 @@ async function iniciar(root: HTMLElement) {
     const nuevoMd = reemplazarDiagrama(pagina.md, ctx.anterior, datos);
     if (nuevoMd === null) return { ok: false, error: TEXTO_CONFLICTO };
     const res = await api("PUT", { cuerpo: { pagina: pagina.slug, md: nuevoMd, version: pagina.version } });
-    if (res.status !== 200 || !res.json?.pagina) return { ok: false, error: resultadoGuardado(res.status).mensaje };
+    if (res.status !== 200 || !res.json?.pagina) return { ok: false, error: resultadoGuardado(res.status, res).mensaje };
     indice = actualizarTituloIndice(indice, res.json.pagina);
     ctx.anterior = datos.fuente; // referencia vigente para el siguiente guardado
     fuenteNueva = datos.fuente;
@@ -386,7 +397,7 @@ async function iniciar(root: HTMLElement) {
     try {
       const r = await fetch(`/api/archivos/?${new URLSearchParams({ proyecto, id: fuenteId })}`, { credentials: "same-origin", cache: "no-store" });
       if (r.ok) texto = await r.text();
-      else mostrarError(msg(r.status));
+      else mostrarError(msg(r));
     } catch {
       mostrarError(msg(0));
     }
@@ -427,7 +438,7 @@ async function iniciar(root: HTMLElement) {
     const r = await api("GET");
     if (r.status !== 200 || !Array.isArray(r.json?.paginas)) {
       mostrarEstado("");
-      mostrarError(msg(r.status));
+      mostrarError(msg(r));
       return false;
     }
     indice = r.json.paginas;
@@ -467,7 +478,7 @@ async function iniciar(root: HTMLElement) {
         vista("no-encontrada");
       } else {
         vista("ninguna");
-        mostrarError(msg(r.status));
+        mostrarError(msg(r));
       }
       return;
     }
@@ -505,7 +516,7 @@ async function iniciar(root: HTMLElement) {
     btnInicializar.disabled = false;
     if (r.status !== 200 && r.status !== 201) {
       mostrarEstado("");
-      mostrarError(msg(r.status));
+      mostrarError(msg(r));
       return;
     }
     if (await cargarIndice()) {
@@ -549,18 +560,38 @@ async function iniciar(root: HTMLElement) {
   }
 
   // ---------- editor ----------
-  const hayCambios = () => editando && textarea.value !== baseMd;
+  const hayCambios = () => debeAvisarSalida({ editando, actual: textarea.value, base: baseMd });
 
+  // Escritorio: los dos paneles lado a lado (las pestañas se ocultan por CSS y nada lleva hidden). Móvil: pestañas.
+  const mqLado = window.matchMedia(MEDIA_LADO_A_LADO);
+  let modoActual: "escribir" | "previa" = "escribir";
   function modoEditor(modo: "escribir" | "previa") {
+    modoActual = modo;
     for (const t of pestanas) {
       const activa = t.dataset.hwTab === modo;
       t.setAttribute("aria-selected", String(activa));
       t.tabIndex = activa ? 0 : -1;
     }
-    panelEscribir.hidden = modo !== "escribir";
-    btnInsertarDiagrama.hidden = modo !== "escribir";
-    previa.hidden = modo !== "previa";
+    const lado = mqLado.matches;
+    panelEscribir.hidden = !lado && modo !== "escribir";
+    btnInsertarDiagrama.hidden = !lado && modo !== "escribir";
+    previa.hidden = !lado && modo !== "previa";
   }
+
+  const previaVisible = () => editando && (mqLado.matches || modoActual === "previa");
+  // Vista previa en vivo: se repinta al escribir, con debounce, con el mismo renderizador de la lectura.
+  const previaViva = crearDebounce(() => {
+    if (previaVisible()) void pintarMd(previa, textarea.value, pagina?.titulo);
+  }, DEBOUNCE_PREVIA_MS);
+  escuchar(textarea, "input", () => previaViva());
+  // Al cruzar el umbral se pasa de un modo al otro sin tocar el texto; el foco se conserva si su panel sigue visible.
+  escuchar(mqLado, "change", () => {
+    if (!editando) return;
+    const foco = document.activeElement;
+    modoEditor(modoActual);
+    if (previaVisible()) void pintarMd(previa, textarea.value, pagina?.titulo);
+    if (foco === textarea || foco === previa) (previa.hidden && foco === previa ? textarea : (foco as HTMLElement)).focus();
+  });
 
   async function mostrarPrevia() {
     modoEditor("previa");
@@ -579,9 +610,11 @@ async function iniciar(root: HTMLElement) {
     form.hidden = false;
     for (const el of soloEditor) if (el.closest("[data-hw-pagina]")) el.hidden = true;
     textarea.focus();
+    if (mqLado.matches) void pintarMd(previa, textarea.value, pagina?.titulo);
   }
 
   function cerrarEditor() {
+    previaViva.cancelar();
     editando = false;
     form.hidden = true;
     lectura.hidden = false;
@@ -612,30 +645,75 @@ async function iniciar(root: HTMLElement) {
     });
   }
 
-  escuchar(form, "submit", async (e) => {
-    e.preventDefault();
-    if (!pagina) return;
+  // salir: true (botón Guardar) cierra el editor; salir: false (Ctrl/Cmd+S) lo deja abierto con texto, cursor y foco.
+  async function guardar({ salir }: { salir: boolean }) {
+    if (!pagina || !editando) return;
     errorEditor("");
     if (subidasActivas > 0) {
       actualizarGuardar(true);
       return;
     }
-    mostrarEstado("");
-    guardando = true;
-    actualizarGuardar();
-    const r = await api("PUT", { cuerpo: { pagina: pagina.slug, md: textarea.value, version: pagina.version } });
-    guardando = false;
-    actualizarGuardar();
+    const inicio = textarea.selectionStart;
+    const fin = textarea.selectionEnd;
+    const scroll = textarea.scrollTop;
+    const envio = cerrojo.intentar(async () => {
+      const actual = pagina!;
+      mostrarEstado("Guardando…");
+      guardando = true;
+      actualizarGuardar();
+      const r = await api("PUT", { cuerpo: { pagina: actual.slug, md: textarea.value, version: actual.version } });
+      guardando = false;
+      actualizarGuardar();
+      return r;
+    });
+    if (!envio) return;
+    const r = await envio;
     if (r.status !== 200 || !r.json?.pagina) {
       // Con 409 (u otro error) el textarea conserva lo escrito.
-      errorEditor(resultadoGuardado(r.status).mensaje);
+      mostrarEstado("");
+      errorEditor(resultadoGuardado(r.status, r).mensaje);
+      textarea.focus();
       return;
     }
-    cerrarEditor();
     indice = actualizarTituloIndice(indice, r.json.pagina);
-    await pintarPagina(r.json.pagina);
+    if (salir) {
+      cerrarEditor();
+      await pintarPagina(r.json.pagina);
+    } else {
+      baseMd = r.json.pagina.md;
+      await pintarPagina(r.json.pagina);
+      textarea.focus();
+      textarea.setSelectionRange(inicio, fin);
+      textarea.scrollTop = scroll;
+    }
     mostrarEstado("Guardado");
     if (historial.open) void cargarHistorial();
+  }
+  escuchar(form, "submit", (e) => {
+    e.preventDefault();
+    mostrarEstado("");
+    void guardar({ salir: true });
+  });
+  // Ctrl/Cmd+S: nunca se deja pasar al «Guardar como» del navegador, aunque ahora no se pueda guardar.
+  escuchar(document, "keydown", (e) => {
+    if (!editando || !esAtajoGuardar(e)) return;
+    e.preventDefault();
+    if (!document.querySelector("dialog[open]")) void guardar({ salir: false });
+  });
+
+  // Enlaces de la disciplina con cambios sin guardar: se pregunta antes de salir (los externos los cubre beforeunload).
+  escuchar(document, "click", async (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || !hayCambios()) return;
+    const a = (e.target as Element).closest?.("a[href]") as HTMLAnchorElement | null;
+    if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+    if (!esEnlaceDeLaDisciplina(a.href, location.href, proyecto, disciplina)) return;
+    e.preventDefault();
+    if (!(await preguntar(dlgDescartar))) {
+      textarea.focus();
+      return;
+    }
+    salidaConfirmada = true;
+    location.assign(a.href);
   });
 
   // ---------- crear página ----------
@@ -666,7 +744,7 @@ async function iniciar(root: HTMLElement) {
     );
     const r = await api("POST", { cuerpo: { accion: "crear", pagina: slug, titulo } });
     if (r.status !== 201) {
-      errNueva.textContent = msg(r.status);
+      errNueva.textContent = msg(r);
       errNueva.hidden = false;
       return;
     }
@@ -703,7 +781,7 @@ async function iniciar(root: HTMLElement) {
     listaRevisiones.replaceChildren();
     const r = await api("GET", { query: { pagina: pagina.slug, revisiones: "1" } });
     if (r.status !== 200 || !Array.isArray(r.json?.revisiones)) {
-      historialEstado.textContent = msg(r.status);
+      historialEstado.textContent = msg(r);
       return;
     }
     const revs = r.json.revisiones as { n: number; titulo: string; autor: string; actualizado: string; version: number }[];
@@ -744,7 +822,7 @@ async function iniciar(root: HTMLElement) {
     const r = await api("POST", { cuerpo: { accion: "restaurar", pagina: pagina.slug, revision: Number(b.dataset.n), version: pagina.version } });
     b.disabled = false;
     if (r.status !== 200 || !r.json?.pagina) {
-      historialEstado.textContent = msg(r.status);
+      historialEstado.textContent = msg(r);
       return;
     }
     indice = actualizarTituloIndice(indice, r.json.pagina);
@@ -926,8 +1004,69 @@ async function iniciar(root: HTMLElement) {
   });
 
   escuchar(globalThis, "beforeunload", (e) => {
-    if (hayCambios()) e.preventDefault();
+    if (!salidaConfirmada && hayCambios()) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
   });
+
+  // ---------- papelera ----------
+  function filaPapelera(e: { id: string; titulo: string; borradoPor: string; borrado: string }) {
+    const li = document.createElement("li");
+    li.className = "hw-papelera-item";
+    const info = document.createElement("span");
+    info.className = "hw-papelera-info";
+    const titulo = document.createElement("strong");
+    titulo.textContent = e.titulo;
+    const quien = document.createElement("span");
+    quien.className = "hw-papelera-meta";
+    quien.append(`Borrada por ${e.borradoPor} · `);
+    const t = document.createElement("time");
+    t.dateTime = e.borrado;
+    t.textContent = fechaRelativa(e.borrado) || e.borrado;
+    quien.append(t);
+    info.append(titulo, quien);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn hw-papelera-restaurar";
+    b.dataset.id = e.id;
+    b.textContent = "Restaurar";
+    b.setAttribute("aria-label", `Restaurar «${e.titulo}»`);
+    li.append(info, b);
+    return li;
+  }
+  escuchar(btnPapelera, "click", async () => {
+    listaPapelera.replaceChildren();
+    estadoPapelera.textContent = "Cargando…";
+    if (!dlgPapelera.open) dlgPapelera.showModal();
+    const r = await api("GET", { query: { papelera: "1" } });
+    if (!dlgPapelera.open) return;
+    if (r.status !== 200 || !Array.isArray(r.json?.papelera)) {
+      estadoPapelera.textContent = msg(r);
+      return;
+    }
+    const entradas = r.json.papelera as { id: string; slug: string; titulo: string; borradoPor: string; borrado: string }[];
+    estadoPapelera.textContent = entradas.length ? "" : "La papelera está vacía";
+    listaPapelera.replaceChildren(...entradas.map(filaPapelera));
+  });
+  escuchar(listaPapelera, "click", async (e) => {
+    const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-papelera-restaurar");
+    if (!b || b.disabled) return;
+    b.disabled = true;
+    estadoPapelera.textContent = "Restaurando…";
+    const r = await api("POST", { cuerpo: { accion: "restaurar-papelera", id: b.dataset.id } });
+    const res = resultadoRestaurarPapelera(r.status, r);
+    if (!res.ok || !r.json?.pagina) {
+      b.disabled = false;
+      estadoPapelera.textContent = res.mensaje || msg(r);
+      return;
+    }
+    estadoPapelera.textContent = "Página restaurada";
+    dlgPapelera.close();
+    location.assign(urlPagina(proyecto, disciplina, r.json.pagina.slug));
+  });
+  escuchar(dlgPapelera.querySelector("[data-hw-no]")!, "click", () => dlgPapelera.close());
+  escuchar(dlgPapelera, "close", () => btnPapelera.focus());
 
   // ---------- arranque ----------
   void cargarRender().catch(() => {});
