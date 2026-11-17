@@ -6,6 +6,7 @@ import { isRestricted } from "../../../access.config.js";
 import { separarPlan } from "../../lib/plan";
 import { builtProjects, project as load, projectNav } from "../../lib/data";
 import { insignias } from "../../lib/estados";
+import { enlacesHardware } from "../../lib/hw-enlaces";
 
 export function getStaticPaths() {
   return builtProjects().map((p) => ({ params: { project: p.id } }));
@@ -31,6 +32,17 @@ const rows = (ros?.nodes ?? [])
     ...n,
     pubs: ros!.edges.filter((e) => e.source === n.id && e.kind !== "hw").map((e) => label(e.target)),
     subs: ros!.edges.filter((e) => e.target === n.id && e.kind !== "hw").map((e) => label(e.source)),
+  }));
+const enlacesHw = enlacesHardware(p, p.ros?.nodes ?? []).enlaces;
+const filasHw = (ros?.nodes ?? [])
+  .filter((n) => n.category === "hardware")
+  .sort((a, b) => a.label.localeCompare(b.label, "es"))
+  .map((n) => ({
+    ...n,
+    vecinos: [...new Set(ros!.edges.flatMap((e) => (e.source === n.id ? [e.target] : e.target === n.id ? [e.source] : [])))]
+      .filter((id) => ["ros2_node", "hardware"].includes(ros!.nodes.find((x) => x.id === id)?.category ?? ""))
+      .map((id) => ({ id, label: label(id) })),
+    enlace: Object.hasOwn(enlacesHw, n.id) ? enlacesHw[n.id] : null,
   }));
 const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label ?? id;
 ---
@@ -68,6 +80,29 @@ const configLabel = (id: string) => ros?.configs.find((c) => c.id === id)?.label
                   <td>{n.pubs.map((t) => <code style="display:block">{t}</code>)}</td>
                   <td>{n.subs.map((t) => <code style="display:block">{t}</code>)}</td>
                   <td>{n.configs.map(configLabel).join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    )}
+    {filasHw.length > 0 && (
+      <section class="block" data-pagefind-body={restricted ? undefined : ""}>
+        <div class="block-head"><h2>Hardware</h2></div>
+        <p class="hint">Las piezas físicas del vehículo, con los nodos a los que se conectan y su documentación en Electrónica o Mecánica.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <caption class="sr-only">Hardware del grafo con sus conexiones y documentación</caption>
+            <thead>
+              <tr><th scope="col">Pieza</th><th scope="col">Conectado a</th><th scope="col">Documentación</th></tr>
+            </thead>
+            <tbody>
+              {filasHw.map((n) => (
+                <tr>
+                  <td><a href={`?node=${encodeURIComponent(n.id)}`}>{n.label}</a></td>
+                  <td>{n.vecinos.length ? n.vecinos.map((v) => <a href={`?node=${encodeURIComponent(v.id)}`} style="display:block"><code>{v.label}</code></a>) : "—"}</td>
+                  <td>{n.enlace ? <a href={n.enlace.href}>{n.enlace.etiqueta}</a> : "—"}</td>
                 </tr>
               ))}
             </tbody>

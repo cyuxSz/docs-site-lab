@@ -3,6 +3,7 @@
 // está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
 import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
+import { usoDePagina } from "../lib/hw-enlaces";
 import { esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
 import {
   alAbortar,
@@ -77,6 +78,8 @@ async function iniciar(root: HTMLElement) {
   const secNoEncontrada = $("[data-hw-no-encontrada]");
   const enlacePrimera = $<HTMLAnchorElement>("[data-hw-primera]");
   const secPagina = $("[data-hw-pagina]");
+  const secUsado = $("[data-hw-usado-por-seccion]");
+  const listaUsado = $("[data-hw-usado-por-lista]");
   const lectura = $("[data-hw-lectura]");
   const listaIndice = $("[data-hw-indice]");
   const soloEditor = [...document.querySelectorAll<HTMLElement>("[data-hw-solo-editor]")];
@@ -216,6 +219,39 @@ async function iniciar(root: HTMLElement) {
     secVacio.hidden = cual !== "vacio";
     secNoEncontrada.hidden = cual !== "no-encontrada";
     secPagina.hidden = cual !== "pagina";
+    if (cual !== "pagina") secUsado.hidden = true;
+  }
+
+  // «Usado por»: nodos ROS que usan las piezas enlazadas a esta página (datos del build, solo createElement/textContent).
+  function pintarUsadoPor(slug: string) {
+    const usos = usoDePagina(root.dataset.hwUsadoPor, slug);
+    listaUsado.replaceChildren(
+      ...usos.map((u) => {
+        const li = document.createElement("li");
+        const nombre = document.createElement("strong");
+        nombre.textContent = u.label;
+        li.append(nombre);
+        if (!u.nodos.length) {
+          const p = document.createElement("span");
+          p.className = "hw-usado-nodos";
+          p.textContent = "Ningún nodo ROS lo usa directamente";
+          li.append(p);
+          return li;
+        }
+        const nodos = document.createElement("span");
+        nodos.className = "hw-usado-nodos";
+        for (const n of u.nodos) {
+          const a = document.createElement("a");
+          a.href = n.href;
+          a.textContent = n.label;
+          nodos.append(a);
+          if (n.plan) nodos.append(" (planeado)");
+        }
+        li.append(nodos);
+        return li;
+      }),
+    );
+    secUsado.hidden = editando || !usos.length;
   }
   const primera = () => (indice[0] ? urlPagina(proyecto, disciplina, indice[0].slug) : `/${proyecto}/${disciplina}/`);
 
@@ -512,6 +548,7 @@ async function iniciar(root: HTMLElement) {
     vista("pagina");
     mostrarEstado("");
     await pintarPagina(r.json.pagina);
+    pintarUsadoPor(r.json.pagina.slug);
     historial.hidden = false;
     await activarComentarios(r.json.pagina.slug);
   }
@@ -634,6 +671,7 @@ async function iniciar(root: HTMLElement) {
     errorEditor("");
     modoEditor("escribir");
     lectura.hidden = true;
+    secUsado.hidden = true;
     form.hidden = false;
     for (const el of soloEditor) if (el.closest("[data-hw-pagina]")) el.hidden = true;
     textarea.focus();
@@ -645,6 +683,7 @@ async function iniciar(root: HTMLElement) {
     editando = false;
     form.hidden = true;
     lectura.hidden = false;
+    if (pagina) pintarUsadoPor(pagina.slug);
     previa.textContent = "";
     errorEditor("");
     for (const el of soloEditor) el.hidden = !editable;

@@ -1523,6 +1523,7 @@ export default function RoboticsGraph({ projectId, views }: Props) {
             )}
             <div className="rg-actions">
               {node.file && node.kind !== "page" && <a className="btn" href={codeUrl(node.file, node.line)} target="_blank" rel="noopener noreferrer">Ver código ↗</a>}
+              {node.hwPagina && <a className="btn" href={node.hwPagina.href}>{node.hwPagina.etiqueta}</a>}
               {node.doc && <a className="btn btn-primary" href={node.doc}>Ver documentación completa</a>}
               <button className="btn" type="button" onClick={copyLink}>Copiar enlace a este nodo</button>
             </div>
