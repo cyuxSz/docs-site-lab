@@ -18,6 +18,7 @@ import {
   insertarEnTexto,
   AVISO_SUBIDAS,
   estadoGuardar,
+  estadoCancelar,
   MEDIA_LADO_A_LADO,
   mensajeError,
   mensajeRespuesta,
@@ -126,6 +127,9 @@ async function iniciar(root: HTMLElement) {
     inputArchivo.disabled = guardando;
     btnInsertarDiagrama.disabled = guardando;
     btnGuardar.title = e.aviso;
+    const c = estadoCancelar(guardando);
+    btnCancelar.disabled = c.deshabilitado;
+    btnCancelar.setAttribute("aria-disabled", c.ariaDisabled);
     if (e.aviso && avisar) mostrarEstado(e.aviso);
     else if (!e.aviso && lblEstado.textContent === AVISO_SUBIDAS) mostrarEstado("");
   }
@@ -344,6 +348,7 @@ async function iniciar(root: HTMLElement) {
       if (res === null) return { ok: false, error: "El bloque del diagrama ya no está en la página. Revisa el texto antes de guardar." };
       textarea.value = res.texto;
       textarea.setSelectionRange(res.cursor, res.cursor);
+      previaViva();
       ctx.anterior = datos.fuente; // referencia vigente para el siguiente guardado
       lblSubiendo.textContent = "Diagrama insertado. Guarda la página para publicarlo.";
       return { ok: true };
@@ -597,6 +602,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   function abrirEditor() {
+    if (guardando) return;
     if (!pagina || !editable) return;
     editando = true;
     baseMd = pagina.md;
@@ -623,11 +629,13 @@ async function iniciar(root: HTMLElement) {
 
   escuchar(btnEditar, "click", abrirEditor);
   escuchar(btnCancelar, "click", async () => {
+    if (guardando) return;
     mostrarEstado("");
     if (hayCambios() && !(await preguntar(dlgDescartar))) {
       textarea.focus();
       return;
     }
+    if (guardando) return;
     cerrarEditor();
   });
 
@@ -834,6 +842,7 @@ async function iniciar(root: HTMLElement) {
     const r = insertarEnTexto(textarea.value, textarea.selectionStart, textarea.selectionEnd, texto);
     textarea.value = r.texto;
     textarea.setSelectionRange(r.cursor, r.cursor);
+    previaViva();
   }
 
   // Sin avance durante este tiempo se aborta: el SDK reintenta en silencio los fallos de red y, sin esto, la barra
