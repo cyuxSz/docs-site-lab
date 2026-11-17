@@ -109,9 +109,9 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
           <div class="pagina-meta" data-pagina-meta data-pagefind-ignore>
             <p class="pagina-meta-linea">
               <span>Actualizado {entry.data.updated ? <time datetime={entry.data.updated} data-hace>{fmtDate(entry.data.updated)}</time> : fmtDate(entry.data.updated)}{entry.data.author && <span class="muted"> · {entry.data.author}</span>}</span>
-              {entry.data.claims > 0 && <span>{entry.data.claims} afirmaciones verificadas contra el código</span>}
+              {entry.data.claims > 0 && <span>{entry.data.claims} afirmaciones verificadas<span class="sr-only"> contra el código</span></span>}
               {entry.data.owner && <span>Responsable: {entry.data.owner}</span>}
-              <a href={entry.data.source}>Ver en GitHub</a>
+              <a href={entry.data.source} aria-label="Ver en GitHub (se abre en otra pestaña)" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
             </p>
             <button type="button" class="pagina-menu-btn" data-pagina-menu-btn aria-expanded="false" aria-controls="pagina-menu" aria-label="Más acciones de la página: editar, reportar e historial"><span aria-hidden="true">⋯</span></button>
             <div class="pagina-menu" id="pagina-menu" data-pagefind-ignore hidden>
