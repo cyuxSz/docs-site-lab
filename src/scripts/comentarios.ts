@@ -336,20 +336,19 @@ function iniciar(root: HTMLElement) {
   // #comentarios y #comentario-<uuid> despliegan la sección (al cargar y en hashchange).
   function abrirDesdeHash() {
     const h = abrirPorHash(location.hash);
+    // Siempre: un hash nuevo (#comentarios u otro) cancela el destino pendiente anterior.
+    idHash = h.id;
     if (!h.abrir) return;
     cuerpo.hidden = false;
     toggle.setAttribute("aria-expanded", "true");
     signo.textContent = "−";
-    if (h.id) {
-      idHash = h.id;
-      if (cargado) {
-        const destino = document.getElementById(`comentario-${h.id}`);
-        if (destino) {
-          idHash = null;
-          destino.tabIndex = -1;
-          destino.scrollIntoView({ block: "center" });
-          destino.focus();
-        }
+    if (h.id && cargado) {
+      const destino = document.getElementById(`comentario-${h.id}`);
+      if (destino) {
+        idHash = null;
+        destino.tabIndex = -1;
+        destino.scrollIntoView({ block: "center" });
+        destino.focus();
       }
     }
     cargarUnaVez();
