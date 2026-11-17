@@ -29,8 +29,10 @@ export function migas(pages: PageInfo[], route: string, project: { id: string; n
       break;
     }
     const indice = g.pages.find((p) => p.type === "index");
+    // Una carpeta sin índice pero con su página hermana (rutas/ y rutas.md) usa el título de esa página.
+    const hermana = indice ? undefined : pages.find((p) => p.path === `${actual.path.split("/")[0]}.md`);
     if (indice?.route === route) out.push({ label: g.label });
-    else out.push(indice ? { label: g.label, href: indice.route } : { label: g.label }, { label: actual.title });
+    else out.push(indice ? { label: g.label, href: indice.route } : hermana ? { label: hermana.title, href: hermana.route } : { label: g.label }, { label: actual.title });
     break;
   }
   return out;

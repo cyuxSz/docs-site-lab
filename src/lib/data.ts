@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import type { PanoramaCaja } from "./panorama";
 import type { Ruta } from "./rutas";
+import type { Tutorial } from "./tutoriales.ts";
 import { sugerenciasBusqueda } from "./lectura.ts";
 import { join } from "node:path";
 
@@ -113,6 +114,7 @@ export interface ProjectData extends ProjectSummary {
   ros: RosGraph | null;
   // Rutas de lectura por rol (tools/rutas.mjs); solo está si openwiki/rutas.md trae pasos válidos.
   rutas?: Ruta[];
+  tutoriales?: Tutorial[];
 }
 
 export interface ProjectTheme {

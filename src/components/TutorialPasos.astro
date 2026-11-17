@@ -1,0 +1,49 @@
+---
+// Checklist de un mini tutorial en /<id>/rutas/<slug>/. El texto llega escapado por Astro; el progreso lo pinta
+// src/scripts/tutoriales.ts con textContent.
+import type { Tutorial } from "../lib/tutoriales.ts";
+
+interface Props {
+  projectId: string;
+  tutorial: Tutorial;
+  rolNombre?: string;
+}
+const { projectId, tutorial, rolNombre } = Astro.props;
+const n = tutorial.pasos.length;
+const etiqueta: Record<string, string> = { software: "Software", electronica: "Electrónica", mecanica: "Mecánica" };
+---
+<div class="tutorial" data-proyecto={projectId} data-tutorial={JSON.stringify({ id: tutorial.id, route: tutorial.route, pasos: tutorial.pasos.map((s) => ({ id: s.id })) })}>
+  <p class="tutorial-meta muted">{etiqueta[tutorial.disciplina] ?? tutorial.disciplina}{tutorial.rol && ` · rol ${rolNombre ?? tutorial.rol}`}</p>
+  <ol class="tutorial-pasos">
+    {tutorial.pasos.map((s, i) => (
+      <li class="tutorial-paso" id={`paso-${s.id}`}>
+        <h2>{i + 1}. {s.titulo}</h2>
+        <p><strong>Objetivo:</strong> {s.objetivo}</p>
+        <p><a href={s.enlace.href}>{s.enlace.texto}</a></p>
+        <p class="tutorial-check">
+          <input type="checkbox" id={`hecho-${s.id}`} data-paso={s.id} />
+          <label for={`hecho-${s.id}`}>Hecho cuando: {s.hecho}</label>
+        </p>
+      </li>
+    ))}
+  </ol>
+  <div class="tutorial-progreso">
+    <progress max={n} value="0" aria-label="Progreso del tutorial"></progress>
+    <p class="tutorial-contador" aria-live="polite" data-contador>0 de {n} pasos hechos</p>
+  </div>
+  <div class="tutorial-acciones">
+    <button type="button" class="btn btn-primary" data-reanudar>Reanudar</button>
+    <button type="button" class="btn" data-reiniciar>Reiniciar tutorial</button>
+  </div>
+  <dialog class="atajos-dialog" aria-labelledby="tutorial-reiniciar-titulo" data-pagefind-ignore="all">
+    <div class="atajos-bar"><h2 id="tutorial-reiniciar-titulo">Reiniciar tutorial</h2></div>
+    <p class="atajos-nota">¿Reiniciar este tutorial? Se borrará lo que marcaste como hecho.</p>
+    <div class="atajos-bar">
+      <button type="button" data-reiniciar-ok>Reiniciar</button>
+      <button type="button" data-reiniciar-cancelar>Cancelar</button>
+    </div>
+  </dialog>
+</div>
+<script>
+  import "../scripts/tutoriales";
+</script>

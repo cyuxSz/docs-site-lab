@@ -42,6 +42,8 @@ if (root) {
     const ruta = rutas.find((x) => x.id === id);
     const panel = panels.find((x) => x.dataset.rol === id);
     if (ruta && panel) pintar(ruta, panel);
+    // La lista de mini tutoriales (src/scripts/tutoriales.ts) se filtra por este rol.
+    document.dispatchEvent(new CustomEvent("rutas:rol", { detail: { rol: id } }));
   };
 
   const inicial = rolGuardado(alm, proyecto, rutas) ?? rutas[0]?.id;
