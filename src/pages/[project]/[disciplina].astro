@@ -3,6 +3,7 @@
 // (src/scripts/hardware-editor.ts) lee y, con permiso de escritura, escribe por /api/hardware/ con la sesión del usuario.
 import Base from "../../layouts/Base.astro";
 import Comentarios from "../../components/Comentarios.astro";
+import { usadoPor, enlacesHardware } from "../../lib/hw-enlaces";
 import { builtProjects, project as load, projectNav } from "../../lib/data";
 
 export function getStaticPaths() {
@@ -12,10 +13,12 @@ export function getStaticPaths() {
 const disciplina = Astro.params.disciplina as "electronica" | "mecanica";
 const p = load(Astro.params.project!);
 const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.etiqueta ?? disciplina;
+const enlacesHw = enlacesHardware(p, p.ros?.nodes ?? []).enlaces;
+const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
 ---
 <Base title={`${etiqueta} · ${p.name}`} description={`Documentación de ${etiqueta.toLowerCase()} de ${p.name}.`} project={projectNav(p)} current={disciplina}>
   <div class="container">
-    <div class="doc doc-wiki" data-hw-proyecto={p.id} data-hw-disciplina={disciplina} data-hw-etiqueta={etiqueta}>
+    <div class="doc doc-wiki" data-hw-proyecto={p.id} data-hw-disciplina={disciplina} data-hw-etiqueta={etiqueta} data-hw-usado-por={JSON.stringify(usado)}>
       <div class="barra-caja barra-caja-izq">
         <button type="button" class="barra-btn" data-barra="izq" aria-controls="barra-izq" aria-expanded="true" aria-label="Ocultar navegación" title="Ocultar navegación"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg></button>
         <nav class="sidenav" id="barra-izq" aria-label={`Páginas de ${etiqueta}`} data-pagefind-ignore="all">
@@ -54,6 +57,11 @@ const etiqueta = projectNav(p).disciplinas.find((d) => d.id === disciplina)?.eti
             <button type="button" class="btn" data-hw-borrar>Borrar página</button>
           </div>
           <article class="prose hw-lectura" data-hw-lectura data-pagefind-ignore="all"></article>
+
+          <section class="hw-usado-por" data-hw-usado-por-seccion hidden aria-labelledby="hw-usado-por-titulo">
+            <h2 id="hw-usado-por-titulo">Usado por</h2>
+            <ul data-hw-usado-por-lista></ul>
+          </section>
 
           <form class="hw-editor" data-hw-editor hidden novalidate>
             <div class="hw-pestanas" role="tablist" aria-label="Modo del editor">
