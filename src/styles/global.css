@@ -792,17 +792,29 @@ figure.hw-diagrama figcaption { margin-top: 8px; font-size: 13px; color: dimgray
 figure.hw-diagrama .hw-diagrama-editar { display: block; margin: 10px auto 0; }
 /* D1a: visores. El PDF se enmarca con el visor del navegador (mismo origen); "Abrir PDF" queda siempre como respaldo (móvil). */
 figure.hw-pdf { margin: 1.5em 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); }
-figure.hw-pdf iframe { display: block; width: 100%; height: 70vh; min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: white; }
+figure.hw-pdf iframe { display: block; width: 100%; height: min(70vh, 900px); min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: white; }
 figure.hw-pdf > a { display: inline-block; margin-top: 8px; }
 figure.hw-pdf iframe + a { margin-top: 10px; }
 figure.hw-pdf figcaption { margin-top: 6px; font-size: 13px; color: var(--muted); }
-figure.hw-bom { margin: 1.5em 0; min-width: 0; }
-figure.hw-bom table { display: block; max-width: 100%; overflow-x: auto; margin: 0; }
+figure.hw-bom { margin: 1.5em 0; min-width: 0; max-width: 100%; overflow-x: auto; }
+figure.hw-bom:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+figure.hw-bom table { display: table; overflow: visible; width: 100%; min-width: 36rem; margin: 0; }
 figure.hw-bom th, figure.hw-bom td { vertical-align: top; }
 figure.hw-bom td:nth-child(n+3):nth-child(-n+5), figure.hw-bom thead th:nth-child(n+3):nth-child(-n+5), figure.hw-bom tfoot th:nth-child(n+3):nth-child(-n+5) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 figure.hw-bom tfoot th, figure.hw-bom tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
 figure.hw-bom .hw-bom-exportar { margin-top: 10px; }
-@media (max-width: 600px) { figure.hw-pdf iframe { height: 60vh; min-height: 280px; } }
+/* La BOM no es una tabla de tarjetas: deshace la regla responsive de .prose para conservar el layout de tabla (la figura se desplaza). */
+@media (max-width: 640px) {
+  .prose figure.hw-bom table { display: table; overflow: visible; }
+  .prose figure.hw-bom thead { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: table-header-group; }
+  .prose figure.hw-bom tbody { display: table-row-group; }
+  .prose figure.hw-bom tfoot { display: table-footer-group; }
+  .prose figure.hw-bom tr { display: table-row; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+  .prose figure.hw-bom :is(td, th) { display: table-cell; position: static; min-height: 0; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .prose figure.hw-bom td::before { content: none; }
+  .prose figure.hw-bom td:empty { display: table-cell; }
+}
+@media (max-width: 600px) { figure.hw-pdf iframe { height: min(60vh, 520px); min-height: 280px; } }
 .hw-diag-opciones { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; border: 0; }
 .hw-diagrama-fallo { margin: 0; padding: 24px; text-align: center; color: dimgray; }
 .hw-diag-opciones label { display: flex; align-items: center; gap: 8px; margin: 0; }

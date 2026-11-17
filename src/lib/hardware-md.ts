@@ -153,7 +153,8 @@ export function montarVisores(
   visores.forEach((v, i) => {
     const fig = figuras[i];
     if (v.tipo === "pdf") {
-      if (vistaPrevia || fig.querySelector("iframe")) return;
+      // Sin visor de PDF integrado (móvil) el iframe sería un recuadro en blanco: queda solo "Abrir PDF".
+      if (vistaPrevia || fig.querySelector("iframe") || doc.defaultView?.navigator?.pdfViewerEnabled === false) return;
       const marco = doc.createElement("iframe");
       marco.setAttribute("src", urlArchivo(proyecto, v.datos.archivo));
       marco.setAttribute("title", v.datos.titulo ? `PDF: ${v.datos.titulo}` : "PDF");
@@ -162,6 +163,10 @@ export function montarVisores(
       return;
     }
     const k = n++;
+    // La figura es la región desplazable: se puede mover con el teclado.
+    fig.setAttribute("tabindex", "0");
+    fig.setAttribute("role", "region");
+    fig.setAttribute("aria-label", total > 1 ? `Tabla BOM ${k + 1}` : "Tabla BOM");
     if (fig.querySelector("button")) return;
     const boton = doc.createElement("button");
     boton.setAttribute("type", "button");
