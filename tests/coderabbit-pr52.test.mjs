@@ -2,20 +2,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
-test("menú ⋯: sin JS el panel se ve y el botón no; el script marca data-js en el contenedor", () => {
+test("menú ⋯: sin JS el panel se ve y el botón no; tema-inline.js marca data-js en <html> antes de pintar", () => {
   const css = read("src/styles/global.css");
-  assert.match(css, /\.pagina-meta:not\(\[data-js\]\) \.pagina-menu-btn \{ display: none; \}/);
-  assert.match(css, /\.pagina-meta:not\(\[data-js\]\) \.pagina-menu \{[^}]*display: grid/);
-  assert.match(css, /\.pagina-meta\[data-js\] \.pagina-menu\[hidden\] \{ display: none; \}/);
+  assert.ok(css.includes("html:not([data-js]) .pagina-menu-btn { display: none; }"));
+  assert.match(css, /html:not\(\[data-js\]\) \.pagina-menu \{[^}]*position: static;[^}]*display: grid;[^}]*max-height: none/);
+  assert.ok(css.includes("html[data-js] .pagina-menu[hidden] { display: none; }"));
   assert.doesNotMatch(css, /^\.pagina-menu\[hidden\]/m, "ya no se oculta el panel sin condición");
-  const js = read("src/scripts/menu-pagina.ts");
-  assert.match(js, /setAttribute\("data-js", ""\)/);
-  assert.ok(js.indexOf('"data-js"') < js.indexOf("btn.addEventListener"), "data-js antes de enlazar eventos");
-  const slug = read("src/pages/[project]/[...slug].astro");
-  assert.match(slug, /class="pagina-meta" data-pagina-meta/);
+  assert.doesNotMatch(read("src/scripts/menu-pagina.ts"), /data-js/, "el script del menú ya no marca data-js");
+  const calls = [];
+  const documentElement = { dataset: {}, setAttribute: (k, v) => calls.push([k, v]) };
+  vm.runInNewContext(read("src/scripts/tema-inline.js"), { localStorage: { getItem: () => null }, document: { documentElement } });
+  assert.deepEqual(calls, [["data-js", ""]]);
+  assert.ok(read("src/layouts/Base.astro").includes("<script is:inline set:html={temaScript} />"));
 });
 
 test("[disciplina].astro tiene la región viva del modo lectura y carga barras", () => {

@@ -11,8 +11,6 @@ if (linea) {
 const btn = document.querySelector<HTMLButtonElement>("[data-pagina-menu-btn]");
 const panel = document.getElementById("pagina-menu");
 if (btn && panel) {
-  // Solo con el script listo se oculta el panel y se muestra el botón (sin JS el panel queda visible).
-  btn.parentElement?.setAttribute("data-js", "");
   let abierto = false;
   const aplicar = (a: boolean) => {
     abierto = a;
