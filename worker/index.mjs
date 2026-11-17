@@ -7,7 +7,7 @@ import { crearHandler as crearArchivos } from "../lib/archivos-core.mjs";
 import { clienteD1 } from "../lib/almacen-d1.mjs";
 import { crearAlmacenR2 } from "../lib/almacen-r2.mjs";
 import { crearHandler as crearHardware } from "../lib/hardware-core.mjs";
-import proyectos from "../projects.json" with { type: "json" };
+import PROYECTOS from "../projects.json" with { type: "json" };
 import electronica from "../plantillas/electronica.json" with { type: "json" };
 import mecanica from "../plantillas/mecanica.json" with { type: "json" };
 
@@ -39,29 +39,30 @@ function conCabeceras(res, fijas, soloFaltantes = false) {
   return out;
 }
 
-// Handlers memoizados por objeto env (nunca se comparten entre env distintos).
-const handlers = new WeakMap();
-function handlerDe(env, nombre) {
-  let h = handlers.get(env);
-  if (!h) handlers.set(env, (h = {}));
-  if (!h[nombre]) {
-    // Con binding D1 el almacén es D1 (aunque haya credenciales de Upstash); sin él, undefined → el core usa Upstash.
-    const redis = env.DB ? clienteD1(env.DB) : undefined;
-    h[nombre] =
-      nombre === "comentarios"
-        ? crearComentarios({ env, proyectos, redis })
-        : nombre === "hardware"
-          ? crearHardware({ env, proyectos, redis, plantillas: { electronica, mecanica } })
-          : crearArchivos({ env, proyectos, redis, blob: env.ARCHIVOS ? crearAlmacenR2(env.ARCHIVOS) : null });
+// Handlers memoizados por objeto env (nunca se comparten entre env distintos) y por instancia del Worker.
+function crearAtenderApi(restringidos, proyectos) {
+  const handlers = new WeakMap();
+  function handlerDe(env, nombre) {
+    let h = handlers.get(env);
+    if (!h) handlers.set(env, (h = {}));
+    if (!h[nombre]) {
+      // Con binding D1 el almacén es D1 (aunque haya credenciales de Upstash); sin él, undefined → el core usa Upstash.
+      const redis = env.DB ? clienteD1(env.DB) : undefined;
+      h[nombre] =
+        nombre === "comentarios"
+          ? crearComentarios({ env, proyectos, redis, restringidos })
+          : nombre === "hardware"
+            ? crearHardware({ env, proyectos, redis, plantillas: { electronica, mecanica }, restringidos })
+            : crearArchivos({ env, proyectos, redis, blob: env.ARCHIVOS ? crearAlmacenR2(env.ARCHIVOS) : null, restringidos });
+    }
+    return h[nombre];
   }
-  return h[nombre];
-}
-
-async function atenderApi(request, env, path) {
-  if (path === "/api/comentarios" || path === "/api/comentarios/") return handlerDe(env, "comentarios")(request);
-  if (path === "/api/archivos" || path === "/api/archivos/") return handlerDe(env, "archivos")(request);
-  if (path === "/api/hardware" || path === "/api/hardware/") return handlerDe(env, "hardware")(request);
-  return Response.json({ error: "No encontrado" }, { status: 404 });
+  return async function atenderApi(request, env, path) {
+    if (path === "/api/comentarios" || path === "/api/comentarios/") return handlerDe(env, "comentarios")(request);
+    if (path === "/api/archivos" || path === "/api/archivos/") return handlerDe(env, "archivos")(request);
+    if (path === "/api/hardware" || path === "/api/hardware/") return handlerDe(env, "hardware")(request);
+    return Response.json({ error: "No encontrado" }, { status: 404 });
+  };
 }
 
 function destinoRedireccion(pathname) {
@@ -72,35 +73,41 @@ function destinoRedireccion(pathname) {
   return null;
 }
 
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const propias = new WeakSet();
-    const continuar = async (extra) => {
-      const extras = extra instanceof Headers ? Object.fromEntries(extra) : { ...extra };
-      const path = url.pathname;
-      let res;
-      if (path === "/api" || path.startsWith("/api/")) {
-        // Las cabeceras propias de la API ganan (CSP sandbox del SVG, Content-Disposition, Allow, Retry-After...).
-        const api = await atenderApi(request, env, path);
-        const out = conCabeceras(api, GLOBALES, true);
-        if (!/no-store/i.test(out.headers.get("Cache-Control") ?? "")) out.headers.set("Cache-Control", "no-store");
-        for (const [k, v] of Object.entries(extras)) out.headers.set(k, v);
+// `restringidos` y `proyectos` solo los inyectan los tests; en producción se usan access.config.js y projects.json.
+export function crearWorker({ restringidos, proyectos = PROYECTOS } = {}) {
+  const atenderApi = crearAtenderApi(restringidos, proyectos);
+  return {
+    async fetch(request, env, ctx) {
+      const url = new URL(request.url);
+      const propias = new WeakSet();
+      const continuar = async (extra) => {
+        const extras = extra instanceof Headers ? Object.fromEntries(extra) : { ...extra };
+        const path = url.pathname;
+        let res;
+        if (path === "/api" || path.startsWith("/api/")) {
+          // Las cabeceras propias de la API ganan (CSP sandbox del SVG, Content-Disposition, Allow, Retry-After...).
+          const api = await atenderApi(request, env, path);
+          const out = conCabeceras(api, GLOBALES, true);
+          if (!/no-store/i.test(out.headers.get("Cache-Control") ?? "")) out.headers.set("Cache-Control", "no-store");
+          for (const [k, v] of Object.entries(extras)) out.headers.set(k, v);
+          propias.add(out);
+          return out;
+        } else {
+          const destino = destinoRedireccion(path);
+          if (destino && /^\/(?![/\\])/.test(destino)) res = new Response(null, { status: 301, headers: { Location: destino } });
+          else res = await env.ASSETS.fetch(request);
+        }
+        const fijas = { ...GLOBALES, ...extras };
+        if (esArch(path)) fijas["Content-Security-Policy"] = SANDBOX;
+        const out = conCabeceras(res, fijas);
         propias.add(out);
         return out;
-      } else {
-        const destino = destinoRedireccion(path);
-        if (destino && /^\/(?![/\\])/.test(destino)) res = new Response(null, { status: 301, headers: { Location: destino } });
-        else res = await env.ASSETS.fetch(request);
-      }
-      const fijas = { ...GLOBALES, ...extras };
-      if (esArch(path)) fijas["Content-Security-Policy"] = SANDBOX;
-      const out = conCabeceras(res, fijas);
-      propias.add(out);
-      return out;
-    };
-    const res = await manejarLogin(request, env, { continuar });
-    // Las páginas propias del login conservan sus cabeceras; solo se añaden las globales que falten.
-    return propias.has(res) ? res : conCabeceras(res, GLOBALES, true);
-  },
-};
+      };
+      const res = await manejarLogin(request, env, { continuar, restringidos });
+      // Las páginas propias del login conservan sus cabeceras; solo se añaden las globales que falten.
+      return propias.has(res) ? res : conCabeceras(res, GLOBALES, true);
+    },
+  };
+}
+
+export default crearWorker();

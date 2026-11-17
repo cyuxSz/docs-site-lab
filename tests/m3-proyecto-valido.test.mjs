@@ -12,7 +12,7 @@ const cargar = () => import("../tools/proyecto-valido.mjs");
 
 const PROYECTOS = [
   { id: "uuv", repo: "o/uuv", branch: "main", editoresDocs: ["cyuxSz", "Ana-Lopez"] },
-  { id: "proyecto-x", repo: "o/x", branch: "main" },
+  { id: "otro-proyecto", repo: "o/x", branch: "main" },
 ];
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
@@ -39,7 +39,7 @@ const MALOS = [
 test("esProyectoValido: acepta solo ids que existen en la lista", async () => {
   const { esProyectoValido } = await cargar();
   assert.equal(esProyectoValido("uuv", PROYECTOS), true);
-  assert.equal(esProyectoValido("proyecto-x", PROYECTOS), true);
+  assert.equal(esProyectoValido("otro-proyecto", PROYECTOS), true);
   for (const m of MALOS) assert.equal(esProyectoValido(m, PROYECTOS), false, JSON.stringify(m));
 });
 
@@ -65,7 +65,7 @@ test("puedeDisparar: solo logins en editoresDocs del proyecto (sin distinguir ma
   assert.equal(puedeDisparar("", "uuv", PROYECTOS), false);
   assert.equal(puedeDisparar(undefined, "uuv", PROYECTOS), false);
   // Sin editoresDocs nadie puede disparar por proyecto (se actualiza con el build completo).
-  assert.equal(puedeDisparar("cyuxSz", "proyecto-x", PROYECTOS), false);
+  assert.equal(puedeDisparar("cyuxSz", "otro-proyecto", PROYECTOS), false);
   assert.equal(puedeDisparar("cyuxSz", "no-existe", PROYECTOS), false);
 });
 
@@ -80,7 +80,7 @@ test("validarDisparo: combina proyecto, sha opcional y remitente", async () => {
     { proyecto: "uuv", sha: `${SHA}; rm -rf /`, remitente: "cyuxSz" },
     { proyecto: "uuv", sha: SHA, remitente: "" },
     { proyecto: "uuv", sha: SHA, remitente: "intruso" },
-    { proyecto: "proyecto-x", sha: SHA, remitente: "cyuxSz" },
+    { proyecto: "otro-proyecto", sha: SHA, remitente: "cyuxSz" },
   ]) {
     const r = validarDisparo(caso, PROYECTOS);
     assert.equal(r.ok, false, JSON.stringify(caso));
@@ -131,11 +131,9 @@ test("CLI: falta el remitente → 1", () => {
   sinTraza(r);
 });
 
-test("projects.json: uuv tiene editoresDocs (logins válidos); Proyecto X no se tocó", () => {
+test("projects.json: uuv tiene editoresDocs (logins válidos)", () => {
   const proyectos = JSON.parse(readFileSync(new URL("../projects.json", import.meta.url), "utf8"));
   const uuv = proyectos.find((p) => p.id === "uuv");
   assert.ok(Array.isArray(uuv.editoresDocs) && uuv.editoresDocs.length > 0);
   for (const l of uuv.editoresDocs) assert.match(l, /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/);
-  const x = proyectos.find((p) => p.id === "proyecto-x");
-  assert.equal("editoresDocs" in x, false);
 });

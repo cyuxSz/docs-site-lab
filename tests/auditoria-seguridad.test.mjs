@@ -19,22 +19,27 @@ const fn = (mod, name, archivo) => (...args) => {
 };
 
 // ---------- 1a. canAccess: decodificación repetida, fail-closed y ".." ----------
-const acceso = () => import("../access.config.js");
+// El portal no tiene proyectos restringidos por defecto: se inyecta la tabla de prueba (tercer parámetro de canAccess).
+const { DEMO } = await import("./fixtures/acceso-demo.mjs");
+const acceso = async () => {
+  const m = await import("../access.config.js");
+  return { ...m, canAccess: (login, pathname) => m.canAccess(login, pathname, DEMO) };
+};
 
 test("canAccess: la doble codificación (%252e%252e) no esquiva la restricción", async () => {
   const { canAccess } = await acceso();
   for (const login of ["otro", null]) {
-    assert.equal(canAccess(login, "/%252e%252e/proyecto-x/"), false, `${login} %252e%252e`);
-    assert.equal(canAccess(login, "/%252fproyecto-x/"), false, `${login} %252f`);
-    assert.equal(canAccess(login, "/%255cproyecto-x/"), false, `${login} %255c`);
-    assert.equal(canAccess(login, "/proyecto%252dx/"), false, `${login} %252d`);
+    assert.equal(canAccess(login, "/%252e%252e/restringido-demo/"), false, `${login} %252e%252e`);
+    assert.equal(canAccess(login, "/%252frestringido-demo/"), false, `${login} %252f`);
+    assert.equal(canAccess(login, "/%255crestringido-demo/"), false, `${login} %255c`);
+    assert.equal(canAccess(login, "/restringido%252ddemo/"), false, `${login} %252d`);
   }
 });
 
 test("canAccess: '..' en cualquier segmento (literal o codificado) se deniega a todos, también al autorizado", async () => {
   const { canAccess } = await acceso();
   for (const login of ["otro", null, "cyuxSz"]) {
-    for (const path of ["/uuv/%2e%2e/proyecto-x/", "/uuv/%2E%2E/proyecto-x/", "/%252e%252e/proyecto-x/", "/a/../proyecto-x/", "/uuv/../uuv/", "/uuv/x/%2e%2e%2fproyecto-x/"]) {
+    for (const path of ["/uuv/%2e%2e/restringido-demo/", "/uuv/%2E%2E/restringido-demo/", "/%252e%252e/restringido-demo/", "/a/../restringido-demo/", "/uuv/../uuv/", "/uuv/x/%2e%2e%2frestringido-demo/"]) {
       assert.equal(canAccess(login, path), false, `${login} ${path}`);
     }
   }
@@ -43,7 +48,7 @@ test("canAccess: '..' en cualquier segmento (literal o codificado) se deniega a 
 test("canAccess: un escape mal formado deniega siempre (fail-closed), en cualquier ronda de decodificación", async () => {
   const { canAccess } = await acceso();
   for (const login of ["otro", null, "cyuxSz"]) {
-    for (const path of ["/%ZZ/proyecto-x/", "/uuv/%E0%A4%A/", "/uuv/%/", "/uuv/%E0%A4/"]) {
+    for (const path of ["/%ZZ/restringido-demo/", "/uuv/%E0%A4%A/", "/uuv/%/", "/uuv/%E0%A4/"]) {
       assert.doesNotThrow(() => canAccess(login, path), path);
       assert.equal(canAccess(login, path), false, `${login} ${path}`);
     }
@@ -60,14 +65,14 @@ test("canAccess: si la ruta no se estabiliza tras 5 decodificaciones, se deniega
 
 test("canAccess: rutas legítimas siguen igual (acentos, %2d, mayúsculas, '.')", async () => {
   const { canAccess } = await acceso();
-  for (const path of ["/uuv/gu%C3%ADa/", "/uuv/guía/", "/uuv/visi%C3%B3n/c%C3%A1mara/", "/", "/uuv/", "/proyecto-x-bis/"]) {
+  for (const path of ["/uuv/gu%C3%ADa/", "/uuv/guía/", "/uuv/visi%C3%B3n/c%C3%A1mara/", "/", "/uuv/", "/restringido-demo-bis/"]) {
     assert.equal(canAccess("otro", path), true, path);
   }
-  assert.equal(canAccess("otro", "/proyecto%2dx/"), false);
-  assert.equal(canAccess(null, "/proyecto%2dx/"), false);
-  assert.equal(canAccess("cyuxSz", "/proyecto%2dx/"), true);
-  assert.equal(canAccess("cyuxSz", "/proyecto-x/visi%C3%B3n/"), true);
-  assert.equal(canAccess("cyuxSz", "/./proyecto-x/"), true);
+  assert.equal(canAccess("otro", "/restringido%2ddemo/"), false);
+  assert.equal(canAccess(null, "/restringido%2ddemo/"), false);
+  assert.equal(canAccess("cyuxSz", "/restringido%2ddemo/"), true);
+  assert.equal(canAccess("cyuxSz", "/restringido-demo/visi%C3%B3n/"), true);
+  assert.equal(canAccess("cyuxSz", "/./restringido-demo/"), true);
 });
 
 // ---------- 1b. rutaValida (src/lib/personal.ts) vía guardarVisita / ultimaVisita / favoritos ----------
@@ -88,7 +93,7 @@ const aceptada = (p, route) => {
 };
 
 test("rutaValida: rechaza '..' codificado una o varias veces, %2f%2f y %5c tras decodificar", () => {
-  for (const route of ["/uuv/%2e%2e/proyecto-x/", "/uuv/%252e%252e/proyecto-x/", "/uuv/%2E%2E/x/", "/uuv/../x/", "/uuv/%2f%2fevil.example/", "/uuv/%5cevil/", "/uuv/%255cevil/", "/uuv/a%00b/"]) {
+  for (const route of ["/uuv/%2e%2e/restringido-demo/", "/uuv/%252e%252e/restringido-demo/", "/uuv/%2E%2E/x/", "/uuv/../x/", "/uuv/%2f%2fevil.example/", "/uuv/%5cevil/", "/uuv/%255cevil/", "/uuv/a%00b/"]) {
     assert.equal(aceptada("uuv", route), false, route);
   }
 });
@@ -101,17 +106,17 @@ test("rutaValida: escape mal formado o sin estabilizar en 5 rondas → rechazada
 
 test("rutaValida: lo almacenado también se valida al leer (ultimaVisita y favoritos)", () => {
   const { ls, a } = almacen();
-  ls.setItem(personal.claveUltima("uuv"), JSON.stringify({ route: "/uuv/%2e%2e/proyecto-x/", title: "x", scroll: 0 }));
+  ls.setItem(personal.claveUltima("uuv"), JSON.stringify({ route: "/uuv/%2e%2e/restringido-demo/", title: "x", scroll: 0 }));
   assert.equal(personal.ultimaVisita(a, "uuv"), null);
   ls.setItem(personal.claveFavoritos("uuv"), JSON.stringify([{ route: "/uuv/%252e%252e/x/", title: "x" }, { route: "/uuv/ok/", title: "ok" }]));
   assert.deepEqual(personal.favoritos(a, "uuv").map((f) => f.route), ["/uuv/ok/"]);
 });
 
 test("rutaValida: rutas legítimas con acentos (crudos o codificados) y %2d se aceptan", () => {
-  for (const route of ["/uuv/guía/", "/uuv/gu%C3%ADa/", "/uuv/visi%C3%B3n/c%C3%A1mara/", "/uuv/proyecto%2dx/", "/uuv/a/b/"]) {
+  for (const route of ["/uuv/guía/", "/uuv/gu%C3%ADa/", "/uuv/visi%C3%B3n/c%C3%A1mara/", "/uuv/restringido%2ddemo/", "/uuv/a/b/"]) {
     assert.equal(aceptada("uuv", route), true, route);
   }
-  assert.equal(aceptada("proyecto-x", "/proyecto-x/visi%C3%B3n/"), true);
+  assert.equal(aceptada("restringido-demo", "/restringido-demo/visi%C3%B3n/"), true);
 });
 
 // ---------- 2. tools/archivos.mjs: walk sin symlinks y lectura confinada a la raíz del checkout ----------
@@ -444,12 +449,12 @@ test("B · canAccess: '%25' que deja un '%' literal se permite (regresión 403 e
 test("B · canAccess: siguen denegados '..' (aun junto a un '%' literal), escapes mal formados en la original y UTF-8 inválido", async () => {
   const { canAccess } = await acceso();
   for (const login of ["otro", null, "cyuxSz"]) {
-    for (const path of ["/%252e%252e/proyecto-x/", "/uuv/%2e%2e/proyecto-x/", "/uuv/100%25/%252e%252e/proyecto-x/", "/uuv/%ZZ/", "/uuv/100%/", "/uuv/%E0%A4/", "/uuv/%25E0%25A4/"]) {
+    for (const path of ["/%252e%252e/restringido-demo/", "/uuv/%2e%2e/restringido-demo/", "/uuv/100%25/%252e%252e/restringido-demo/", "/uuv/%ZZ/", "/uuv/100%/", "/uuv/%E0%A4/", "/uuv/%25E0%25A4/"]) {
       assert.equal(canAccess(login, path), false, `${login} ${path}`);
     }
   }
-  assert.equal(canAccess("otro", "/%25proyecto-x/"), true, "un '%' literal delante no es el proyecto restringido");
-  assert.equal(canAccess("otro", "/proyecto-x%25/"), true);
+  assert.equal(canAccess("otro", "/%25restringido-demo/"), true, "un '%' literal delante no es el proyecto restringido");
+  assert.equal(canAccess("otro", "/restringido-demo%25/"), true);
 });
 
 test("B · rutaValida: '/uuv/100%25/' se acepta; '..' y escapes mal formados se siguen rechazando", () => {

@@ -3,6 +3,7 @@
 // dependencias de Vercel siguen igual.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { DEMO } from "./fixtures/acceso-demo.mjs";
 import { createHmac } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 
@@ -11,7 +12,8 @@ const leer = (rel) => readFileSync(new URL(rel, root), "utf8");
 const existe = (rel) => existsSync(new URL(rel, root));
 
 // Import dinámico: si el módulo aún no existe, solo fallan sus tests (no todo el archivo).
-const cargarWorker = async () => (await import("../worker/index.mjs")).default;
+// El portal no tiene proyectos restringidos: los tests inyectan la tabla de prueba (tests/fixtures/acceso-demo.mjs).
+const cargarWorker = async () => (await import("../worker/index.mjs")).crearWorker({ restringidos: DEMO });
 const cargarCore = async () => import("../lib/login-core.mjs");
 
 const SECRET = "w".repeat(40);
@@ -193,7 +195,7 @@ test("worker: /:project/arch/* lleva la CSP sandbox (también con mayúsculas o 
 });
 
 test("worker: las páginas propias del login conservan sus cabeceras (no se pisan con las globales)", async () => {
-  const res = await pedir("/proyecto-x/", { cookie: sesion("otro") });
+  const res = await pedir("/restringido-demo/", { cookie: sesion("otro") });
   assert.equal(res.status, 403);
   assert.equal(res.headers.get("cache-control"), "no-store");
   assert.equal(res.headers.get("referrer-policy"), "no-referrer");
@@ -203,13 +205,13 @@ test("worker: las páginas propias del login conservan sus cabeceras (no se pisa
 
 test("worker: proyecto restringido responde 403 a quien no está en la lista y pasa a cyuxSz", async () => {
   const { env, llamadas } = crearEnv();
-  for (const path of ["/proyecto-x/", "/proyecto-x/arch/general.html", "/PROYECTO-X/grafo/", "/proyecto-x/ros.json"]) {
+  for (const path of ["/restringido-demo/", "/restringido-demo/arch/general.html", "/RESTRINGIDO-DEMO/grafo/", "/restringido-demo/ros.json"]) {
     const res = await pedir(path, { env, cookie: sesion("otro") });
     assert.equal(res.status, 403, path);
     assert.match(await res.text(), /Este proyecto es privado/);
   }
   assert.equal(llamadas.length, 0, "ningún asset restringido llega a ASSETS");
-  const ok = await pedir("/proyecto-x/", { env, cookie: sesion("CyuxSZ") });
+  const ok = await pedir("/restringido-demo/", { env, cookie: sesion("CyuxSZ") });
   assert.equal(ok.status, 200);
   assert.equal(llamadas.length, 1);
 });
@@ -354,7 +356,7 @@ test("worker: redirecciones 301 de vercel.json (wiki → grafo, content → soft
   // Sin sesión primero va al login.
   assert.equal((await pedir("/uuv/wiki/")).status, 302);
   // Proyecto restringido: 403 antes que la redirección.
-  assert.equal((await pedir("/proyecto-x/wiki/", { cookie: sesion("otro") })).status, 403);
+  assert.equal((await pedir("/restringido-demo/wiki/", { cookie: sesion("otro") })).status, 403);
 });
 
 test("worker: la redirección nunca produce un Location a otro sitio", async () => {
@@ -471,9 +473,9 @@ test(".dev.vars.example lista las variables sin valores y .dev.vars está ignora
   assert.ok(gi.some((l) => l === ".wrangler" || l === ".wrangler/"), ".wrangler en .gitignore");
 });
 
-test("README: sección Cloudflare (en preparación) con npm run cf:dev y .dev.vars", () => {
+test("README: sección Cloudflare (Worker y entorno local) con npm run cf:dev y .dev.vars", () => {
   const md = leer("README.md");
-  const i = md.indexOf("Cloudflare (en preparación)");
+  const i = md.indexOf("## Cloudflare: Worker");
   assert.ok(i >= 0, "falta la sección");
   const sec = md.slice(i, md.indexOf("\n## ", i + 1) === -1 ? undefined : md.indexOf("\n## ", i + 1));
   assert.match(sec, /npm run cf:dev/);

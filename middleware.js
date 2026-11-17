@@ -22,6 +22,11 @@ export const config = {
 };
 
 // Envoltorio de Vercel: la lógica del login vive en lib/login-core.mjs.
-export default function middleware(request) {
-  return manejarLogin(request, process.env, { continuar: (h) => next({ headers: h }), vercel: true });
+// `restringidos` solo lo inyectan los tests; en producción se usa la tabla de access.config.js.
+export function crearMiddleware({ restringidos } = {}) {
+  return function middleware(request) {
+    return manejarLogin(request, process.env, { continuar: (h) => next({ headers: h }), vercel: true, restringidos });
+  };
 }
+
+export default crearMiddleware();

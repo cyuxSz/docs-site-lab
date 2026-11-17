@@ -5,11 +5,12 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { DEMO } from "./fixtures/acceso-demo.mjs";
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
 const URL_API = `${ORIGIN}/api/comentarios/`;
-const PROYECTOS = [{ id: "uuv" }, { id: "proyecto-x" }];
+const PROYECTOS = [{ id: "uuv" }, { id: "restringido-demo" }];
 const PAG = "/uuv/arquitectura/";
 const T0 = Date.parse("2026-10-30T12:00:00Z");
 const realFetch = globalThis.fetch;
@@ -70,7 +71,7 @@ async function montar({ redis = fakeRedis(), env = {}, ahora = () => T0 } = {}) 
   const handler = crearHandler({
     env: { SESSION_SECRET: SECRET, ...env },
     redis,
-    proyectos: PROYECTOS,
+    proyectos: PROYECTOS, restringidos: DEMO,
     ahora,
     uuid: () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`,
   });
@@ -119,7 +120,7 @@ test("401: sin cookie, alterada, caducada, de otro secreto o mal formada", async
 test("503 'Comentarios no configurados' si no hay almacén (sin variables de Upstash) y sesión válida", async () => {
   const { crearHandler } = await core();
   for (const redis of [undefined, null]) {
-    const handler = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS });
+    const handler = crearHandler({ env: { SESSION_SECRET: SECRET }, redis, proyectos: PROYECTOS, restringidos: DEMO });
     const res = await handler(req("GET", { login: "ana", pagina: PAG }));
     assert.equal(res.status, 503, `redis=${redis}`);
     cabecerasJson(res, "503");
@@ -174,7 +175,7 @@ test("clienteRedis: un error de Upstash lanza sin incluir el token; la API respo
     const err = await clienteRedis(env).exec([["HGETALL", "k"]]).then(() => null, (e) => e);
     assert.ok(err instanceof Error, "debe lanzar");
     assert.ok(!String(err.message).includes("TOKEN-SECRETO"), "el error no filtra el token");
-    const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, proyectos: PROYECTOS });
+    const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, proyectos: PROYECTOS, restringidos: DEMO });
     const res = await handler(req("GET", { login: "ana", pagina: PAG }));
     assert.equal(res.status, 503);
     const txt = await res.text();
@@ -185,7 +186,7 @@ test("clienteRedis: un error de Upstash lanza sin incluir el token; la API respo
 test("con variables KV_* el handler construye el cliente desde env y lista (200)", async () => {
   const { crearHandler } = await core();
   globalThis.fetch = async (input, init = {}) => Response.json(JSON.parse(init.body).map(() => ({ result: [] })));
-  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t" }, proyectos: PROYECTOS });
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t" }, proyectos: PROYECTOS, restringidos: DEMO });
   const res = await handler(req("GET", { login: "ana", pagina: PAG }));
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { yo: "ana", comentarios: [] });
@@ -195,7 +196,7 @@ test("con variables KV_* el handler construye el cliente desde env y lista (200)
 
 test("validación de pagina: solo rutas internas /<proyecto existente>/<ruta>/ sin .., espacios ni puntos", async () => {
   const { handler } = await montar();
-  const malas = ["", "uuv/a/", "/uuv/", "/uuv", "/uuv/a", "/noexiste/a/", "/uuv/../proyecto-x/a/", "/uuv/a/../b/", "/uuv//a/", "/uuv/a b/", "/uuv/a.md/", "/uuv/%2e%2e/a/", "//evil.com/a/", "https://evil.com/uuv/a/", "/uuv/a\\b/", `/uuv/${"a".repeat(300)}/`, "/UUV/a/"];
+  const malas = ["", "uuv/a/", "/uuv/", "/uuv", "/uuv/a", "/noexiste/a/", "/uuv/../restringido-demo/a/", "/uuv/a/../b/", "/uuv//a/", "/uuv/a b/", "/uuv/a.md/", "/uuv/%2e%2e/a/", "//evil.com/a/", "https://evil.com/uuv/a/", "/uuv/a\\b/", `/uuv/${"a".repeat(300)}/`, "/UUV/a/"];
   for (const pagina of malas) {
     const g = await handler(req("GET", { login: "ana", pagina }));
     assert.equal(g.status, 400, `GET ${JSON.stringify(pagina)}`);
@@ -277,7 +278,7 @@ test("GET devuelve {yo, comentarios} en orden de creación, solo de esa página"
 
 test("proyecto restringido: sin acceso → 403 al leer y escribir; con acceso → permitido", async () => {
   const { handler } = await montar();
-  const pagina = "/proyecto-x/arquitectura/";
+  const pagina = "/restringido-demo/arquitectura/";
   assert.equal((await handler(req("GET", { login: "otro", pagina }))).status, 403);
   assert.equal((await handler(req("POST", { login: "otro", body: { pagina, tipo: "duda", texto: "hola" } }))).status, 403);
   assert.equal((await handler(req("GET", { login: "CyuxSZ", pagina }))).status, 200);
