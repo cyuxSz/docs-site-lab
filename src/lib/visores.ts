@@ -123,13 +123,42 @@ const costoEntero = (v: string): bigint | null => {
 // Diezmilésimos -> pesos redondeados a centavos.
 const centavos = (diezmilesimas: bigint): number => Number((diezmilesimas + 50n) / 100n) / 100;
 
+// Separador de la cabecera: cuenta "," y ";" solo fuera de comillas (misma regla que leerCsv: comillas dobladas, apertura al inicio del campo).
+export function detectarSeparador(texto: string): "," | ";" {
+  let comas = 0;
+  let puntos = 0;
+  let enComillas = false;
+  let inicioCampo = true;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (enComillas) {
+      if (c === '"') {
+        if (texto[i + 1] === '"') i++;
+        else enComillas = false;
+      }
+      continue;
+    }
+    if (c === '"' && inicioCampo) {
+      enComillas = true;
+      inicioCampo = false;
+    } else if (c === "\r" || c === "\n") break;
+    else if (c === ",") {
+      comas++;
+      inicioCampo = true;
+    } else if (c === ";") {
+      puntos++;
+      inicioCampo = true;
+    } else inicioCampo = false;
+  }
+  return puntos > comas ? ";" : ",";
+}
+
 export function parsearBom(csv: string): ResultadoBom {
   const texto = String(csv ?? "").replace(/^﻿/, "");
   if (!texto.trim()) return fallo("El CSV está vacío");
-  const primera = texto.split(/\r\n|\r|\n/)[0];
-  const sep = primera.split(";").length > primera.split(",").length ? ";" : ",";
-  const registros = leerCsv(texto, sep);
+  const registros = leerCsv(texto, detectarSeparador(texto));
   if (!registros) return fallo("El CSV tiene comillas sin cerrar");
+  if (!registros.length) return fallo("El CSV no tiene registros");
 
   const idx = new Map<string, number>();
   registros[0].forEach((h, i) => {

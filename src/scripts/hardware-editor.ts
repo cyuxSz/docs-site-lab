@@ -157,17 +157,25 @@ async function iniciar(root: HTMLElement) {
   // ---------- DOM ----------
   // Render del Markdown en el navegador (marked + DOMPurify), carga diferida y memoizada. Se dispara al iniciar,
   // en paralelo con el primer fetch del índice.
-  let cargaRender: Promise<ReturnType<typeof import("../lib/hardware-md").crearRenderizador>> | null = null;
+  let cargaRender: Promise<ReturnType<typeof import("../lib/hardware-md").crearRenderizador> & { montarVisores: typeof import("../lib/hardware-md").montarVisores }> | null = null;
+  // Contador de generación por destino: una pintura que esperaba la carga y ya fue superada no publica ni monta nada.
+  const generacionPintura = new WeakMap<HTMLElement, number>();
   function cargarRender() {
     // Con { proyecto } los bloques ```diagrama se ven como figuras; crearRenderizador(window) sin opciones sigue valiendo (los muestra como código).
-    cargaRender ??= import("../lib/hardware-md").then((m) => m.crearRenderizador(window, { proyecto }));
+    cargaRender ??= import("../lib/hardware-md").then((m) => ({ ...m.crearRenderizador(window, { proyecto }), montarVisores: m.montarVisores }));
     return cargaRender;
   }
   // Único punto por el que entra HTML al DOM: fragmento ya saneado por DOMPurify (sin reparsear strings).
   async function pintarMd(destino: HTMLElement, md: string, titulo?: string): Promise<boolean> {
+    const generacion = (generacionPintura.get(destino) ?? 0) + 1;
+    generacionPintura.set(destino, generacion);
     let frag: DocumentFragment;
+    let montarVisores: (typeof import("../lib/hardware-md"))["montarVisores"];
     try {
-      frag = (await cargarRender()).fragmento(md);
+      const r = await cargarRender();
+      if (generacionPintura.get(destino) !== generacion) return false; // respuesta obsoleta
+      frag = r.fragmento(md);
+      montarVisores = r.montarVisores;
     } catch {
       cargaRender = null;
       const texto = mensajeError("red");
@@ -183,7 +191,6 @@ async function iniciar(root: HTMLElement) {
     destino.replaceChildren(frag);
     // Iframe del PDF y botón "Exportar CSV": los crea montarVisores con createElement a partir de los bloques (no vienen del HTML).
     try {
-      const { montarVisores } = await import("../lib/hardware-md");
       montarVisores(destino, md, { proyecto, slug: pagina?.slug ?? "", vistaPrevia: destino === previa, descargar: descargarCsv });
     } catch {
       /* sin visores: quedan el enlace "Abrir PDF" y la tabla */
@@ -1052,11 +1059,16 @@ async function iniciar(root: HTMLElement) {
     errorEditor("");
     mostrarEstado("");
     let texto = "";
+    subidasActivas++; // bloquea Guardar mientras se lee el archivo
+    actualizarGuardar();
     try {
       texto = archivo.size <= 64 * 1024 ? await archivo.text() : "";
     } catch {
       errorEditor(`${archivo.name}: no se pudo leer el archivo`);
       return;
+    } finally {
+      subidasActivas--;
+      actualizarGuardar();
     }
     const r = bomDeArchivo(archivo, texto);
     if (!r.ok) {
