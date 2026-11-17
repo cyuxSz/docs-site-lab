@@ -10,6 +10,7 @@ test("menú ⋯: sin JS el panel se ve y el botón no; tema-inline.js marca data
   const css = read("src/styles/global.css");
   assert.ok(css.includes("html:not([data-js]) .pagina-menu-btn { display: none; }"));
   assert.match(css, /html:not\(\[data-js\]\) \.pagina-menu \{[^}]*position: static;[^}]*display: grid;[^}]*max-height: none/);
+  assert.ok(css.includes("html:not([data-js]) .pagina-menu[hidden] { display: grid !important; }"), "gana al [hidden] { display: none !important } global");
   assert.ok(css.includes("html[data-js] .pagina-menu[hidden] { display: none; }"));
   assert.doesNotMatch(css, /^\.pagina-menu\[hidden\]/m, "ya no se oculta el panel sin condición");
   assert.doesNotMatch(read("src/scripts/menu-pagina.ts"), /data-js/, "el script del menú ya no marca data-js");

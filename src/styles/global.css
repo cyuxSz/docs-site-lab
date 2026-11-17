@@ -467,6 +467,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 /* Sin JS el panel se ve (aunque lleve hidden) y el botón ⋯ no; tema-inline.js pone data-js en <html> antes de pintar. */
 html:not([data-js]) .pagina-menu-btn { display: none; }
 html:not([data-js]) .pagina-menu { position: static; display: grid; max-height: none; }
+html:not([data-js]) .pagina-menu[hidden] { display: grid !important; } /* gana al [hidden] global con !important */
 html[data-js] .pagina-menu[hidden] { display: none; }
 
 /* Bloques de código con botón Copiar y anclas de encabezados */
