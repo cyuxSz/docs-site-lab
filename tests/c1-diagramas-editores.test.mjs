@@ -24,6 +24,8 @@ test("ORIGEN_DRAWIO y urlDrawio: embed oficial con proto=json, en español, sin 
   assert.equal(u.searchParams.get("lang"), "es");
   assert.equal(u.searchParams.get("saveAndExit"), "0", "Guardar no cierra el editor");
   assert.equal(u.searchParams.get("noExitBtn"), "0", "hay botón Salir (dispara exit con modified)");
+  assert.equal(u.searchParams.get("libraries"), "1", "panel de bibliotecas visible");
+  assert.deepEqual(u.searchParams.get("libs")?.split(";"), ["general", "electrical"], "biblioteca eléctrica abierta, como en el prototipo");
 });
 
 test("mensajeDrawio: acepta solo origen exacto + source del iframe + JSON con event conocido", async () => {

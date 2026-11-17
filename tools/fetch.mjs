@@ -19,7 +19,7 @@ import { marcarGlosario, parseGlosario } from "./glosario.mjs";
 import { historial } from "./historial.mjs";
 import { neutralizeHtml, statusBadges } from "./neutralizar.mjs";
 import { esProyectoValido } from "./proyecto-valido.mjs";
-import { pageRoute, parseRutas } from "./rutas.mjs";
+import { pageRoute, parseRutas, parseTutorial } from "./rutas.mjs";
 import { corregirH1, tituloPagina } from "./titulos.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -240,6 +240,21 @@ function buildProject(project) {
     ? parseRutas(splitFrontmatter(rutasTxt).body, { project: project.id, pages: pages.map((p) => p.path) })
     : { rutas: [], avisos: [] };
   for (const a of avisos) console.warn(`⚠ ${project.id}: ${limpiarControl(a)}`);
+  // Mini tutoriales: openwiki/rutas/<slug>.md (solo el primer nivel; leerDentro no sigue symlinks).
+  const tutoriales = [];
+  const rutasDir = join(wikiRoot, "rutas");
+  const paths = pages.map((p) => p.path);
+  for (const file of walk(rutasDir, dir)) {
+    const rel = toPosix(relative(wikiRoot, file));
+    if (!/^rutas\/[^/]+\.md$/.test(rel)) continue;
+    const txt = leerDentro(dir, file);
+    if (txt === null) continue;
+    const { fields, body } = splitFrontmatter(txt);
+    const r = parseTutorial(body, { project: project.id, pages: paths, from: rel, meta: fields, disciplinas: Object.keys(project.disciplinas ?? {}), roles: rutas.map((x) => x.id) });
+    for (const a of r.avisos) console.warn(`⚠ ${project.id}: ${limpiarControl(a)}`);
+    if (r.tutorial) tutoriales.push(r.tutorial);
+  }
+  tutoriales.sort((a, b) => a.id.localeCompare(b.id));
   const summary = {
     ...project,
     repoUrl,
@@ -253,7 +268,7 @@ function buildProject(project) {
   mkdirSync(join(OUT, "data"), { recursive: true });
   writeFileSync(
     join(OUT, "data", `${project.id}.json`),
-    JSON.stringify({ ...summary, lastUpdate, pageList: pages, diagramList: diagrams, links: edges.filter((e) => known.has(e.target)), ros, citas: leerCitas(dir, sha, citas), ...(rutas.length ? { rutas } : {}) }, null, 1),
+    JSON.stringify({ ...summary, lastUpdate, pageList: pages, diagramList: diagrams, links: edges.filter((e) => known.has(e.target)), ros, citas: leerCitas(dir, sha, citas), ...(rutas.length ? { rutas } : {}), ...(tutoriales.length ? { tutoriales } : {}) }, null, 1),
   );
   return summary;
 }
