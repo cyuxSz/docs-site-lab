@@ -31,3 +31,17 @@ export function grupoActual(grupos: { id: string; pages: { route: string }[] }[]
   if (!ruta) return null;
   return grupos.find((g) => g.pages.some((p) => p.route === ruta))?.id ?? null;
 }
+
+// Asignar `open` (o el atributo del servidor) dispara un `toggle` asíncrono que no viene del usuario. El filtro ignora
+// ese eco (un solo evento cuyo estado coincide con el aplicado al cargar); cualquier cambio distinto es del usuario.
+export function filtroEcoToggle(aplicado: boolean): (abierto: boolean) => boolean {
+  let eco = true;
+  return (abierto) => {
+    if (abierto !== aplicado) eco = false;
+    else if (eco) {
+      eco = false;
+      return false;
+    }
+    return true;
+  };
+}

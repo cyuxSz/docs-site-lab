@@ -77,7 +77,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             ))}
           </ol>
         </nav>
-        {toc.length > 1 && (
+        {!esRutas && toc.length > 1 && (
           <nav class="toc-movil" data-toc-movil aria-label="En esta página" data-pagefind-ignore="all">
             <details>
               <summary>En esta página</summary>
@@ -192,7 +192,7 @@ const glosario = p.pageList.find((x) => x.path === "glosario.md");
             </div>
           )}
         </dl>
-        {toc.length > 1 && (
+        {!esRutas && toc.length > 1 && (
           <nav class="toc-box" aria-labelledby="toc-title">
             <p class="toc-title" id="toc-title">En esta página</p>
             <ul class="toc">
