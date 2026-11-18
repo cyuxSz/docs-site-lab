@@ -142,8 +142,10 @@ test("script: inicialización idempotente, listeners con señal de aborto y preg
 
 test("script: los cortes de subida usan alAbortar (escuchar con { signal } no dispara al abortar la propia señal)", () => {
   const src = leer(SCRIPT);
-  assert.equal((src.match(/alAbortar\((senal|corte|corte\.signal),/g) ?? []).length, 4, "cuatro puntos con alAbortar");
-  for (const ancla of ["alAbortar(senal, () => cortar.abort())", "alAbortar(corte, () => xhr.abort())", "alAbortar(senal, () => corte.abort())", "alAbortar(corte.signal,"]) {
+  // Tras quitar Vercel Blob (criterio 8) quedan dos cortes: la señal de la página corta la subida
+  // y el corte de la subida aborta el XHR directo al Worker.
+  assert.equal((src.match(/alAbortar\((senal|corte|corte\.signal),/g) ?? []).length, 2, "dos puntos con alAbortar");
+  for (const ancla of ["alAbortar(corte, () => xhr.abort())", "alAbortar(senal, () => corte.abort())"]) {
     assert.ok(src.includes(ancla), ancla);
   }
   assert.doesNotMatch(src, /escuchar\(senal,\s*"abort"/);
@@ -162,8 +164,13 @@ test("script: cada acción limpia el estado aria-live al empezar", () => {
 test("script: la subida nunca falla en silencio (todo en try/catch, aborta sin avance, limpia progreso)", () => {
   const src = leer(SCRIPT);
   const sub = /async function subir\(archivo[^]*?\r?\n  \}\r?\n/.exec(src)?.[0] ?? "";
-  assert.match(sub, /try \{[^]*validarArchivo[^]*upload\([^]*catch \(err\)[^]*errorEditor\([^]*finally/);
-  assert.match(sub, /abortSignal/);
+  assert.match(sub, /try \{[^]*validarArchivo[^]*subirDirecto\([^]*catch \(err\)[^]*errorEditor\([^]*finally/);
+  // Cancelar aborta la subida en curso: la señal de la página corta el controlador y su signal llega a subirDirecto().
+  assert.match(sub, /const corte = new AbortController\(\)/);
+  assert.match(sub, /alAbortar\(senal, \(\) => corte\.abort\(\)\)[^]*subirDirecto\(archivo, id, corte\.signal,/);
+  assert.match(sub, /setTimeout\([^]*corte\.abort\(\)[^]*SIN_AVANCE_MS/, "sin avance se aborta");
+  const directo = /function subirDirecto\([^]*?\r?\n  \}\r?\n/.exec(src)?.[0] ?? "";
+  assert.match(directo, /alAbortar\(corte, \(\) => xhr\.abort\(\)\)[^]*if \(corte\.aborted\)[^]*xhr\.send\(/, "el XHR se aborta con el corte y no se envía si ya estaba abortado");
   assert.match(sub, /progreso\.value = 0;\s*progreso\.hidden = true/);
 });
 
