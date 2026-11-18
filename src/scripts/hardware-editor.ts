@@ -123,6 +123,8 @@ async function iniciar(root: HTMLElement) {
   const contVisual = $("[data-hw-visual]");
   const ayudaVisual = $("[data-hw-ayuda-visual]");
   const indicadorCarga = $("[data-hw-cargando-visual]");
+  const anuncioCarga = $("[data-hw-anuncio-carga]"); // región viva fuera del formulario oculto: el lector anuncia la carga
+  let sesionEdicion = 0; // sube al abrir y al cerrar el editor: una descarga de otra sesión no aplica su resultado
   let cargandoVisual = false;
   let generacionCarga = -1;
   const pestanasCaja = $(".hw-pestanas");
@@ -403,11 +405,12 @@ async function iniciar(root: HTMLElement) {
   }
 
   const TEXTO_CONFLICTO = resultadoGuardado(409).mensaje;
+  const TEXTO_DIAGRAMA_NO_EDITABLE = "Este diagrama no se puede editar desde aquí (está dentro de una cita o una lista). Edítalo en modo Markdown.";
 
   // Sube la fuente y el SVG como archivos nuevos (UUID nuevos: /api/archivos no sobrescribe) y enlaza el bloque:
   // al crear lo inserta en el cursor del textarea; al editar desde la lectura reemplaza el bloque y hace PUT con la versión vista.
   async function guardarDiagrama(
-    ctx: { editor: EditorDiagrama; titulo: string; anterior: string | null; enTexto: boolean },
+    ctx: { editor: EditorDiagrama; titulo: string; anterior: string | null; enTexto: boolean; sesion: number },
     r: { fuente: string; svg: string },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     if (!esSvg(r.svg)) return { ok: false, error: "El SVG exportado no es válido: no se guardó nada." };
@@ -417,6 +420,12 @@ async function iniciar(root: HTMLElement) {
     for (const a of [fuente, svg]) {
       const v = validarArchivo(a);
       if (!v.ok) return { ok: false, error: `El diagrama no se puede guardar: ${v.error}` };
+    }
+    if (ctx.enTexto && ctx.anterior !== null) {
+      // Bloque dentro de una cita o lista, o con la fuente repetida: no se puede reemplazar, así que no se sube nada.
+      const { diagramaReemplazable } = await import("../lib/hardware-md");
+      const actual = !modoMarkdown && visual !== null ? visual.getMarkdown() : textarea.value;
+      if (!diagramaReemplazable(actual, ctx.anterior)) return { ok: false, error: TEXTO_DIAGRAMA_NO_EDITABLE };
     }
     const datos = { editor: ctx.editor, fuente: crypto.randomUUID(), svg: crypto.randomUUID(), titulo: limpiarTitulo(ctx.titulo) };
     subidasActivas++;
@@ -430,6 +439,7 @@ async function iniciar(root: HTMLElement) {
       actualizarGuardar();
     }
     if (ctx.enTexto) {
+      if (ctx.sesion !== sesionEdicion) return { ok: false, error: "Se cerró o se reabrió el editor mientras se guardaba el diagrama. No se aplicó el cambio." };
       // Editor visual: el bloque nuevo entra en el cursor; si ya existía (segundo guardado o «Editar diagrama» de la tarjeta), se reemplaza.
       const enVisual = !modoMarkdown && visual !== null;
       const contenidoBuffer = () => (enVisual ? visual!.getMarkdown() : textarea.value);
@@ -471,7 +481,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   async function abrirDiagrama(editor: EditorDiagrama, fuente: string | null, titulo: string, anterior: string | null, disparador: HTMLElement, enTexto = anterior === null) {
-    const ctx = { editor, titulo, anterior, enTexto };
+    const ctx = { editor, titulo, anterior, enTexto, sesion: sesionEdicion };
     try {
       const { abrirEditorDiagrama } = await import("./diagramas");
       await abrirEditorDiagrama({
@@ -493,6 +503,14 @@ async function iniciar(root: HTMLElement) {
     const editor = b.dataset.editor === "drawio" ? "drawio" : "excalidraw";
     const titulo = b.closest("figure")?.querySelector("figcaption")?.textContent ?? "";
     mostrarError("");
+    if (enEditor) {
+      const { diagramaReemplazable } = await import("../lib/hardware-md");
+      if (!visual || !diagramaReemplazable(visual.getMarkdown(), fuenteId)) {
+        errorEditor(TEXTO_DIAGRAMA_NO_EDITABLE);
+        return;
+      }
+    }
+    const sesion = sesionEdicion;
     b.disabled = true;
     mostrarEstado("Descargando diagrama…");
     let texto: string | null = null;
@@ -506,6 +524,7 @@ async function iniciar(root: HTMLElement) {
     b.disabled = false;
     mostrarEstado("");
     if (texto === null) return;
+    if (enEditor && sesion !== sesionEdicion) return;
     fuenteNueva = "";
     await abrirDiagrama(editor, texto, titulo, fuenteId, b, enEditor);
     if (enEditor) {
@@ -740,6 +759,7 @@ async function iniciar(root: HTMLElement) {
   async function montarVisual(md: string, generacion: number) {
     cargandoVisual = true;
     generacionCarga = generacion;
+    anuncioCarga.textContent = MENSAJE_CARGANDO_EDITOR;
     indicadorCarga.textContent = MENSAJE_CARGANDO_EDITOR;
     indicadorCarga.hidden = false;
     contVisual.setAttribute("aria-busy", "true");
@@ -769,6 +789,7 @@ async function iniciar(root: HTMLElement) {
       if (generacionCarga === generacion) {
         cargandoVisual = false;
         indicadorCarga.hidden = true;
+        anuncioCarga.textContent = "";
         contVisual.removeAttribute("aria-busy");
         actualizarGuardar();
       }
@@ -791,6 +812,7 @@ async function iniciar(root: HTMLElement) {
     if (guardando) return;
     if (!pagina || !editable) return;
     editando = true;
+    sesionEdicion++;
     baseMd = pagina.md;
     origen = pagina.md;
     inicialEditor = pagina.md;
@@ -817,6 +839,10 @@ async function iniciar(root: HTMLElement) {
       textarea.focus();
     } else {
       // Markdown → visual: se carga lo escrito y se toma una referencia nueva.
+      if (!visual && subidasActivas > 0) {
+        errorEditor(AVISO_SUBIDAS);
+        return;
+      }
       const md = textarea.value;
       modoMarkdown = false;
       mostrarModo();
@@ -831,6 +857,7 @@ async function iniciar(root: HTMLElement) {
   escuchar(btnModoMarkdown, "click", () => void cambiarModo());
 
   function cerrarEditor() {
+    sesionEdicion++;
     previaViva.cancelar();
     destruirVisual();
     editando = false;
@@ -875,12 +902,15 @@ async function iniciar(root: HTMLElement) {
       actualizarGuardar(true);
       return;
     }
+    let serializado = ""; // lo que se envía en el PUT, para tomarlo como referencia tras guardar
     const inicio = textarea.selectionStart;
     const fin = textarea.selectionEnd;
     const scroll = textarea.scrollTop;
     const envio = cerrojo.intentar(async () => {
       const actual = pagina!;
-      const md = contenidoActivo();
+      const actualVisual = !modoMarkdown && visual && modVisual ? visual.getMarkdown() : null;
+      const md = actualVisual !== null ? modVisual!.markdownParaGuardar({ actual: actualVisual, inicialEditor, origen }) : contenidoActivo();
+      serializado = actualVisual ?? "";
       mostrarEstado("Guardando…");
       guardando = true;
       actualizarGuardar();
@@ -906,7 +936,7 @@ async function iniciar(root: HTMLElement) {
       baseMd = r.json.pagina.md;
       if (!modoMarkdown && visual) {
         origen = r.json.pagina.md;
-        inicialEditor = visual.getMarkdown();
+        inicialEditor = serializado;
       }
       await pintarPagina(r.json.pagina);
       enfocarActivo();
@@ -1061,16 +1091,14 @@ async function iniciar(root: HTMLElement) {
   });
 
   // ---------- subida de archivos ----------
-  function insertar(texto: string) {
-    if (guardando) return;
-    if (!modoMarkdown && visual) {
-      visual.insertarMarkdown(texto, { enLinea: true });
-      return;
-    }
+  function insertar(texto: string): boolean {
+    if (guardando) return false;
+    if (!modoMarkdown && visual) return visual.insertarMarkdown(texto, { enLinea: true });
     const r = insertarEnTexto(textarea.value, textarea.selectionStart, textarea.selectionEnd, texto);
     textarea.value = r.texto;
     textarea.setSelectionRange(r.cursor, r.cursor);
     previaViva();
+    return true;
   }
 
   // Sin avance durante este tiempo se aborta: si la subida se queda parada, la barra
@@ -1142,7 +1170,11 @@ async function iniciar(root: HTMLElement) {
         throw err;
       }
       if (bloque) bloque.alSubir(id);
-      else if (!diagrama) insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }));
+      else if (!diagrama && !insertar(enlaceArchivo({ proyecto, id, nombre: archivo.name, imagen: v.imagen }))) {
+        lblSubiendo.textContent = "";
+        errorEditor(`${nombre} se subió, pero no se pudo insertar el enlace en el cursor. Colócalo fuera del bloque de código e inténtalo de nuevo.`);
+        return false;
+      }
       lblSubiendo.textContent = diagrama ? "" : `${nombre} subido`;
       return true;
     } catch (err) {
@@ -1161,6 +1193,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   async function subirVarios(archivos: FileList | File[]) {
+    if (insercionBloqueada(guardando, cargandoVisual)) return;
     if (guardando) return;
     const lista = [...archivos];
     subidasActivas += lista.length;

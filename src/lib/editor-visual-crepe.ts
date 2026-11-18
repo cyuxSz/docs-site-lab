@@ -13,6 +13,7 @@ import { editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsC
 import { indentPlugin } from "@milkdown/kit/plugin/indent";
 import { uploadConfig } from "@milkdown/kit/plugin/upload";
 import { Slice } from "@milkdown/kit/prose/model";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import { insert, replaceAll } from "@milkdown/kit/utils";
 import { languages } from "@codemirror/language-data";
 import { defaultHandlers } from "mdast-util-to-markdown";
@@ -28,8 +29,11 @@ function manejadorConUrlIntacta(base: Manejador): Manejador {
   return (node, parent, state, info) => {
     const url = String(node?.url ?? "");
     if (!URL_ARCHIVO.test(url)) return base(node, parent, state, info);
-    const marca = "zzurlintacta0zz";
-    return base({ ...node, url: marca }, parent, state, info).replace(marca, () => url);
+    // Marcador aleatorio por llamada (no puede aparecer en el alt ni en la etiqueta); se sustituye solo su última aparición.
+    const marca = `zzurl${Math.random().toString(36).slice(2)}${Date.now().toString(36)}zz`;
+    const salida = base({ ...node, url: marca }, parent, state, info);
+    const i = salida.lastIndexOf(marca);
+    return i < 0 ? salida : salida.slice(0, i) + url + salida.slice(i + marca.length);
   };
 }
 
@@ -77,6 +81,23 @@ function escLuegoTab(raiz: HTMLElement) {
         k.preventDefault();
         k.stopPropagation();
       }
+    },
+    true,
+  );
+  // Si el foco sale del editor (o se pierde), Esc deja de valer; dentro de la raíz (ProseMirror y CodeMirror) sigue armado.
+  raiz.addEventListener("focusout", (e) => {
+    const destino = (e as FocusEvent).relatedTarget as Node | null;
+    if (!destino || !raiz.contains(destino)) armado = false;
+  });
+}
+
+// Los botones internos de Crepe (p. ej. «Modificar» de las tarjetas) no llevan type: dentro de un <form> enviarían el formulario.
+function botonesSinSubmit(raiz: HTMLElement) {
+  raiz.addEventListener(
+    "click",
+    (e) => {
+      const b = (e.target as Element | null)?.closest?.("button");
+      if (b && raiz.contains(b) && b.type === "submit") b.setAttribute("type", "button");
     },
     true,
   );
@@ -133,18 +154,36 @@ export async function montarCrepe(raiz: HTMLElement, md: string, opciones: Opcio
   const vista = editor.action((ctx) => ctx.get(editorViewCtx));
   vista.dom.addEventListener("keydown", (e) => tabFueraDelEditor(e as KeyboardEvent, vista, raiz));
   escLuegoTab(raiz);
+  botonesSinSubmit(raiz);
   return {
     editor,
     vista,
     getMarkdown: () => crepe.getMarkdown(),
-    insertarMarkdown: (texto: string, { enLinea = false }: { enLinea?: boolean } = {}) =>
-      void editor.action((ctx) => {
+    insertarMarkdown: (texto: string, { enLinea = false }: { enLinea?: boolean } = {}): boolean =>
+      editor.action((ctx) => {
         // En línea (enlaces e imágenes de archivo): se inserta el contenido del párrafo ya parseado. `insert(..., true)` pasa por el DOM
         // y Milkdown copiaría el alt de la imagen a su título; así el Markdown sale tal cual.
         const doc = enLinea ? ctx.get(parserCtx)(texto) : null;
         const parrafo = doc && doc.childCount === 1 && doc.firstChild?.type.name === "paragraph" ? doc.firstChild : null;
-        if (!parrafo) return insert(texto, false)(ctx);
+        if (!parrafo) {
+          if (enLinea && vista.state.selection.$from.parent.type.spec.code) return false;
+          if (!enLinea) {
+            // Un bloque no reemplaza la selección: se colapsa a su final antes de insertar.
+            const { selection, doc: d } = vista.state;
+            vista.dispatch(vista.state.tr.setSelection(TextSelection.near(d.resolve(selection.to), -1)));
+          }
+          insert(texto, false)(ctx);
+          return true;
+        }
+        const { $from } = vista.state.selection;
+        if ($from.parent.type.spec.code) {
+          // Cursor en un bloque de código: el enlace entra como párrafo nuevo tras el bloque, sin tocar el código.
+          const tr = vista.state.tr.insert($from.after(), vista.state.schema.nodes.paragraph.create(null, parrafo.content));
+          vista.dispatch(tr.scrollIntoView());
+          return true;
+        }
         vista.dispatch(vista.state.tr.replaceSelection(new Slice(parrafo.content, 0, 0)).scrollIntoView());
+        return true;
       }),
     reemplazarTodo: (texto: string) => void editor.action(replaceAll(texto)),
     enfocar: () => vista.focus(),
