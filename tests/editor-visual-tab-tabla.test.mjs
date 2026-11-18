@@ -69,7 +69,13 @@ test("tabla recién insertada (cabecera y celdas vacías) se serializa como tabl
   assert.ok(filas.every((l) => columnas(l) === columnas(filas[0])), "mismo número de columnas");
   ed.reemplazarTodo(md);
   const otra = ed.getMarkdown();
-  assert.equal(otra.split("\n").filter((l) => l.startsWith("|")).length, filas.length, "no se pierde al pasar de modo");
+  // Todas las celdas (filas y columnas) iguales; solo puede cambiar el relleno y los guiones del separador.
+  const celdas = (texto) =>
+    texto.split("\n").filter((l) => l.startsWith("|")).map((l) => {
+      const c = l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((x) => x.trim());
+      return c.length && c.every((x) => /^:?-+:?$/.test(x)) ? c.map((x) => x.replace(/-+/g, "-")) : c;
+    });
+  assert.deepEqual(celdas(otra), celdas(md), "no se pierde ninguna fila ni columna al pasar de modo");
   await ed.destruir();
 });
 

@@ -39,8 +39,13 @@ const enlacesArchivo = (md) => {
   const sinCodigo = md.replace(/^```[\w-]*\n[\s\S]*?^```$/gm, "");
   return sinCodigo.match(/!?\[[^\]]*\]\(\/api\/archivos\/[^)]*\)/g) ?? [];
 };
-// Diferencia admitida: una fila de tabla que solo cambia en espacios de relleno o en el número de guiones del separador.
-const filaNormal = (l) => l.replace(/\s+/g, "").replace(/-+/g, "-");
+// Diferencia admitida: una fila de tabla que solo cambia en espacios de relleno alrededor de las celdas o en el número de guiones
+// del separador. El contenido de las celdas (espacios internos y guiones incluidos) se compara tal cual.
+const filaNormal = (l) => {
+  const celdas = l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  const separador = celdas.length > 0 && celdas.every((c) => /^:?-+:?$/.test(c));
+  return JSON.stringify(separador ? celdas.map((c) => c.replace(/-+/g, "-")) : celdas);
+};
 function diferenciasNoAdmitidas(a, b) {
   const x = a.split("\n");
   const y = b.split("\n");
@@ -53,6 +58,11 @@ function diferenciasNoAdmitidas(a, b) {
   });
   return malas;
 }
+
+test("la comparación de tablas admite relleno y guiones del separador, pero no cambios en las celdas", () => {
+  assert.deepEqual(diferenciasNoAdmitidas("| pin A | A--B |\n| --- | --- |", "| pin A   | A--B |\n| ----- | - |"), []);
+  assert.equal(diferenciasNoAdmitidas("| pin A | A--B |", "| pinA | A-B |").length, 1, "espacios y guiones dentro de una celda sí cuentan");
+});
 
 test("ida y vuelta de la página completa: bloques y enlaces de archivo idénticos; solo cambia el relleno de tablas", async () => {
   const { ed } = await montar(FIXTURE);

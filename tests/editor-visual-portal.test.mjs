@@ -138,7 +138,12 @@ test("hardware-editor.ts: pegar y soltar archivos también en el editor visual (
   const js = leer(SCRIPT);
   assert.ok((js.match(/"paste"/g) ?? []).length >= 2, "paste en textarea y en el editor visual");
   assert.ok((js.match(/"drop"/g) ?? []).length >= 2, "drop en textarea y en el editor visual");
-  assert.match(js, /capture:\s*true/, "en captura, para que ProseMirror no lo procese");
+  // Argumento efectivo (sin comentarios): escuchar(..., capture = true) o { capture: true }.
+  const sinComentarios = js.replace(/\/\*[^]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const enCaptura = sinComentarios.match(/const enCaptura = [^\n]*?=> escuchar\(contVisual,\s*tipo,\s*fn,\s*([^)]*?)\s*\);/);
+  assert.ok(enCaptura, "enCaptura registra sobre el contenedor del editor visual");
+  assert.match(enCaptura[1], /^(true|\{\s*capture:\s*true\s*\})$/, "en captura, para que ProseMirror no lo procese");
+  for (const t of ["paste", "drop"]) assert.match(sinComentarios, new RegExp(`enCaptura\\("${t}"`), `${t} en captura`);
 });
 
 test("hardware-editor.ts: «Editar diagrama» funciona desde la tarjeta del editor visual", () => {

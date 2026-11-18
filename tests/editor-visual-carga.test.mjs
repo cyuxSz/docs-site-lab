@@ -40,11 +40,12 @@ test("MENSAJE_CARGANDO_EDITOR y MENSAJE_FALLO_VISUAL: textos en español", () =>
 
 // ---------- página ----------
 
-test("[disciplina].astro: indicador «Cargando editor…» con role=status dentro del formulario, oculto de inicio", () => {
+test("[disciplina].astro: indicador visual «Cargando editor…» dentro del formulario, oculto de inicio y sin anunciarse (criterio 24)", () => {
   const form = leer(PAGINA).match(/<form class="hw-editor"[^]*?<\/form>/)?.[0] ?? "";
   const el = form.match(/<(\w+)[^>]*data-hw-cargando-visual[^>]*>([^<]*)<\/\1>/);
   assert.ok(el, "elemento [data-hw-cargando-visual] en el formulario");
-  assert.match(el[0], /role="status"/);
+  assert.match(el[0], /aria-hidden="true"/, "lo anuncia la región viva [data-hw-anuncio-carga], no el indicador");
+  assert.doesNotMatch(el[0], /role="status"/);
   assert.match(el[0], /\shidden[\s>]/, "oculto hasta que empieza la carga");
   assert.equal(el[2], "Cargando editor…");
 });
@@ -62,6 +63,7 @@ test("[disciplina].astro: la ayuda del modo visual es una lista corta que explic
   assert.ok(texto(ul[1]).length <= 320, "la ayuda entera es corta");
   const esc = items.find((li) => /<kbd>Esc<\/kbd>/.test(li) && /<kbd>Tab<\/kbd>/.test(li));
   assert.ok(esc, "un punto explica Esc y luego Tab");
+  assert.ok(esc.indexOf("<kbd>Esc</kbd>") < esc.indexOf("<kbd>Tab</kbd>"), "en ese orden: primero Esc y luego Tab");
   assert.doesNotMatch(texto(esc), /bloque de código/i, "Esc y Tab vale desde cualquier sitio, no solo en código");
   assert.ok(items.some((li) => /<kbd>(Ctrl|Cmd)<\/kbd>\+<kbd>S<\/kbd>/.test(li)), "guardar con Ctrl/Cmd+S");
   assert.ok(items.some((li) => /lista/i.test(li) && /tabla/i.test(li)), "Tab sangra en listas y cambia de celda en tablas");
@@ -77,6 +79,9 @@ test("hardware-editor.ts: montarVisual marca la carga (cargandoVisual, aria-busy
   assert.ok(m, "montarVisual");
   const antes = m.slice(0, m.indexOf("await"));
   assert.match(antes, /cargandoVisual = true/, "se marca antes del primer await");
+  const ind = js.match(/const (\w+) = \$\("\[data-hw-cargando-visual\]"\)/)?.[1];
+  assert.ok(ind, "variable del indicador");
+  assert.match(antes, new RegExp(`${ind}\\.hidden = false`), "el indicador se muestra antes del primer await");
   assert.match(antes, /actualizarGuardar\(/, "y se desactivan las acciones antes del primer await");
   assert.match(js, /setAttribute\("aria-busy", "true"\)/);
   assert.match(js, /removeAttribute\("aria-busy"\)|setAttribute\("aria-busy", "false"\)/);
@@ -97,14 +102,15 @@ test("hardware-editor.ts: actualizarGuardar desactiva Guardar, Adjuntar e Insert
   for (const b of ["inputArchivo", "btnInsertarDiagrama", "btnInsertarPdf", "btnInsertarBom"]) {
     const linea = f.match(new RegExp(`${b}\\.disabled = ([^;]+);`))?.[1];
     assert.ok(linea, `${b}.disabled se asigna en actualizarGuardar`);
-    assert.notEqual(linea.trim(), "guardando", `${b} también depende de la carga del editor visual`);
+    assert.equal(linea.trim(), "insercionBloqueada(guardando, cargandoVisual)", `${b} usa insercionBloqueada(guardando, cargandoVisual)`);
   }
 });
 
 test("hardware-editor.ts: guardar (botón y Ctrl/Cmd+S) no hace nada mientras carga el editor visual", () => {
   const g = funcion(leer(SCRIPT), "async function guardar\\(");
   const inicio = g.split(/\r?\n/).slice(0, 4).join("\n");
-  assert.match(inicio, /if \([^)]*cargandoVisual[^)]*\) return;/, "salida temprana al principio de guardar()");
+  assert.match(inicio, /if \((?:[^)!]*\|\|\s*)?cargandoVisual(?:\s*\|\|[^)]*)?\) return;/, "salida temprana al principio de guardar()");
+  assert.doesNotMatch(inicio, /!\s*cargandoVisual/, "la condición no está invertida");
 });
 
 test("hardware-editor.ts: si falla el import() se pasa a modo Markdown con MENSAJE_FALLO_VISUAL", () => {
