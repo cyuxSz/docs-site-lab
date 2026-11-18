@@ -1,5 +1,5 @@
 // Interfaz de comentarios: pide la lista al entrar en vista y pinta con nodos DOM (nunca HTML del usuario).
-import { acciones, armarHilos, claveCacheNav, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, partirMenciones, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
+import { abrirPorHash, acciones, armarHilos, claveCacheNav, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, partirMenciones, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
 
 const raiz = document.querySelector<HTMLElement>("section.comentarios[data-pagina]");
 if (raiz) iniciar(raiz);
@@ -27,7 +27,7 @@ function iniciar(root: HTMLElement) {
   let aBorrar: { id: string; volver: HTMLElement | null } | null = null;
   // Tras repintar, el botón que abrió una acción ya no existe: se recupera por id y acción.
   // Enlace directo #comentario-<uuid>: se despliega la sección y, al pintar, se enfoca ese comentario.
-  let idHash: string | null = /^#comentario-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] ?? null;
+  let idHash: string | null = abrirPorHash(location.hash).id;
   let volverA: { id: string; accion: string } | null = null;
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, clase?: string, txt?: string) => {
@@ -333,12 +333,28 @@ function iniciar(root: HTMLElement) {
     if (abrir) cargarUnaVez();
   });
 
-  if (idHash) {
+  // #comentarios y #comentario-<uuid> despliegan la sección (al cargar y en hashchange).
+  function abrirDesdeHash() {
+    const h = abrirPorHash(location.hash);
+    // Siempre: un hash nuevo (#comentarios u otro) cancela el destino pendiente anterior.
+    idHash = h.id;
+    if (!h.abrir) return;
     cuerpo.hidden = false;
     toggle.setAttribute("aria-expanded", "true");
     signo.textContent = "−";
+    if (h.id && cargado) {
+      const destino = document.getElementById(`comentario-${h.id}`);
+      if (destino) {
+        idHash = null;
+        destino.tabIndex = -1;
+        destino.scrollIntoView({ block: "center" });
+        destino.focus();
+      }
+    }
     cargarUnaVez();
   }
+  abrirDesdeHash();
+  window.addEventListener("hashchange", abrirDesdeHash);
 
   // Carga perezosa: una sola petición cuando la sección entra en vista.
   if (typeof IntersectionObserver === "undefined") cargarUnaVez();

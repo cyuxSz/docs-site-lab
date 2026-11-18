@@ -6,6 +6,7 @@ import type { ProjectData } from "./data";
 import { separarPlan, acomodarPlan } from "./plan.ts";
 import { enlaceInterno, recorridoConfig } from "./legado.ts";
 import { panoramaCajas, type PanoramaCaja } from "./panorama.ts";
+import { enlacesHardware } from "./hw-enlaces.ts";
 import { recorridoSeccion, seccion, seccionesDe } from "./secciones.ts";
 
 export interface GraphCategory {
@@ -36,6 +37,8 @@ export interface GraphNode {
   // Aparece en la arquitectura objetivo (ros.json); soloPlan: no existe hoy (todas sus aristas son plan).
   plan?: true;
   soloPlan?: true;
+  // Página de Electrónica/Mecánica de este nodo hw:* (projects.json → hwPaginas), ya validada.
+  hwPagina?: { href: string; etiqueta: string };
 }
 
 export interface GraphEdge {
@@ -293,6 +296,8 @@ export function rosGraph(p: ProjectData): GraphData | null {
   // La capa plan se aparta antes de calcular nada: lo que corre hoy no cambia con ella.
   const sep = separarPlan(p.ros.nodes, p.ros.edges);
   for (const e of sep.edges) for (const id of [e.source, e.target]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  const hw = enlacesHardware(p, p.ros.nodes);
+  for (const a of hw.avisos) console.warn(`[grafo] ${a}`);
   const toNode = (n: (typeof p.ros.nodes)[number]): GraphNode => {
     const kind = kindOf[n.category];
     const group = kind === "node" ? n.layer ?? "externo" : kind === "action" ? "service" : kind;
@@ -315,6 +320,7 @@ export function rosGraph(p: ProjectData): GraphData | null {
       ...(n.package ? { package: n.package } : {}),
       ...(n.plan ? { plan: true as const } : {}),
       ...(sep.soloPlan.has(n.id) ? { soloPlan: true as const } : {}),
+      ...(Object.hasOwn(hw.enlaces, n.id) ? { hwPagina: { href: hw.enlaces[n.id].href, etiqueta: hw.enlaces[n.id].etiqueta } } : {}),
     };
   };
   const nodes: GraphNode[] = p.ros.nodes.filter((n) => !sep.soloPlan.has(n.id)).map(toNode);

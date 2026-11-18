@@ -1,0 +1,35 @@
+# Ejemplo para el repo de código (p. ej. cyuxSz/uuv-docs-lab): copiar a .github/workflows/notify-docs-site.yml.
+# Avisa al portal para que reconstruya solo este proyecto.
+#
+# Token (DOCS_SITE_DISPATCH_TOKEN): crear un fine-grained personal access token con acceso SOLO al repo
+# docs-site-lab y el permiso "Actions: Read and write" (escritura de Actions), nada más. Guardarlo en este
+# repo en Settings > Secrets and variables > Actions con el nombre DOCS_SITE_DISPATCH_TOKEN.
+# El dueño del token debe estar en editoresDocs del proyecto en projects.json del portal.
+name: notify-docs-site
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openwiki/**"
+      - "docs/arch/**"
+  workflow_dispatch:
+    inputs:
+      proyecto:
+        description: "Id del proyecto en el portal"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar deploy-cloudflare en docs-site-lab
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_SITE_DISPATCH_TOKEN }}
+          PROYECTO: ${{ inputs.proyecto || 'uuv' }}
+          SHA: ${{ github.sha }}
+          RAMA_PORTAL: main
+        run: gh api --method POST repos/cyuxSz/docs-site-lab/actions/workflows/deploy-cloudflare.yml/dispatches -f ref="$RAMA_PORTAL" -f "inputs[proyecto]=$PROYECTO" -f "inputs[sha]=$SHA"

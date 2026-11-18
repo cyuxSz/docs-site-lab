@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import type { PanoramaCaja } from "./panorama";
 import type { Ruta } from "./rutas";
+import type { Tutorial } from "./tutoriales.ts";
 import { sugerenciasBusqueda } from "./lectura.ts";
 import { join } from "node:path";
 
@@ -75,6 +76,8 @@ export interface ProjectSummary {
   resumenInicio?: string;
   // Documentación de hardware por disciplina (API /api/hardware): plantilla inicial y logins que pueden editar.
   disciplinas?: Record<string, { plantilla: string; editores: string[] }>;
+  // Página de hardware de cada nodo hw:* del grafo ("hw:zed": "electronica/sensores-actuadores"); el build la valida.
+  hwPaginas?: Record<string, string>;
   // Aviso opcional arriba de /<id>/novedades/.
   novedadesNota?: string;
   // Portada y colores del proyecto (como cada vehículo en vanttec.com). image: ruta en public/; sin ella se dibuja
@@ -113,6 +116,7 @@ export interface ProjectData extends ProjectSummary {
   ros: RosGraph | null;
   // Rutas de lectura por rol (tools/rutas.mjs); solo está si openwiki/rutas.md trae pasos válidos.
   rutas?: Ruta[];
+  tutoriales?: Tutorial[];
 }
 
 export interface ProjectTheme {
@@ -147,11 +151,11 @@ const SECTIONS: [string, string][] = [
 
 export function sections(pages: PageInfo[]) {
   const visible = pages.filter((p) => p.type !== "meta");
-  const groups = new Map<string, { label: string; pages: PageInfo[] }>();
-  for (const [dir, label] of SECTIONS) groups.set(dir, { label, pages: [] });
+  const groups = new Map<string, { id: string; label: string; pages: PageInfo[] }>();
+  for (const [dir, label] of SECTIONS) groups.set(dir, { id: dir || "raiz", label, pages: [] });
   for (const p of visible) {
     const dir = p.path.includes("/") ? p.path.split("/")[0] : "";
-    if (!groups.has(dir)) groups.set(dir, { label: visible.find((x) => x.type === "index" && x.path === `${dir}/index.md`)?.title ?? dir, pages: [] });
+    if (!groups.has(dir)) groups.set(dir, { id: dir || "raiz", label: visible.find((x) => x.type === "index" && x.path === `${dir}/index.md`)?.title ?? dir, pages: [] });
     groups.get(dir)!.pages.push(p);
   }
   for (const g of groups.values()) g.pages.sort((a, b) => Number(b.type === "index") - Number(a.type === "index") || a.title.localeCompare(b.title, "es"));

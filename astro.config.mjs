@@ -26,6 +26,12 @@ export default defineConfig({
     // Estilos con 'unsafe-inline' porque Mermaid y Shiki los escriben en línea.
     // connect-src añade solo https://vercel.com/api/blob/ (prefijo de ruta): upload() de @vercel/blob/client sube ahí
     // los archivos de hardware directo desde el navegador (no usa Workers, así que no hace falta worker-src).
+    // frame-src añade 'self' (visor de PDF de /api/archivos en iframe, D1a: solo el PDF responde con frame-ancestors 'self')
+    // y https://embed.diagrams.net (editor de diagramas en iframe, C1). Excalidraw no necesita nada más:
+    // sus fuentes salen de este origen ('self', ver tools/postbuild.mjs), el SVG se exporta sin incrustar fuentes (así no corre el
+    // subsetting WASM/embind, que usa new Function y pediría 'unsafe-eval') y 'wasm-unsafe-eval' ya estaba.
+    // Este <meta> está en dist/, así que vale igual en Vercel y en el Worker: las cabeceras CSP globales no definen directivas
+    // de carga (se intersecarían con el <meta>).
     // frame-ancestors no funciona en <meta>: va como cabecera en vercel.json.
     csp: {
       scriptDirective: { resources: ["'self'", "'wasm-unsafe-eval'"], hashes: [temaHash] },
@@ -34,6 +40,7 @@ export default defineConfig({
         "default-src 'self'",
         "img-src 'self' data:",
         "connect-src 'self' https://vercel.com/api/blob/",
+        "frame-src 'self' https://embed.diagrams.net",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",

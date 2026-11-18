@@ -19,7 +19,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm test
       - name: Sintaxis
-        run: for f in middleware.js tools/*.mjs; do node --check "$f"; done
+        run: for f in middleware.js tools/*.mjs; do node --check "$f"; done && node --check worker/index.mjs && node --check lib/login-core.mjs
       - name: Build
         # El secret solo se pasa en push a main. En un PR no hay token: los repos privados solo avisan
         # (DOCS_STRICT lo permite); los públicos sí deben construirse.

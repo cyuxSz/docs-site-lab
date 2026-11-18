@@ -5,6 +5,7 @@
     "summary": "Vehículo submarino autónomo: control, navegación, visión, misiones y simulación en ROS 2.",
     "repo": "cyuxSz/uuv-docs-lab",
     "branch": "main",
+    "editoresDocs": ["cyuxSz"],
     "note": "Copia de prueba de vanttec/uuv_software",
     "resumenInicio": "Vehículo submarino autónomo de VantTEC para RoboSub: ROS 2, visión con YOLO, pose de la ZED (EKF con IMU planeado) y control ASMC.",
     "descripcionCaratula": "Vehículo submarino autónomo de VantTEC para RoboSub: chasis tipo costillar de nylamid, 6 propulsores, Jetson con ROS 2 y una máquina de estados de misión, visión con YOLO, pose de la ZED 2i (EKF con IMU planeado) y control ASMC.",
@@ -12,6 +13,7 @@
     "kind": "submarino",
     "tagline": "Vehículo submarino autónomo",
     "theme": { "accent": "#49C1D2", "deep": "#0491AD", "warm": "#F0900D" },
+    "hwPaginas": { "hw:zed": "electronica/sensores-actuadores" },
     "tour": [
       { "node": "hw:zed", "text": "Todo empieza en la cámara ZED 2i: además de ver, calcula dónde está el sub." },
       { "node": "uuv_navigation/camera_opener", "text": "camera_opener lee la cámara y publica la posición del sub en el topic /pose." },

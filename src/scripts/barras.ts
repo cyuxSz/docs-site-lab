@@ -1,5 +1,5 @@
 // Barras laterales de la wiki: plegado en escritorio, cajones en móvil y modo enfoque. La lógica está en src/lib/barras.ts.
-import { ANCHO_CAJON, barras, etiquetaBarra, guardarBarras, leerBarras, visible, type EstadoBarras, type EventoBarras, type Lado } from "../lib/barras.ts";
+import { ANCHO_CAJON, anuncioLectura, barras, etiquetaBarra, guardarBarras, leerBarras, visible, type EstadoBarras, type EventoBarras, type Lado } from "../lib/barras.ts";
 import { almacenSeguro } from "../lib/rutas.ts";
 
 const hay = document.querySelector("[data-barra]");
@@ -48,6 +48,9 @@ function iniciar() {
     estado = barras(antes, ev);
     if (estado === antes) return false;
     aplicar();
+    const anuncio = anuncioLectura(antes, estado);
+    const vivo = document.querySelector<HTMLElement>("[data-anuncio-lectura]");
+    if (anuncio !== null && vivo) vivo.textContent = anuncio;
     if (!movil && ev.tipo !== "enfoque") guardarBarras(alm, estado);
     if (movil && foco && antes.cajon !== estado.cajon) {
       if (estado.cajon) paneles[estado.cajon]?.querySelector<HTMLElement>("a[href]")?.focus();

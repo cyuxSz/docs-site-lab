@@ -1,6 +1,10 @@
 // Tema claro/oscuro: se aplica en <head>, antes de pintar, para que no parpadee. Sin preferencia guardada se queda el
 // oscuro (el de vanttec.com). Va en línea; astro.config.mjs agrega su hash a la CSP. El botón de Base.astro lo cambia.
 (function () {
+  // JS disponible: el CSS oculta el panel del menú de página y muestra su botón solo con este atributo.
+  try {
+    document.documentElement.setAttribute("data-js", "");
+  } catch (e) {}
   try {
     var d = document.documentElement.dataset;
     if (localStorage.getItem("tema") === "light") d.theme = "light";

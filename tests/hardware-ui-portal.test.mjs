@@ -75,22 +75,23 @@ test("hardware-editor.ts: lógica en src/lib/hardware-editor.ts; fetch same-orig
   assert.match(js, /cache:\s*["']no-store["']/);
   assert.match(js, /\.editable\b/, "usa `editable` del índice");
   assert.doesNotMatch(js, /editores/);
-  for (const a of ["inicializar", "crear", "reordenar", "restaurar", "previsualizar"]) assert.match(js, new RegExp(`accion:\\s*["']${a}["']`), a);
+  for (const a of ["inicializar", "crear", "reordenar", "restaurar"]) assert.match(js, new RegExp(`accion:\\s*["']${a}["']`), a);
   assert.match(js, /"PUT"/);
   assert.match(js, /"DELETE"/);
   assert.match(js, /revisiones=1|revisiones:\s*["']1["']/);
   assert.match(js, /version/);
 });
 
-test("hardware-editor.ts: DOM seguro; el html del API entra solo por DOMParser en un único punto", () => {
+test("hardware-editor.ts: DOM seguro; el HTML (renderizado y saneado en el navegador, M2b) entra en un único punto", () => {
   const js = leer(SCRIPT);
-  assert.doesNotMatch(js, /\.innerHTML\s*=|outerHTML|insertAdjacentHTML|document\.write/);
-  assert.equal((js.match(/new DOMParser\(\)/g) ?? []).length, 1, "un único punto de entrada de HTML");
+  assert.doesNotMatch(js, /\.innerHTML\s*=|outerHTML|insertAdjacentHTML|document\.write|new DOMParser/);
+  assert.equal((js.match(/\.fragmento\(/g) ?? []).length, 1, "un único punto de entrada de HTML");
   assert.match(js, /textContent/);
 });
 
 test("hardware-editor.ts: el error de guardado sale de resultadoGuardado (409 conserva el texto; ver fase1b-cubic.test.mjs)", () => {
-  assert.match(leer(SCRIPT), /resultadoGuardado\(r\.status\)\.mensaje/);
+  // C2a: la firma pasa el cuerpo y el fallo (409 candado / versión, timeout); ver c2a-api-cliente.test.mjs.
+  assert.match(leer(SCRIPT), /resultadoGuardado\(r\.status,\s*r\)\.mensaje/);
 });
 
 test("hardware-editor.ts: subida con upload() de @vercel/blob/client, privada, a /api/archivos/ con pathname canónico", () => {
@@ -153,6 +154,16 @@ test("script: inicialización idempotente, listeners con señal de aborto y preg
   assert.match(preg, /catch\s*\{\s*fin\(false\)/, "showModal que falla no deja la promesa colgada");
 });
 
+test("script: los cortes de subida usan alAbortar (escuchar con { signal } no dispara al abortar la propia señal)", () => {
+  const src = leer(SCRIPT);
+  assert.equal((src.match(/alAbortar\((senal|corte|corte\.signal),/g) ?? []).length, 4, "cuatro puntos con alAbortar");
+  for (const ancla of ["alAbortar(senal, () => cortar.abort())", "alAbortar(corte, () => xhr.abort())", "alAbortar(senal, () => corte.abort())", "alAbortar(corte.signal,"]) {
+    assert.ok(src.includes(ancla), ancla);
+  }
+  assert.doesNotMatch(src, /escuchar\(senal,\s*"abort"/);
+  assert.doesNotMatch(src, /escuchar\(corte[^)]*"abort"/);
+});
+
 test("script: cada acción limpia el estado aria-live al empezar", () => {
   const src = leer(SCRIPT);
   for (const ancla of ['escuchar(form, "submit"', "escuchar(btnBorrar", 'accion: "reordenar"', "async function subir"]) {
@@ -170,10 +181,11 @@ test("script: la subida nunca falla en silencio (todo en try/catch, aborta sin a
   assert.match(sub, /progreso\.value = 0;\s*progreso\.hidden = true/);
 });
 
-test("Base: el pie de disciplina no dice que todo vive en openwiki/; las pestañas llevan la activa a la vista", () => {
+// Menos ruido 2: «¿Cómo se actualiza?» salió del pie y vive en /acerca/ (con las dos variantes: repo y disciplinas).
+test("Acerca de: la explicación de disciplinas no dice que todo vive en openwiki/; las pestañas llevan la activa a la vista", () => {
   const base = leer("src/layouts/Base.astro");
   assert.match(base, /esDisciplina/);
-  assert.match(base, /se edita en la propia web/);
+  assert.match(leer("src/pages/acerca.astro"), /se edita en la propia web/);
   assert.match(base, /\.ptabs a\[aria-current\]"\)[^]*scrollLeft[^]*prefers-reduced-motion/);
 });
 
@@ -187,4 +199,33 @@ test("hardware-editor.ts: el DELETE envía { pagina, version } y decide con resu
   const js = leer(SCRIPT);
   assert.match(js, /api\("DELETE",\s*\{\s*cuerpo:\s*\{\s*pagina:\s*slug,\s*version:\s*pagina\.version\s*\}\s*\}\)/);
   assert.match(js, /resultadoBorrado\(r\.status\)/);
+});
+
+// ---------- subida: capacidades y cancelación ----------
+test("hardware-editor: capacidades acotadas por inactividad, sin cachear fallo de red; subir() cancelable; abort previo a send", () => {
+  const src = leer(SCRIPT);
+  const modo = src.slice(src.indexOf("function modoDeSubida"), src.indexOf("function subirDirecto"));
+  assert.match(modo, /SIN_AVANCE_MS/, "la consulta compartida respeta el límite de inactividad");
+  assert.match(modo, /catch \{[^}]*modoSubida = null;[^}]*throw new TypeError\("red"\)/s, "el fallo de red no se cachea");
+  assert.match(modo, /if \(!r\.ok\) return "blob"/);
+  assert.match(src, /Promise\.race\(\[modoDeSubida\(\), cancelada\]\)/, "subir() cancela su espera con corte");
+  assert.match(src, /if \(corte\.aborted\) return reject\(new TypeError\("abortado"\)\)/, "abort previo a send rechaza");
+  assert.doesNotMatch(src, /if \(corte\.aborted\) return xhr\.abort\(\)/);
+});
+
+test("alAbortar: dispara al abortar la señal; con { signal: senal } sobre la propia senal no dispararía", async () => {
+  const { alAbortar } = await import("../src/lib/hardware-editor.ts");
+  const a = new AbortController();
+  let n = 0;
+  alAbortar(a.signal, () => n++);
+  a.abort();
+  assert.equal(n, 1);
+  const ya = AbortSignal.abort();
+  alAbortar(ya, () => n++);
+  assert.equal(n, 2, "señal ya abortada: se ejecuta de inmediato");
+  const b = new AbortController();
+  let roto = 0;
+  b.signal.addEventListener("abort", () => roto++, { signal: b.signal });
+  b.abort();
+  assert.equal(roto, 0, "el patrón anterior nunca se ejecutaba");
 });

@@ -70,6 +70,14 @@ export function contarAbiertos(lista: Comentario[] | null | undefined): number {
   return n;
 }
 
+// Ancla que abre la sección de comentarios: #comentarios (sin destino) o #comentario-<uuid> (y ese comentario).
+const RE_COMENTARIO = /^#comentario-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+export function abrirPorHash(hash: string | null | undefined): { abrir: boolean; id: string | null } {
+  if (hash === "#comentarios") return { abrir: true, id: null };
+  const id = typeof hash === "string" ? (RE_COMENTARIO.exec(hash)?.[1] ?? null) : null;
+  return id ? { abrir: true, id } : { abrir: false, id: null };
+}
+
 export const etiquetaComentarios = (n: number | null): string => (n === null ? "Comentarios" : `Comentarios (${n})`);
 
 export function mensajeError(codigo: number | string, opts: { retryAfter?: string | number | null; servidor?: unknown } = {}): string {
