@@ -85,10 +85,14 @@ test("CSP sin aflojar: estilos como hoy ('self' 'unsafe-inline'), sin unsafe-eva
 });
 
 test("las tarjetas de bloques salen del renderizador saneado de la lectura (vistaBloque + crearRenderizador)", () => {
-  const s = leer(SCRIPT) + leerSi(ENTRADA);
-  assert.match(s, /vistaBloque\(/);
-  assert.match(s, /crearRenderizador\(|cargarRender\(/, "reutiliza el renderizador con DOMPurify");
+  const js = leer(SCRIPT);
+  // El `html` que recibe vistaBloque es el de cargarRender(), que es crearRenderizador(window, { proyecto }) (marked + DOMPurify).
+  assert.match(js, /cargaRender \?\?= import\("\.\.\/lib\/hardware-md"\)\.then\(\(m\) => \(\{ \.\.\.m\.crearRenderizador\(window, \{ proyecto \}\)/);
+  const montar = js.match(/async function montarVisual[^]*?\r?\n  \}\r?\n/)?.[0] ?? "";
+  assert.match(montar, /\{ html \}[^\n]*cargarRender\(\)/, "html sale de cargarRender()");
+  assert.match(montar, /renderizarBloque: \(lenguaje, contenido\) => mod\.vistaBloque\(html, lenguaje, contenido, \{ editable \}\)/);
   assert.doesNotMatch(leerSi(ENTRADA) + leerSi(CREPE), /innerHTML\s*=|insertAdjacentHTML|outerHTML\s*=/, "sin HTML crudo propio");
+  // El comportamiento (tarjetas pintadas dentro del editor y sin vectores) lo prueba tests/editor-visual-tarjetas.test.mjs.
 });
 
 // ---------- página ----------

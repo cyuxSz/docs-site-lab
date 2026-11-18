@@ -167,15 +167,77 @@ test("vistaBloque: un bloque que no parsea u otro lenguaje se queda como código
   assert.equal(vistaBloque(html, "mermaid", "graph LR\n A-->B", { editable: true }), null);
 });
 
-test("vistaBloque: el título pasa por el saneado (sin HTML ni atributos de evento)", async () => {
+// Comprueba en un fragmento que no quedan vectores de script: elementos script/iframe/object, atributos on*, ni URLs javascript:.
+function sinVectores(w, salida, etiqueta) {
+  const f = fragmento(w, salida);
+  assert.equal(f.querySelector("script, iframe, object, embed"), null, `${etiqueta}: sin script/iframe/object`);
+  for (const el of f.querySelectorAll("*")) {
+    for (const a of el.attributes) {
+      assert.doesNotMatch(a.name, /^on/i, `${etiqueta}: atributo de evento ${a.name} en <${el.localName}>`);
+      assert.doesNotMatch(a.value.replace(/\s/g, ""), /^javascript:/i, `${etiqueta}: ${a.name}=javascript: en <${el.localName}>`);
+    }
+  }
+  return f;
+}
+
+test("vistaBloque: las tarjetas salen del renderizador inyectado (el saneado de la lectura) y no añaden HTML propio salvo el botón", async () => {
   const { vistaBloque } = L();
   const { html, w } = await renderizador();
-  const malo = `archivo: ${PDF}\ntitulo: <img src=x onerror=alert(1)><script>alert(2)</script>`;
-  const salida = vistaBloque(html, "pdf", malo, { editable: true });
-  if (salida === null) return; // también vale rechazarlo
-  const f = fragmento(w, salida);
-  assert.equal(f.querySelector("img, script, [onerror]"), null);
-  assert.doesNotMatch(salida, /onerror=|<script/i);
-  const d = vistaBloque(html, "diagrama", `editor: excalidraw\nfuente: ${FUENTE}\nsvg: ${SVG}\ntitulo: "><img src=x onerror=alert(1)>`, { editable: true });
-  if (d !== null) assert.equal(fragmento(w, d).querySelector("[onerror]"), null);
+  const llamadas = [];
+  const espia = (md) => {
+    const r = html(md);
+    llamadas.push({ md, r });
+    return r;
+  };
+  const pdf = vistaBloque(espia, "pdf", `archivo: ${PDF}\ntitulo: Hoja`, { editable: true });
+  assert.equal(llamadas.length, 1, "pasa una vez por el renderizador");
+  assert.match(llamadas[0].md, /^`{3,}pdf\n/);
+  assert.equal(pdf, llamadas[0].r, "la tarjeta es exactamente la salida saneada");
+  const cuerpo = `editor: excalidraw\nfuente: ${FUENTE}\nsvg: ${SVG}\ntitulo: D`;
+  const dia = vistaBloque(espia, "diagrama", cuerpo, { editable: true });
+  const saneado = llamadas.at(-1).r;
+  const sinBoton = dia.replace(/<button type="button" class="btn hw-diagrama-editar" data-fuente="[\w-]+" data-editor="(excalidraw|drawio)">Editar diagrama<\/button>/, "");
+  assert.equal(sinBoton.trimEnd(), saneado.trimEnd(), "lo único que se añade a la salida saneada es el botón con datos filtrados");
+  // El renderizador de la lectura usa DOMPurify: HTML crudo en el Markdown no sobrevive.
+  sinVectores(w, html('<img src=x onerror="alert(1)"><a href="javascript:alert(1)">x</a><script>alert(2)</script>'), "DOMPurify");
+});
+
+test("vistaBloque: un título sin < ni > que intenta cerrar el atributo se pinta como tarjeta y sale saneado", async () => {
+  const { vistaBloque } = L();
+  const { html, w } = await renderizador();
+  const vectores = ['x" onerror="alert(1)', "x&quot; onerror=alert(1) x=&quot;", "x' onmouseover='alert(1)", "javascript:alert(1)"];
+  for (const t of vectores) {
+    const pdf = vistaBloque(html, "pdf", `archivo: ${PDF}\ntitulo: ${t}`, { editable: true });
+    assert.notEqual(pdf, null, `pdf con título ${t} se pinta (no lleva < ni >)`);
+    const f = sinVectores(w, pdf, `pdf «${t}»`);
+    assert.ok(f.querySelector("figcaption")?.textContent.includes("alert(1)"), "el título se ve como texto");
+    const dia = vistaBloque(html, "diagrama", `editor: excalidraw\nfuente: ${FUENTE}\nsvg: ${SVG}\ntitulo: ${t}`, { editable: true });
+    assert.notEqual(dia, null, `diagrama con título ${t} se pinta`);
+    const g = sinVectores(w, dia, `diagrama «${t}»`);
+    assert.equal(g.querySelectorAll("img").length, 1, "una sola imagen: la del SVG");
+    assert.equal(g.querySelector("img").getAttribute("src"), `/api/archivos/?proyecto=uuv&id=${SVG}`);
+    assert.match(g.querySelector("img").getAttribute("alt"), /alert\(1\)/, "el título va al alt como texto");
+  }
+  // Con < o > puede rechazarse (se ve como código) o pintarse saneado; nunca con vectores.
+  const conMarcas = vistaBloque(html, "pdf", `archivo: ${PDF}\ntitulo: <img src=x onerror=alert(1)><script>alert(2)</script>`, { editable: true });
+  if (conMarcas !== null) sinVectores(w, conMarcas, "pdf con marcas");
+});
+
+test("vistaBloque bom: celdas con HTML, atributos de evento o javascript: se ven como texto y no dejan vectores", async () => {
+  const { vistaBloque } = L();
+  const { html, w } = await renderizador();
+  const csv = [
+    "referencia,descripcion,cantidad,costo_unitario,proveedor",
+    "R1,<img src=x onerror=alert(1)>,1,0.5,javascript:alert(1)",
+    'R2,"x"" onerror=""alert(2)",2,0.1,<a href=javascript:alert(3)>ver</a>',
+    '"<svg onload=alert(6)>",<script>alert(4)</script>,1,1,[x](javascript:alert(5))',
+  ].join("\n");
+  const salida = vistaBloque(html, "bom", csv, { editable: true });
+  assert.notEqual(salida, null, "el BOM es válido: se pinta como tabla");
+  const f = sinVectores(w, salida, "bom");
+  const tabla = f.querySelector("figure.hw-bom table");
+  assert.ok(tabla, "figure.hw-bom > table");
+  assert.equal(tabla.querySelectorAll("tbody tr").length, 3);
+  assert.equal(tabla.querySelector("tbody img, tbody script"), null, "las celdas no crean elementos");
+  assert.match(tabla.textContent, /<img src=x onerror=alert\(1\)>/, "la celda se ve como texto");
 });
