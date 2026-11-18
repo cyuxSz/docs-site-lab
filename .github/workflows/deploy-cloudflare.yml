@@ -4,9 +4,7 @@ name: deploy-cloudflare
 on:
   push:
     branches:
-      - cloudflare
-      # Tras el corte (M4):
-      #   - main
+      - main
   workflow_dispatch:
     inputs:
       proyecto:

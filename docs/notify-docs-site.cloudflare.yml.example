@@ -5,7 +5,6 @@
 # docs-site-lab y el permiso "Actions: Read and write" (escritura de Actions), nada más. Guardarlo en este
 # repo en Settings > Secrets and variables > Actions con el nombre DOCS_SITE_DISPATCH_TOKEN.
 # El dueño del token debe estar en editoresDocs del proyecto en projects.json del portal.
-# Tras M4 (corte a Cloudflare en main) cambiar RAMA_PORTAL a main.
 name: notify-docs-site
 on:
   push:
@@ -32,5 +31,5 @@ jobs:
           GH_TOKEN: ${{ secrets.DOCS_SITE_DISPATCH_TOKEN }}
           PROYECTO: ${{ inputs.proyecto || 'uuv' }}
           SHA: ${{ github.sha }}
-          RAMA_PORTAL: cloudflare
+          RAMA_PORTAL: main
         run: gh api --method POST repos/cyuxSz/docs-site-lab/actions/workflows/deploy-cloudflare.yml/dispatches -f ref="$RAMA_PORTAL" -f "inputs[proyecto]=$PROYECTO" -f "inputs[sha]=$SHA"

@@ -1,11 +1,13 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # Por defecto CodeRabbit solo revisa los PR contra la rama principal.
-# La migración a Cloudflare va en PR contra `cloudflare`, y los lotes apilados contra `factory/*`.
+# Tras el corte a Cloudflare, `main` es la rama de producción; `cloudflare` queda durante la transición
+# y los lotes apilados van contra `factory/*`.
 language: es-ES
 reviews:
   auto_review:
     enabled: true
     drafts: false
     base_branches:
+      - "main"
       - "cloudflare"
       - "factory/.*"

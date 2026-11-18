@@ -1,6 +1,6 @@
 # docs-site-lab · portal de documentación (prueba)
 
-Sitio que junta la documentación de varios repos en un solo portal con login de GitHub. Producción: **https://docs.vanttec.workers.dev** (Worker de Cloudflare, rama `cloudflare`). Vercel (rama `main`) queda de respaldo hasta el corte final (M4). **No tiene contenido propio**: en cada build trae `openwiki/` y `docs/arch/` de cada repo listado en [`projects.json`](projects.json).
+Sitio que junta la documentación de varios repos en un solo portal con login de GitHub. Producción: **https://docs.vanttec.workers.dev** (Worker de Cloudflare), que sale de la rama `main`. Vercel también despliega `main`, de respaldo. **No tiene contenido propio**: en cada build trae `openwiki/` y `docs/arch/` de cada repo listado en [`projects.json`](projects.json).
 
 ```
 projects.json                qué repos se publican
@@ -23,7 +23,7 @@ migrations/                  esquema de D1 (comentarios, páginas de hardware y 
 2. Su workflow `notify-docs-site` manda un `repository_dispatch` (`docs-actualizados`, con `{ proyecto, sha }`) a este repo.
 3. `deploy-cloudflare.yml` vuelve a traer solo ese proyecto, reconstruye y despliega el Worker. No hay que tocar este repo.
 
-Un push a la rama `cloudflare` (p. ej. al mergear un PR) también reconstruye y despliega todo. Mientras dure el respaldo, el repo de código puede seguir llamando además al Deploy Hook de Vercel.
+Un push a `main` (p. ej. al mergear un PR) también reconstruye y despliega todo. Mientras dure el respaldo, el repo de código puede seguir llamando además al Deploy Hook de Vercel.
 
 Para agregar un proyecto, se suma una entrada a `projects.json` y se le da acceso de lectura al token `DOCS_GITHUB_TOKEN`.
 
@@ -110,8 +110,8 @@ En local con `python -m http.server` no corre el login (el login lo hace el Work
 Worker `docs` en `https://docs.vanttec.workers.dev` (subdominio de cuenta `vanttec`), con static assets de `dist/` y `run_worker_first`. Bindings: D1 `DB` (base `docs-site`) y R2 `ARCHIVOS` (bucket `docs-hardware`, privado). Todo pasa por el login del Worker; los contenidos nunca se sirven sin sesión.
 
 `.github/workflows/deploy-cloudflare.yml` construye el portal y lo despliega con `wrangler-action`. Se dispara con:
-- push a la rama `cloudflare` (build completo; `main` queda comentado hasta M4). Con `concurrency`, un deploy pendiente sustituye al anterior (que aparece como cancelado);
-- a mano, por proyecto: `gh workflow run deploy-cloudflare.yml --ref cloudflare -f proyecto=uuv`;
+- push a `main` (build completo). Con `concurrency`, un deploy pendiente sustituye al anterior (que aparece como cancelado);
+- a mano, por proyecto: `gh workflow run deploy-cloudflare.yml --ref main -f proyecto=uuv` (`--ref` es opcional: `main` es la rama por defecto);
 - `repository_dispatch` tipo `docs-actualizados` (con `client_payload: { proyecto, sha }`; solo corre desde la rama por defecto).
 
 Secrets de GitHub Actions: `CLOUDFLARE_API_TOKEN` (permisos Workers Scripts, D1 y R2 de la cuenta; tiene caducidad, renovarlo antes de que venza) y `CLOUDFLARE_ACCOUNT_ID`. El workflow aplica las migraciones de D1 antes de desplegar. Sin ellos el workflow construye, avisa con `::warning::` y termina en verde sin desplegar. `DOCS_GITHUB_TOKEN` se usa para leer los repos privados.
@@ -121,6 +121,8 @@ Con un disparo por proyecto, el build corre `tools/fetch.mjs` con `DOCS_SOLO_PRO
 Quién puede disparar un proyecto lo define `editoresDocs` en `projects.json` (logins de GitHub; sin esa lista nadie puede, se actualiza con el build completo). No llega a `.content/` ni al sitio. El workflow valida proyecto, sha y remitente con `tools/proyecto-valido.mjs` antes de construir.
 
 El repo de código avisa con `docs/notify-docs-site.cloudflare.yml.example` (renombrar a `notify-docs-site.yml` en ese repo), que usa el secret `DOCS_SITE_DISPATCH_TOKEN`: un token fine-grained solo sobre `docs-site-lab` con permiso Actions: Read and write.
+
+Vercel queda de respaldo una semana tras el corte. Para quitarlo falta borrar `vercel.json`, `api/`, `middleware.js`, las dependencias `@vercel/*`, Upstash y Blob (en otro lote).
 
 ## Cloudflare: Worker, almacén y entorno local
 El Worker (`worker/index.mjs`, `wrangler.jsonc`) usa el mismo login que Vercel (`lib/login-core.mjs`). Para probarlo en local:
