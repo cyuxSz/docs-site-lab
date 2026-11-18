@@ -88,9 +88,16 @@ export function insertarEnTexto(texto: string, inicio: number, fin: number, inse
 
 // Subidas activas: mientras haya alguna, Guardar queda deshabilitado (el enlace aún no está en el Markdown).
 export const AVISO_SUBIDAS = "Espera a que terminen las subidas";
-export function estadoGuardar(subidasActivas: number, guardando: boolean): { deshabilitado: boolean; aviso: string } {
+export function estadoGuardar(subidasActivas: number, guardando: boolean, cargandoVisual = false): { deshabilitado: boolean; aviso: string } {
   const subiendo = subidasActivas > 0;
-  return { deshabilitado: subiendo || guardando, aviso: subiendo ? AVISO_SUBIDAS : "" };
+  return { deshabilitado: subiendo || guardando || cargandoVisual, aviso: subiendo ? AVISO_SUBIDAS : "" };
+}
+
+export const MENSAJE_CARGANDO_EDITOR = "Cargando editor…";
+export const MENSAJE_FALLO_VISUAL = "No se pudo cargar el editor visual. Sigues en modo Markdown.";
+// Adjuntar e Insertar quedan bloqueados mientras se guarda o mientras carga el editor visual.
+export function insercionBloqueada(guardando: boolean, cargandoVisual: boolean): boolean {
+  return guardando || cargandoVisual;
 }
 
 // Mientras hay un guardado en vuelo no se puede cancelar ni cerrar: la respuesta debe llegar a la misma sesión de edición.

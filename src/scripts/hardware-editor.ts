@@ -18,6 +18,9 @@ import {
   insertarEnTexto,
   AVISO_SUBIDAS,
   estadoGuardar,
+  insercionBloqueada,
+  MENSAJE_CARGANDO_EDITOR,
+  MENSAJE_FALLO_VISUAL,
   estadoCancelar,
   MEDIA_LADO_A_LADO,
   mensajeError,
@@ -119,6 +122,9 @@ async function iniciar(root: HTMLElement) {
   const btnModoMarkdown = $<HTMLButtonElement>("[data-hw-modo-markdown]");
   const contVisual = $("[data-hw-visual]");
   const ayudaVisual = $("[data-hw-ayuda-visual]");
+  const indicadorCarga = $("[data-hw-cargando-visual]");
+  let cargandoVisual = false;
+  let generacionCarga = -1;
   const pestanasCaja = $(".hw-pestanas");
   const cuerpoEditor = $(".hw-editor-cuerpo");
 
@@ -147,14 +153,14 @@ async function iniciar(root: HTMLElement) {
   const enfocarActivo = () => (modoMarkdown || !visual ? textarea.focus() : visual.enfocar());
   const cerrojo = crearCerrojoGuardado();
   function actualizarGuardar(avisar = false) {
-    const e = estadoGuardar(subidasActivas, guardando);
+    const e = estadoGuardar(subidasActivas, guardando, cargandoVisual);
     btnGuardar.disabled = e.deshabilitado;
     textarea.disabled = guardando;
     visual?.setSoloLectura(guardando);
-    inputArchivo.disabled = guardando;
-    btnInsertarDiagrama.disabled = guardando;
-    btnInsertarPdf.disabled = guardando;
-    btnInsertarBom.disabled = guardando;
+    inputArchivo.disabled = insercionBloqueada(guardando, cargandoVisual);
+    btnInsertarDiagrama.disabled = insercionBloqueada(guardando, cargandoVisual);
+    btnInsertarPdf.disabled = insercionBloqueada(guardando, cargandoVisual);
+    btnInsertarBom.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnGuardar.title = e.aviso;
     const c = estadoCancelar(guardando);
     btnCancelar.disabled = c.deshabilitado;
@@ -732,6 +738,12 @@ async function iniciar(root: HTMLElement) {
 
   // Monta el editor visual con `md`. Si el chunk no carga, se queda el modo Markdown con un aviso.
   async function montarVisual(md: string, generacion: number) {
+    cargandoVisual = true;
+    generacionCarga = generacion;
+    indicadorCarga.textContent = MENSAJE_CARGANDO_EDITOR;
+    indicadorCarga.hidden = false;
+    contVisual.setAttribute("aria-busy", "true");
+    actualizarGuardar();
     try {
       const [mod, { html }] = await Promise.all([import("./editor-visual"), cargarRender()]);
       if (generacion !== generacionEditor) return;
@@ -749,9 +761,17 @@ async function iniciar(root: HTMLElement) {
       cargaRender = null;
       modoMarkdown = true;
       mostrarModo();
-      errorEditor(`${mensajeError("red")} Se abrió el modo Markdown.`);
+      errorEditor(MENSAJE_FALLO_VISUAL);
       textarea.focus();
       return;
+    } finally {
+      // Si ya empezó otra generación, ella es la dueña del estado de carga.
+      if (generacionCarga === generacion) {
+        cargandoVisual = false;
+        indicadorCarga.hidden = true;
+        contVisual.removeAttribute("aria-busy");
+        actualizarGuardar();
+      }
     }
     inicialEditor = visual.getMarkdown();
     origen = md;
@@ -848,6 +868,7 @@ async function iniciar(root: HTMLElement) {
 
   // salir: true (botón Guardar) cierra el editor; salir: false (Ctrl/Cmd+S) lo deja abierto con texto, cursor y foco.
   async function guardar({ salir }: { salir: boolean }) {
+    if (cargandoVisual) return;
     if (!pagina || !editando) return;
     errorEditor("");
     if (subidasActivas > 0) {

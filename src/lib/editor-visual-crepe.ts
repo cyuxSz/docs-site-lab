@@ -45,6 +45,11 @@ function tabFueraDelEditor(e: KeyboardEvent, vista: any, raiz: HTMLElement) {
     const n = $from.node(d).type.name;
     if (n === "list_item" || n.startsWith("table")) return;
   }
+  if (moverFoco(e, raiz)) e.preventDefault();
+}
+
+// Mueve el foco al primer botón de acción tras el editor (Mayús+Tab: al control anterior). Devuelve false si no hay destino.
+function moverFoco(e: KeyboardEvent, raiz: HTMLElement): boolean {
   const doc = raiz.ownerDocument;
   const candidatos = Array.from(doc.querySelectorAll<HTMLElement>(ELEMENTOS_TABULABLES)).filter(
     (el) => !raiz.contains(el) && !(el as HTMLButtonElement).disabled && !el.closest("[hidden]") && el.tabIndex >= 0,
@@ -52,9 +57,29 @@ function tabFueraDelEditor(e: KeyboardEvent, vista: any, raiz: HTMLElement) {
   const SIGUIENTE = 4; // Node.DOCUMENT_POSITION_FOLLOWING
   const despues = candidatos.filter((el) => raiz.compareDocumentPosition(el) & SIGUIENTE);
   const destino = e.shiftKey ? candidatos.filter((el) => !despues.includes(el)).pop() : despues[0];
-  if (!destino) return;
-  e.preventDefault();
+  if (!destino) return false;
   destino.focus();
+  return true;
+}
+
+// Esc y luego Tab sale del editor desde cualquier sitio. En captura: las teclas de CodeMirror no llegan a `vista.dom`. Esc solo
+// vale para la tecla siguiente. No se enfoca el editor desde aquí (en jsdom provoca un bucle de medidas).
+function escLuegoTab(raiz: HTMLElement) {
+  let armado = false;
+  raiz.addEventListener(
+    "keydown",
+    (e) => {
+      const k = e as KeyboardEvent;
+      if (["Shift", "Control", "Alt", "Meta"].includes(k.key)) return;
+      const salir = armado && k.key === "Tab" && !k.ctrlKey && !k.altKey && !k.metaKey;
+      armado = k.key === "Escape";
+      if (salir && moverFoco(k, raiz)) {
+        k.preventDefault();
+        k.stopPropagation();
+      }
+    },
+    true,
+  );
 }
 
 export interface OpcionesCrepe {
@@ -107,6 +132,7 @@ export async function montarCrepe(raiz: HTMLElement, md: string, opciones: Opcio
   const editor = crepe.editor;
   const vista = editor.action((ctx) => ctx.get(editorViewCtx));
   vista.dom.addEventListener("keydown", (e) => tabFueraDelEditor(e as KeyboardEvent, vista, raiz));
+  escLuegoTab(raiz);
   return {
     editor,
     vista,
