@@ -980,8 +980,9 @@ figure.hw-kicad [role="status"] { margin: 0 0 8px; color: var(--muted); }
 :is(.prose.hw-lectura, .prose.hw-previa) img { max-width: 100%; }
 :is(.prose.hw-lectura, .prose.hw-previa) :is(ul, ol) { padding-left: 1.5em; margin: var(--hw-bloque-margen); }
 :is(.prose.hw-lectura, .prose.hw-previa) li { margin: 0; padding: 4px 0; }
-:is(.prose.hw-lectura, .prose.hw-previa) table { display: table; width: 100%; margin: var(--hw-bloque-margen); }
-:is(.prose.hw-lectura, .prose.hw-previa) :is(th, td) { border: var(--hw-celda-borde); padding: var(--hw-celda-padding); height: 2.2em; vertical-align: top; }
+:is(.prose.hw-lectura, .prose.hw-previa) table { display: table; width: 100%; margin: var(--hw-bloque-margen); font-size: inherit; line-height: 1.5; }
+:is(.prose.hw-lectura, .prose.hw-previa) :is(th, td) { border: var(--hw-celda-borde); padding: var(--hw-celda-padding); padding-block: calc(4px + 4px); height: 1.5em; vertical-align: top; }
+/* Crepe envuelve cada celda en un <p> con margin 4px 0: en lectura (sin <p>) se suma 4px al padding vertical del token para igualar el alto de fila del editor. La tabla hereda el tamaño del cuerpo (anula .875em de .prose table). Docs no cambia. */
 :is(.prose.hw-lectura, .prose.hw-previa) th { color: var(--text); font-weight: 600; background: var(--surface); }
 @media (max-width: 640px) {
   :is(.prose.hw-lectura, .prose.hw-previa) table { display: block; overflow-x: auto; max-width: 100%; }
