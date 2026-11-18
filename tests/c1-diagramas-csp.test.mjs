@@ -15,7 +15,7 @@ const leer = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8"
 const config = (await import("../astro.config.mjs")).default;
 const DIRECTIVAS = [
   "default-src 'self'",
-  "img-src 'self' data:",
+  "img-src 'self' data: blob:", // C15: iconos de zoom de KiCanvas (blob:)
   "connect-src 'self'",
   "frame-src 'self' https://embed.diagrams.net", // D1a: 'self' para el visor de PDF
   "object-src 'none'",
@@ -56,7 +56,10 @@ test("<meta> CSP: se permiten el iframe de diagrams.net y el propio origen (PDF)
 test("<meta> CSP: sin 'unsafe-eval', sin comodines, sin CDNs; scripts y estilos sin cambios", () => {
   const csp = config.security.csp;
   const todo = JSON.stringify(csp);
-  assert.doesNotMatch(todo, /'unsafe-eval'|\*|esm\.sh|unpkg|jsdelivr|worker-src|blob:/);
+  assert.doesNotMatch(todo, /'unsafe-eval'|\*|esm\.sh|unpkg|jsdelivr|worker-src/);
+  // C15 (d1b): blob: solo en img-src (iconos de KiCanvas), en ninguna otra directiva.
+  assert.deepEqual(csp.directives.filter((d) => /blob:/.test(d)), ["img-src 'self' data: blob:"]);
+  assert.doesNotMatch(JSON.stringify([csp.scriptDirective, csp.styleDirective]), /blob:/);
   assert.deepEqual(csp.scriptDirective.resources, ["'self'", "'wasm-unsafe-eval'"]);
   assert.deepEqual(csp.styleDirective.resources, ["'self'", "'unsafe-inline'"]);
   const p = politica(csp.directives);

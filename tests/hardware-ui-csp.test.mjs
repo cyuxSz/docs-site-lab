@@ -11,7 +11,7 @@ const config = (await import("../astro.config.mjs")).default;
 test("CSP: directivas exactas; connect-src es solo 'self' (sin https://vercel.com/api/blob/)", () => {
   assert.deepEqual(config.security.csp.directives, [
     "default-src 'self'",
-    "img-src 'self' data:",
+    "img-src 'self' data: blob:", // C15 (d1b): iconos de zoom de KiCanvas
     "connect-src 'self'",
     "frame-src 'self' https://embed.diagrams.net", // D1a: 'self' para el visor de PDF; C1: iframe de diagrams.net (ver tests/c1-diagramas-csp.test.mjs)
     "object-src 'none'",
@@ -23,7 +23,10 @@ test("CSP: directivas exactas; connect-src es solo 'self' (sin https://vercel.co
 test("CSP: sin comodines, sin worker-src ni hosts de almacenamiento; scripts y estilos sin cambios", () => {
   const csp = config.security.csp;
   const todo = JSON.stringify(csp);
-  assert.doesNotMatch(todo, /\*|vercel|blob\.vercel-storage\.com|worker-src|blob:/);
+  assert.doesNotMatch(todo, /\*|vercel|blob\.vercel-storage\.com|worker-src/);
+  // C15 (d1b): blob: solo en img-src (iconos de KiCanvas).
+  assert.deepEqual(csp.directives.filter((d) => /blob:/.test(d)), ["img-src 'self' data: blob:"]);
+  assert.doesNotMatch(JSON.stringify([csp.scriptDirective, csp.styleDirective]), /blob:/);
   assert.deepEqual(csp.scriptDirective.resources, ["'self'", "'wasm-unsafe-eval'"]);
   assert.equal(csp.scriptDirective.hashes.length, 1, "solo el hash del tema");
   assert.match(leer("astro.config.mjs"), /hashes:\s*\[\s*temaHash\s*\]/);

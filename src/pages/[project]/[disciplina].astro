@@ -51,8 +51,13 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
           <a href="#" data-hw-primera>Ir a la primera página</a>
         </section>
 
+        <div class="hw-aviso-lector" data-hw-aviso-lector role="status">
+          <span>Vista de lector</span>
+          <button type="button" class="btn" data-hw-salir-lector>Salir de la vista de lector</button>
+        </div>
         <section class="hw-pagina" data-hw-pagina hidden>
           <div class="hw-barra" data-hw-solo-editor hidden>
+            <button type="button" class="btn" data-hw-ver-lector aria-pressed="false">Ver como lector</button>
             <button type="button" class="btn" data-hw-editar>Editar</button>
             <button type="button" class="btn" data-hw-borrar>Borrar página</button>
           </div>
@@ -97,6 +102,8 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
               <button type="button" class="btn" data-hw-insertar-pdf>Insertar PDF</button>
               <input type="file" class="hw-archivo" data-hw-archivo-bom accept=".csv,text/csv" tabindex="-1" aria-hidden="true" />
               <button type="button" class="btn" data-hw-insertar-bom>Insertar BOM</button>
+              <input type="file" class="hw-archivo" data-hw-archivo-kicad accept=".kicad_sch,.kicad_pcb,.pdf,.svg" multiple tabindex="-1" aria-hidden="true" />
+              <button type="button" class="btn" data-hw-insertar-kicad>Insertar esquemático (KiCad)</button>
               <progress class="hw-progreso" data-hw-progreso max="100" value="0" aria-label="Progreso de la subida" hidden></progress>
               <span class="hw-subiendo" data-hw-subiendo aria-live="polite"></span>
             </div>

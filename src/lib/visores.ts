@@ -40,6 +40,65 @@ export function bloquePdf(d: { archivo: string; titulo?: string }): string {
   return `\`\`\`pdf\narchivo: ${archivo}\n${titulo ? `titulo: ${titulo}\n` : ""}\`\`\`\n`;
 }
 
+// ---------- KiCad ----------
+export interface DatosKicad {
+  archivo: string;
+  respaldo: string;
+  titulo: string;
+}
+
+export const MAX_KICAD_VISOR = 20 * 1024 * 1024;
+const CLAVES_KICAD = new Set(["archivo", "respaldo", "titulo"]);
+
+export function parsearKicad(cuerpo: string): DatosKicad | null {
+  const vistas = new Map<string, string>();
+  for (const cruda of String(cuerpo ?? "").split(/\r\n|\r|\n/)) {
+    const linea = cruda.trim();
+    if (!linea) continue;
+    const i = linea.indexOf(":");
+    if (i < 1) return null;
+    const clave = linea.slice(0, i).trim();
+    if (!CLAVES_KICAD.has(clave) || vistas.has(clave)) return null;
+    vistas.set(clave, linea.slice(i + 1).trim());
+  }
+  const archivo = vistas.get("archivo")?.toLowerCase();
+  const respaldo = vistas.get("respaldo")?.toLowerCase() ?? "";
+  const titulo = vistas.get("titulo") ?? "";
+  if (!archivo || !UUID.test(archivo) || titulo.length > MAX_TITULO) return null;
+  if (vistas.has("respaldo") && (!UUID.test(respaldo) || respaldo === archivo)) return null;
+  return { archivo, respaldo, titulo };
+}
+
+export function bloqueKicad(d: { archivo: string; respaldo?: string; titulo?: string }): string {
+  const archivo = String(d?.archivo ?? "").toLowerCase();
+  const respaldo = String(d?.respaldo ?? "").toLowerCase();
+  if (!UUID.test(archivo)) throw new Error("Identificador de archivo de KiCad no válido");
+  if (respaldo && !UUID.test(respaldo)) throw new Error("Identificador de respaldo no válido");
+  const titulo = limpiarTitulo(d.titulo ?? "");
+  return `\`\`\`kicad\narchivo: ${archivo}\n${respaldo ? `respaldo: ${respaldo}\n` : ""}${titulo ? `titulo: ${titulo}\n` : ""}\`\`\`\n`;
+}
+
+// Esquemático o PCB por el prefijo S-expression, tras quitar BOM y espacios iniciales.
+export function tipoKicad(texto: string): "esquematico" | "pcb" | null {
+  const t = String(texto ?? "").replace(/^[\uFEFF\s]+/, "");
+  if (/^\(kicad_sch(?=[\s()])/.test(t)) return "esquematico";
+  if (/^\(kicad_pcb(?=[\s()])/.test(t)) return "pcb";
+  return null;
+}
+
+type ArchivoLista = { name: string; size: number };
+export function archivosKicad(
+  lista: ArchivoLista[],
+): { ok: true; kicad: ArchivoLista; respaldo?: ArchivoLista } | { ok: false; error: string } {
+  const archivos = Array.from(lista ?? []);
+  const kicad = archivos.filter((a) => /\.kicad_(sch|pcb)$/i.test(String(a?.name ?? "")));
+  const respaldo = archivos.filter((a) => /\.(pdf|svg)$/i.test(String(a?.name ?? "")));
+  if (kicad.length !== 1) return { ok: false, error: "Elige exactamente un archivo .kicad_sch o .kicad_pcb" };
+  if (respaldo.length > 1) return { ok: false, error: "Como respaldo elige como máximo un PDF o SVG" };
+  if (kicad.length + respaldo.length !== archivos.length) return { ok: false, error: "Solo se admiten un .kicad_sch o .kicad_pcb y, opcionalmente, un PDF o SVG de respaldo" };
+  return respaldo.length ? { ok: true, kicad: kicad[0], respaldo: respaldo[0] } : { ok: true, kicad: kicad[0] };
+}
+
 // ---------- BOM ----------
 export const MAX_FILAS_BOM = 500;
 export const MAX_CELDA_BOM = 200;
