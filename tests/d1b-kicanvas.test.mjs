@@ -47,6 +47,7 @@ function falsoKicad(texto = SCH) {
         if (texto instanceof Error) throw texto;
         return texto;
       },
+      webgl2: () => true, // C21: sin WebGL2 no se monta el visor
     },
   };
 }

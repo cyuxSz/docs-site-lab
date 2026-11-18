@@ -53,7 +53,7 @@ test("C17 script: entrar/salir alternan el atributo en <html> y no tocan hidden 
   const salir = cuerpo(script, "salirVistaLector");
   assert.ok(entrar && salir, "faltan entrarVistaLector/salirVistaLector");
   assert.match(entrar, /document\.documentElement\.(setAttribute\("data-vista-lector"|dataset\.vistaLector\s*=)/);
-  assert.match(salir, /document\.documentElement\.(removeAttribute\("data-vista-lector"\)|dataset\.vistaLector\s*=\s*undefined|delete document\.documentElement\.dataset\.vistaLector)/);
+  assert.match(salir, /document\.documentElement\.(removeAttribute\("data-vista-lector"\)|delete document\.documentElement\.dataset\.vistaLector)/);
   for (const [n, b] of [["entrar", entrar], ["salir", salir]]) {
     assert.doesNotMatch(b, /\.hidden\s*=/, `${n}: nada de hidden por control`);
     assert.doesNotMatch(b, /localStorage|sessionStorage|document\.cookie|fetch\(/, `${n}: sin persistencia ni API`);
@@ -70,4 +70,19 @@ test("C17 script: abrir el editor no es posible en vista de lector, y la vista n
   const abrir = cuerpo(script, "abrirEditor");
   assert.match(abrir, /data-vista-lector|dataset\.vistaLector|vistaLector/, "abrirEditor debe salir o ignorar la vista de lector");
   assert.doesNotMatch(script, /(localStorage|sessionStorage)[^\n]*(vista|lector)/i);
+});
+
+// C24 (lote CR58): salir debe eliminar el atributo de verdad. `dataset.vistaLector = undefined` lo deja como "undefined".
+test("C24 script: tras entrar y salir, <html> no tiene data-vista-lector (ejecución real en jsdom)", async () => {
+  const { JSDOM } = await import("jsdom");
+  const win = new JSDOM('<!doctype html><html><body><button id="v"></button><button id="s"></button></body></html>').window;
+  const entrar = cuerpo(script, "entrarVistaLector");
+  const salir = cuerpo(script, "salirVistaLector");
+  const crear = (b) => new Function("document", "editando", "btnVerLector", "btnSalirLector", b);
+  const args = [win.document, false, win.document.getElementById("v"), win.document.getElementById("s")];
+  crear(entrar)(...args);
+  assert.equal(win.document.documentElement.hasAttribute("data-vista-lector"), true);
+  crear(salir)(...args);
+  assert.equal(win.document.documentElement.hasAttribute("data-vista-lector"), false);
+  assert.equal(win.document.activeElement, args[2], "el foco vuelve a «Ver como lector»");
 });
