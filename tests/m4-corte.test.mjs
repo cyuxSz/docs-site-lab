@@ -113,11 +113,11 @@ test("README: producción despliega desde main; cloudflare ya no es la rama de d
   assert.match(sec, /push a (la rama )?`main`/, "la sección dice que se despliega con push a `main`");
 });
 
-test("README: Vercel queda de respaldo una semana y se lista qué falta para quitarlo", () => {
+test("README: describe solo Cloudflare, sin respaldo en Vercel, Blob, Upstash ni Deploy Hook", () => {
   const r = leer("README.md");
-  const i = r.search(/^## Despliegue en Cloudflare/m);
-  assert.ok(i >= 0, "falta la sección ## Despliegue en Cloudflare");
-  const sec = r.slice(i).split(/\n## /)[0];
-  assert.match(sec, /Vercel[^\n]*respaldo[^\n]*semana|semana[^\n]*respaldo[^\n]*Vercel/i, "Vercel de respaldo durante una semana");
-  for (const t of ["vercel.json", "api/", "@vercel/", "Upstash", "Blob"]) assert.ok(sec.includes(t), `menciona ${t} en lo que falta para quitar Vercel`);
+  assert.ok(r.search(/^## Despliegue en Cloudflare/m) >= 0, "falta la sección ## Despliegue en Cloudflare");
+  assert.doesNotMatch(r, /respaldo/i, "no hay apartado de respaldo");
+  for (const re of [/vercel/i, /\bblob\b/i, /upstash/i, /deploy hook/i, /PREVIEW_TRUST_VERCEL_AUTH/, /KV_REST_API/, /BLOB_READ_WRITE_TOKEN/]) {
+    assert.doesNotMatch(r, re, `el README no menciona ${re}`);
+  }
 });

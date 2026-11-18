@@ -467,7 +467,7 @@ test("wrangler.jsonc: binding R2 ARCHIVOS → docs-hardware; .dev.vars.example c
   for (const k of ["KV_REST_API_URL", "KV_REST_API_TOKEN", "SESSION_SECRET"]) assert.ok(ej.includes(`${k}=`), `${k}= sin valor`);
 });
 
-test("README: la sección de Cloudflare describe R2 (ARCHIVOS), Upstash y hardware", () => {
+test("README: la sección de Cloudflare describe R2 (ARCHIVOS) y hardware, sin Upstash", () => {
   const md = leer("README.md");
   const i = md.indexOf("## Cloudflare");
   assert.ok(i >= 0);
@@ -475,7 +475,7 @@ test("README: la sección de Cloudflare describe R2 (ARCHIVOS), Upstash y hardwa
   const sec = md.slice(i, fin === -1 ? undefined : fin);
   assert.match(sec, /ARCHIVOS/);
   assert.match(sec, /docs-hardware/);
-  assert.match(sec, /KV_REST_API_URL/);
+  assert.doesNotMatch(sec, /KV_REST_API_URL|upstash/i, "Upstash ya no se documenta");
   assert.match(sec, /hardware/i);
   assert.doesNotMatch(sec, /`\/api\/\*` responde 501 hasta M2/, "la frase de M1 ya no es cierta");
 });

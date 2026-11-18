@@ -519,7 +519,7 @@ test("README: la sección de Cloudflare dice que /api/hardware responde en el Wo
   assert.match(sec, /navegador/i);
   assert.match(sec, /marked/);
   assert.match(sec, /DOMPurify/);
-  assert.match(sec, /upstash-local/);
+  assert.doesNotMatch(sec, /upstash-local/, "el Upstash simulado ya no se documenta");
 });
 
 // ======================================================================================================

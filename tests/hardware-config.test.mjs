@@ -95,9 +95,11 @@ test("middleware: la excepción es solo esa: sin firma, otro método u otra ruta
 
 // ---------- README ----------
 
-test("README explica cómo activar los archivos: conectar Vercel Blob → BLOB_READ_WRITE_TOKEN", () => {
+test("README explica dónde van los archivos: R2 `ARCHIVOS` (docs-hardware), sin Vercel Blob", () => {
   const src = leer("README.md");
-  assert.match(src, /Vercel Blob/);
-  assert.match(src, /BLOB_READ_WRITE_TOKEN/);
+  assert.match(src, /`ARCHIVOS`/);
+  assert.match(src, /docs-hardware/);
+  assert.doesNotMatch(src, /Vercel Blob/);
+  assert.doesNotMatch(src, /BLOB_READ_WRITE_TOKEN/);
   assert.match(src, /disciplinas/);
 });

@@ -125,7 +125,7 @@ test("deploy-cloudflare.yml aplica las migraciones remotas antes del deploy, con
   assert.match(paso, /uses:\s*cloudflare\/wrangler-action@[0-9a-f]{40}/, "misma acción fijada por SHA");
 });
 
-test("README (## Cloudflare): D1, migraciones locales, cómo rellenar database_id y la copia de M4", () => {
+test("README (## Cloudflare): D1, migraciones locales, cómo rellenar database_id y binding DB, sin Upstash", () => {
   const md = leer("README.md");
   const i = md.indexOf("## Cloudflare");
   const fin = md.indexOf("\n## ", i + 1);
@@ -134,8 +134,9 @@ test("README (## Cloudflare): D1, migraciones locales, cómo rellenar database_i
   assert.match(sec, /wrangler d1 migrations apply docs-site --local/);
   assert.match(sec, /wrangler d1 create docs-site/);
   assert.match(sec, /database_id/);
-  assert.match(sec, /tools\/migrar-upstash-d1\.mjs/);
-  assert.match(sec, /KV_REST_API_URL/, "Upstash sigue documentado como alternativa sin D1");
+  assert.match(sec, /`DB`/, "documenta el binding DB (D1)");
+  assert.doesNotMatch(sec, /migrar-upstash-d1/, "la copia desde Upstash ya no se documenta");
+  assert.doesNotMatch(sec, /KV_REST_API_URL|upstash/i, "Upstash ya no se documenta");
 });
 
 // ---------- API del adaptador ----------
