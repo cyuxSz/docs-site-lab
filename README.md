@@ -25,7 +25,7 @@ docs/                        notify-docs-site.cloudflare.yml.example (aviso desd
 
 ## Cómo se actualiza
 1. Un repo de código cambia `openwiki/` o `docs/arch/` en su rama.
-2. Su workflow `notify-docs-site` manda un `repository_dispatch` (`docs-actualizados`, con `{ proyecto, sha }`) a este repo; `proyecto` es el id de `projects.json`.
+2. Su workflow `notify-docs-site` llama a `POST repos/cyuxSz/docs-site-lab/actions/workflows/deploy-cloudflare.yml/dispatches` (`workflow_dispatch`) con `ref=main`, `inputs[proyecto]` e `inputs[sha]`; `proyecto` es el id de `projects.json`. Esa vía usa el token `DOCS_SITE_DISPATCH_TOKEN` con permiso Actions: Read and write. `deploy-cloudflare.yml` también acepta un `repository_dispatch` (`docs-actualizados`, con `{ proyecto, sha }`) como vía alternativa; esa requiere Contents: write.
 3. `deploy-cloudflare.yml` vuelve a traer y construir solo ese proyecto y despliega el Worker. No hay que tocar este repo.
 
 Un push a `main` (p. ej. al mergear un PR) construye todo y despliega.
@@ -39,6 +39,7 @@ Todo pasa por el login del Worker (`lib/login-core.mjs`); los contenidos nunca s
 2. Guarda `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SESSION_SECRET`, `ALLOWED_ORG` y `ALLOWED_USERS` como **Secrets** del Worker (`npx wrangler secret put <NOMBRE> --name docs`), no como Variables: `wrangler deploy` borra las Variables que no están en `wrangler.jsonc`.
 3. **Abrir el acceso a la org:** `npx wrangler secret put ALLOWED_ORG --name docs` (valor: la org, p. ej. `vanttec`). Si la org restringe apps de terceros, solo se ven los miembros con membresía pública; el aviso de «Sin acceso» explica cómo cambiarla, o la org aprueba la OAuth App.
 4. **Cerrar el acceso a la org:** `npx wrangler secret delete ALLOWED_ORG --name docs`. Quedan solo los logins de `ALLOWED_USERS`.
+   Las sesiones ya iniciadas siguen valiendo hasta que caduca su cookie firmada (7 días), porque `isAllowed` solo se comprueba en el login. Para cortarlas ya, rota `SESSION_SECRET` con un valor aleatorio nuevo: `npx wrangler secret put SESSION_SECRET --name docs`. Esto cierra **todas** las sesiones; los de `ALLOWED_USERS` vuelven a entrar con login.
 
 `ALLOWED_USERS` son logins de GitHub separados por coma (sin distinguir mayúsculas). Hoy solo está `ALLOWED_USERS`; `ALLOWED_ORG` se añade cuando la org apruebe la OAuth App.
 
