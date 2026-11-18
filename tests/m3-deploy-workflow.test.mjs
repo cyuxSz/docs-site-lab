@@ -58,12 +58,11 @@ const wf = () => {
   return y;
 };
 
-test("deploy-cloudflare: push a cloudflare (main comentado) y sin pull_request_target", () => {
+test("deploy-cloudflare: push a main (corte M4) y sin pull_request_target", () => {
   const y = wf();
   const s = sinComentarios(y);
-  assert.match(s, /\bpush:\s*\n\s+branches:\s*(\[\s*cloudflare\s*\]|\n\s+-\s*cloudflare\b)/);
-  assert.match(y, /#.*\bmain\b/, "main queda comentado para cuando se haga el corte");
-  assert.doesNotMatch(s, /branches:[^\n]*\bmain\b|^\s+-\s*main\s*$/m, "main todavía no dispara");
+  assert.match(s, /\bpush:\s*\n\s+branches:\s*(\[\s*main\s*\]|\n\s+-\s*main\b)/);
+  assert.doesNotMatch(s, /branches:[^\n]*\bcloudflare\b|^\s+-\s*cloudflare\s*$/m, "cloudflare ya no dispara");
   assert.doesNotMatch(s, /pull_request_target/);
 });
 
