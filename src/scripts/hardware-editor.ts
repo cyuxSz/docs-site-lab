@@ -39,7 +39,7 @@ import {
   validarArchivo,
   type PaginaIndice,
 } from "../lib/hardware-editor";
-import { bloquePdf, bomDeArchivo, bloqueBom, insertarBloqueTexto, tituloDeArchivo } from "../lib/visores";
+import { archivosKicad, bloqueKicad, bloquePdf, bomDeArchivo, bloqueBom, insertarBloqueTexto, tituloDeArchivo } from "../lib/visores";
 
 interface PaginaHw {
   slug: string;
@@ -116,6 +116,8 @@ async function iniciar(root: HTMLElement) {
   const btnInsertarDiagrama = $<HTMLButtonElement>("[data-hw-insertar-diagrama]");
   const btnInsertarPdf = $<HTMLButtonElement>("[data-hw-insertar-pdf]");
   const btnInsertarBom = $<HTMLButtonElement>("[data-hw-insertar-bom]");
+  const btnInsertarKicad = $<HTMLButtonElement>("[data-hw-insertar-kicad]");
+  const inputKicad = $<HTMLInputElement>("[data-hw-archivo-kicad]");
   const inputPdf = $<HTMLInputElement>("[data-hw-archivo-pdf]");
   const inputBom = $<HTMLInputElement>("[data-hw-archivo-bom]");
   const dlgDiagramaNuevo = $<HTMLDialogElement>("#hw-diagrama-nuevo");
@@ -163,6 +165,7 @@ async function iniciar(root: HTMLElement) {
     btnInsertarDiagrama.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnInsertarPdf.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnInsertarBom.disabled = insercionBloqueada(guardando, cargandoVisual);
+    btnInsertarKicad.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnGuardar.title = e.aviso;
     const c = estadoCancelar(guardando);
     btnCancelar.disabled = c.deshabilitado;
@@ -221,7 +224,7 @@ async function iniciar(root: HTMLElement) {
     destino.replaceChildren(frag);
     // Iframe del PDF y botón "Exportar CSV": los crea montarVisores con createElement a partir de los bloques (no vienen del HTML).
     try {
-      montarVisores(destino, md, { proyecto, slug: pagina?.slug ?? "", vistaPrevia: destino === previa, descargar: descargarCsv });
+      void montarVisores(destino, md, { proyecto, slug: pagina?.slug ?? "", vistaPrevia: destino === previa, descargar: descargarCsv });
     } catch {
       /* sin visores: quedan el enlace "Abrir PDF" y la tabla */
     }
@@ -715,6 +718,7 @@ async function iniciar(root: HTMLElement) {
     btnInsertarDiagrama.hidden = !lado && modo !== "escribir";
     btnInsertarPdf.hidden = !lado && modo !== "escribir";
     btnInsertarBom.hidden = !lado && modo !== "escribir";
+    btnInsertarKicad.hidden = !lado && modo !== "escribir";
     previa.hidden = !lado && modo !== "previa";
   }
 
@@ -750,7 +754,7 @@ async function iniciar(root: HTMLElement) {
       modoEditor("escribir");
       if (mqLado.matches) void pintarMd(previa, textarea.value, pagina?.titulo);
     } else {
-      for (const x of [btnInsertarDiagrama, btnInsertarPdf, btnInsertarBom]) x.hidden = false;
+      for (const x of [btnInsertarDiagrama, btnInsertarPdf, btnInsertarBom, btnInsertarKicad]) x.hidden = false;
       previaViva.cancelar();
     }
   }
@@ -1130,8 +1134,8 @@ async function iniciar(root: HTMLElement) {
   }
 
   // `diagrama`: la subida es de un diagrama (C1): usa el id dado, no inserta enlace en el textarea y entrega el error a `fallo`.
-  // `bloque` (D1a): la subida es de un PDF para un bloque ```pdf: exige tipo pdf, no inserta el enlace normal y entrega el id a `alSubir`.
-  async function subir(archivo: File, diagrama?: { id: string; fallo: (texto: string) => void }, bloque?: { tipo: string; alSubir: (id: string) => void }): Promise<boolean> {
+  // `bloque` (D1a): la subida es de un PDF para un bloque ```pdf: exige uno de `tipos`, no inserta el enlace normal y entrega el id a `alSubir`.
+  async function subir(archivo: File, diagrama?: { id: string; fallo: (texto: string) => void }, bloque?: { tipos: string[]; alSubir: (id: string) => void }): Promise<boolean> {
     errorEditor("");
     mostrarEstado("");
     const nombre = String(archivo?.name ?? "archivo");
@@ -1139,8 +1143,8 @@ async function iniciar(root: HTMLElement) {
     let temporizador: ReturnType<typeof setTimeout> | undefined;
     try {
       const v = validarArchivo(archivo);
-      if (!v.ok || (bloque && v.tipo !== bloque.tipo)) {
-        const motivo = !v.ok ? v.error : "Solo se admiten archivos PDF";
+      if (!v.ok || (bloque && !bloque.tipos.includes(v.tipo))) {
+        const motivo = !v.ok ? v.error : "Tipo de archivo no admitido aquí";
         if (diagrama) diagrama.fallo(`${quien}: ${motivo}`);
         else errorEditor(`${nombre}: ${motivo}`);
         return false;
@@ -1230,7 +1234,35 @@ async function iniciar(root: HTMLElement) {
     subidasActivas++;
     actualizarGuardar();
     try {
-      await subir(archivo, undefined, { tipo: "pdf", alSubir: (id) => insertarBloqueEnTexto(bloquePdf({ archivo: id, titulo: tituloDeArchivo(archivo.name) })) });
+      await subir(archivo, undefined, { tipos: ["pdf"], alSubir: (id) => insertarBloqueEnTexto(bloquePdf({ archivo: id, titulo: tituloDeArchivo(archivo.name) })) });
+    } finally {
+      subidasActivas--;
+      actualizarGuardar();
+    }
+    enfocarActivo();
+  });
+  escuchar(btnInsertarKicad, "click", () => {
+    if (!guardando) inputKicad.click();
+  });
+  escuchar(inputKicad, "change", async () => {
+    const lista = [...(inputKicad.files ?? [])];
+    inputKicad.value = "";
+    if (!lista.length || guardando) return;
+    errorEditor("");
+    mostrarEstado("");
+    const sel = archivosKicad(lista);
+    if (!sel.ok) {
+      errorEditor(sel.error);
+      return;
+    }
+    subidasActivas++;
+    actualizarGuardar();
+    try {
+      let archivo = "";
+      let respaldo = "";
+      if (!(await subir(sel.kicad as File, undefined, { tipos: ["kicad_sch", "kicad_pcb"], alSubir: (id) => (archivo = id) }))) return;
+      if (sel.respaldo && !(await subir(sel.respaldo as File, undefined, { tipos: ["pdf", "svg"], alSubir: (id) => (respaldo = id) }))) return;
+      insertarBloqueEnTexto(bloqueKicad({ archivo, respaldo, titulo: tituloDeArchivo(sel.kicad.name) }));
     } finally {
       subidasActivas--;
       actualizarGuardar();

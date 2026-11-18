@@ -950,3 +950,9 @@ main.caratula { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 .tutorial-acciones { display: flex; flex-wrap: wrap; gap: 10px; }
 .tutorial-acciones .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 480px) { .tutorial-tarjeta { grid-template-columns: 1fr; } }
+/* D1b: visor de KiCad. El HTML saneado solo trae enlaces; montarVisores añade el <kicanvas-embed> encima. */
+figure.hw-kicad { margin: 1.5em 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); min-width: 0; max-width: 100%; }
+figure.hw-kicad kicanvas-embed { display: block; width: 100%; max-width: 100%; height: min(70vh, 700px); min-height: 320px; }
+figure.hw-kicad > a { display: inline-block; margin: 8px 12px 0 0; }
+figure.hw-kicad figcaption { margin-top: 6px; font-size: 13px; color: var(--muted); }
+figure.hw-kicad [role="status"] { margin: 0 0 8px; color: var(--muted); }

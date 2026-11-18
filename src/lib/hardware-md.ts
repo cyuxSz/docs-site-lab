@@ -1,7 +1,7 @@
 import { Marked } from "marked";
 import createDOMPurify from "dompurify";
 import { bloqueDiagrama, parsearBloque, type Diagrama } from "./diagramas.ts";
-import { csvBom, formatoCantidad, formatoCosto, formatoUnitario, nombreCsvBom, parsearBom, parsearPdf, type Bom, type DatosPdf } from "./visores.ts";
+import { csvBom, formatoCantidad, formatoCosto, formatoUnitario, nombreCsvBom, parsearBom, parsearKicad, parsearPdf, tipoKicad, MAX_KICAD_VISOR, type Bom, type DatosKicad, type DatosPdf } from "./visores.ts";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const esc2 = (s: string) => esc(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const cp = (n: number) => (n >= 0xd800 && n <= 0xdfff ? "" : String.fromCodePoint(Math.min(n, 0x10ffff)));
@@ -29,11 +29,12 @@ const PROYECTO = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 // Marked normaliza los saltos de línea a LF: las posiciones se calculan sobre ese texto y se devuelven sobre el original.
 // Cada bloque lleva además su token, que es la clave para el render (sin depender de posiciones). Marked puede consumir
 // sin token definiciones de enlace repetidas: ese tramo se salta, sin descartar el resto de la página.
-type TipoBloque = "diagrama" | "pdf" | "bom";
+type TipoBloque = "diagrama" | "pdf" | "kicad" | "bom";
 type Hallado = { inicio: number; fin: number; tipo: TipoBloque; datos: any; token: any };
 function datosDe(lang: string, texto: string): any {
   if (lang === "diagrama") return parsearBloque(texto);
   if (lang === "pdf") return parsearPdf(texto);
+  if (lang === "kicad") return parsearKicad(texto);
   const r = parsearBom(texto);
   return r.ok ? r.bom : null;
 }
@@ -50,7 +51,7 @@ function localizarBloques(md: string, tokens?: any[]): Hallado[] {
     const raw = String(t.raw ?? "");
     const idx = normalizado.indexOf(raw, pos);
     if (idx < 0 || (idx > pos && !/^\s*\[/.test(normalizado.slice(pos, idx)))) continue; // no se puede situar: se ignora este token
-    if (t.type === "code" && (t.lang === "diagrama" || t.lang === "pdf" || t.lang === "bom") && t.codeBlockStyle !== "indented") {
+    if (t.type === "code" && (t.lang === "diagrama" || t.lang === "pdf" || t.lang === "kicad" || t.lang === "bom") && t.codeBlockStyle !== "indented") {
       const datos = datosDe(t.lang, t.text);
       if (datos) salida.push({ inicio: aOrig(idx), fin: aOrig(idx + raw.replace(/\n+$/, "").length), tipo: t.lang, datos, token: t });
     }
@@ -61,7 +62,7 @@ function localizarBloques(md: string, tokens?: any[]): Hallado[] {
 
 export const diagramasDe = (md: string): Diagrama[] => localizarBloques(md).filter((x) => x.tipo === "diagrama").map((x) => x.datos as Diagrama);
 
-export type Visor = { tipo: "pdf"; datos: DatosPdf } | { tipo: "bom"; datos: Bom };
+export type Visor = { tipo: "pdf"; datos: DatosPdf } | { tipo: "kicad"; datos: DatosKicad } | { tipo: "bom"; datos: Bom };
 export const visoresDe = (md: string): Visor[] => localizarBloques(md).filter((x) => x.tipo !== "diagrama").map((x) => ({ tipo: x.tipo, datos: x.datos }) as Visor);
 
 // Cambia solo el bloque cuya fuente es `fuenteAnterior`; null si no está o aparece más de una vez (otra persona editó la página).
@@ -111,8 +112,16 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
       return `<figure class="hw-pdf"><a href="${esc2(urlArchivo(proyecto, d.archivo))}">Abrir PDF</a>${d.titulo ? `<figcaption>${esc(d.titulo)}</figcaption>` : ""}</figure>\n`;
     },
   };
+  const kicad = {
+    name: "kicad",
+    renderer(t: any) {
+      const d = t.datos as DatosKicad;
+      const respaldo = d.respaldo ? ` <a href="${esc2(urlArchivo(proyecto, d.respaldo))}">Abrir respaldo (PDF/SVG)</a>` : "";
+      return `<figure class="hw-kicad"><a href="${esc2(urlArchivo(proyecto, d.archivo))}">Descargar archivo de KiCad</a>${respaldo}${d.titulo ? `<figcaption>${esc(d.titulo)}</figcaption>` : ""}</figure>\n`;
+    },
+  };
   const bom = { name: "bom", renderer: (t: any) => tablaBom(t.datos as Bom) };
-  const marked = new Marked({ gfm: true, renderer: { html({ text }: any) { return esc(text); } }, extensions: [figura, pdf, bom] as any });
+  const marked = new Marked({ gfm: true, renderer: { html({ text }: any) { return esc(text); } }, extensions: [figura, pdf, kicad, bom] as any });
   // Solo bloques de primer nivel y con proyecto: el resto de bloques ```diagrama sigue siendo código.
   const analizar = (md: string) => {
     const tokens = marked.lexer(String(md));
@@ -130,7 +139,7 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
     for (const a of ["href", "src"]) if (el.hasAttribute(a)) { const s = urlSegura(el.getAttribute(a), a as any); if (s === null) el.removeAttribute(a); }
     if (el.tagName === "A" && /^https?:/i.test(el.getAttribute("href") ?? "")) el.setAttribute("rel", "noopener noreferrer");
     if (el.tagName === "INPUT") { if (el.getAttribute("type") !== "checkbox") el.remove(); else el.setAttribute("disabled", ""); }
-    if (el.hasAttribute("class") && !(el.tagName === "CODE" && /^language-[\w+#-]+$/.test(el.getAttribute("class"))) && !(el.tagName === "FIGURE" && ["hw-diagrama", "hw-pdf", "hw-bom"].includes(el.getAttribute("class")))) el.removeAttribute("class");
+    if (el.hasAttribute("class") && !(el.tagName === "CODE" && /^language-[\w+#-]+$/.test(el.getAttribute("class"))) && !(el.tagName === "FIGURE" && ["hw-diagrama", "hw-pdf", "hw-kicad", "hw-bom"].includes(el.getAttribute("class")))) el.removeAttribute("class");
   });
   const conf = { ALLOWED_TAGS: TAGS, ALLOWED_ATTR: ATTR, ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false };
   return {
@@ -139,24 +148,87 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
   };
 }
 
+const cargasKicanvas = new WeakMap<object, Promise<void>>();
+// Añade una sola vez el <script type=module> de KiCanvas (mismo origen, sin código en línea); memoiza la promesa.
+export function cargarKicanvas(doc: any): Promise<void> {
+  const previa = cargasKicanvas.get(doc);
+  if (previa) return previa;
+  const p = new Promise<void>((resolve, reject) => {
+    const s = doc.createElement("script");
+    s.setAttribute("type", "module");
+    s.setAttribute("src", "/vendor/kicanvas/kicanvas.js");
+    s.addEventListener("load", () => resolve());
+    s.addEventListener("error", () => reject(new Error("No se pudo cargar KiCanvas")));
+    doc.head.appendChild(s);
+  });
+  cargasKicanvas.set(doc, p);
+  return p;
+}
+
+type OpcionesKicad = { cargarScript(): Promise<void>; leer(url: string): Promise<string> };
+async function leerTexto(doc: any, url: string): Promise<string> {
+  const win = doc.defaultView ?? globalThis;
+  const res = await win.fetch(url, { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const largo = Number(res.headers.get("content-length"));
+  if (Number.isFinite(largo) && largo > MAX_KICAD_VISOR) throw new Error("Archivo demasiado grande");
+  const texto = await res.text();
+  if (texto.length > MAX_KICAD_VISOR) throw new Error("Archivo demasiado grande");
+  return texto;
+}
+
+async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, kicad: OpcionesKicad): Promise<void> {
+  if (fig.querySelector("kicanvas-embed") || fig.querySelector("[role=status]") || fig.hasAttribute("data-kicad-montando")) return;
+  fig.setAttribute("data-kicad-montando", "");
+  try {
+    const texto = await kicad.leer(urlArchivo(proyecto, d.archivo));
+    if (texto.length > MAX_KICAD_VISOR || !tipoKicad(texto)) throw new Error("No es un archivo de KiCad");
+    await kicad.cargarScript();
+    const region = doc.createElement("div");
+    region.setAttribute("role", "region");
+    region.setAttribute("aria-label", d.titulo ? `Esquemático de KiCad: ${d.titulo}` : "Esquemático de KiCad");
+    const embed = doc.createElement("kicanvas-embed");
+    embed.setAttribute("controls", "basic");
+    embed.setAttribute("controlslist", "nodownload nofullscreen noflipview");
+    const fuente = doc.createElement("kicanvas-source");
+    fuente.textContent = texto;
+    embed.appendChild(fuente);
+    region.appendChild(embed);
+    fig.insertBefore(region, fig.firstChild);
+  } catch {
+    const aviso = doc.createElement("p");
+    aviso.setAttribute("role", "status");
+    aviso.textContent = "No se pudo mostrar el visor de KiCad. Usa el respaldo o descarga el archivo.";
+    fig.insertBefore(aviso, fig.firstChild);
+  } finally {
+    fig.removeAttribute("data-kicad-montando");
+  }
+}
+
 // Añade a los visores ya pintados (y saneados) lo que no puede venir del Markdown: el <iframe> del PDF y el botón "Exportar CSV".
 // Empareja por orden las figuras con los bloques de `md`; si no coinciden no toca nada. Todo se crea con createElement a partir de
 // los datos del bloque (nunca del DOM). Es idempotente. En la vista previa no se crean iframes (no recargar el PDF en cada tecla).
 export function montarVisores(
   raiz: any,
   md: string,
-  { proyecto, slug, vistaPrevia, descargar }: { proyecto: string; slug: string; vistaPrevia: boolean; descargar: (nombre: string, csv: string) => void },
-): void {
-  if (!raiz || !PROYECTO.test(String(proyecto ?? ""))) return;
+  { proyecto, slug, vistaPrevia, descargar, kicad }: { proyecto: string; slug: string; vistaPrevia: boolean; descargar: (nombre: string, csv: string) => void; kicad?: OpcionesKicad },
+): Promise<void> {
+  if (!raiz || !PROYECTO.test(String(proyecto ?? ""))) return Promise.resolve();
   const visores = visoresDe(md);
-  const figuras: any[] = [...raiz.querySelectorAll("figure.hw-pdf, figure.hw-bom")];
-  if (figuras.length !== visores.length) return;
-  if (figuras.some((f, i) => !f.classList.contains(visores[i].tipo === "pdf" ? "hw-pdf" : "hw-bom"))) return;
+  const figuras: any[] = [...raiz.querySelectorAll("figure.hw-pdf, figure.hw-kicad, figure.hw-bom")];
+  if (figuras.length !== visores.length) return Promise.resolve();
+  if (figuras.some((f, i) => !f.classList.contains(`hw-${visores[i].tipo}`))) return Promise.resolve();
   const doc = raiz.ownerDocument ?? raiz;
   const total = visores.filter((v) => v.tipo === "bom").length;
   let n = 0;
+  const montajes: Promise<void>[] = [];
+  const opcKicad: OpcionesKicad = kicad ?? { cargarScript: () => cargarKicanvas(doc), leer: (url) => leerTexto(doc, url) };
   visores.forEach((v, i) => {
     const fig = figuras[i];
+    if (v.tipo === "kicad") {
+      if (!vistaPrevia) montajes.push(montarKicad(doc, fig, v.datos, proyecto, opcKicad));
+      return;
+    }
     if (v.tipo === "pdf") {
       // Sin visor de PDF integrado (móvil) el iframe sería un recuadro en blanco: queda solo "Abrir PDF".
       if (vistaPrevia || fig.querySelector("iframe") || doc.defaultView?.navigator?.pdfViewerEnabled === false) return;
@@ -182,4 +254,5 @@ export function montarVisores(
     boton.addEventListener("click", () => descargar(nombreCsvBom(slug, k), csvBom(bom)));
     fig.appendChild(boton);
   });
+  return Promise.all(montajes).then(() => undefined);
 }
