@@ -51,8 +51,13 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
           <a href="#" data-hw-primera>Ir a la primera página</a>
         </section>
 
+        <div class="hw-aviso-lector" data-hw-aviso-lector role="status">
+          <span>Vista de lector</span>
+          <button type="button" class="btn" data-hw-salir-lector>Salir de la vista de lector</button>
+        </div>
         <section class="hw-pagina" data-hw-pagina hidden>
           <div class="hw-barra" data-hw-solo-editor hidden>
+            <button type="button" class="btn" data-hw-ver-lector aria-pressed="false">Ver como lector</button>
             <button type="button" class="btn" data-hw-editar>Editar</button>
             <button type="button" class="btn" data-hw-borrar>Borrar página</button>
           </div>

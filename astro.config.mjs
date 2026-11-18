@@ -37,7 +37,7 @@ export default defineConfig({
       styleDirective: { resources: ["'self'", "'unsafe-inline'"] },
       directives: [
         "default-src 'self'",
-        "img-src 'self' data:",
+        "img-src 'self' data: blob:",
         "connect-src 'self'",
         "frame-src 'self' https://embed.diagrams.net",
         "object-src 'none'",

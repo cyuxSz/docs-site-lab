@@ -88,6 +88,8 @@ async function iniciar(root: HTMLElement) {
   const soloEditor = [...document.querySelectorAll<HTMLElement>("[data-hw-solo-editor]")];
   const btnEditar = $<HTMLButtonElement>("[data-hw-editar]");
   const btnBorrar = $<HTMLButtonElement>("[data-hw-borrar]");
+  const btnVerLector = $<HTMLButtonElement>("[data-hw-ver-lector]");
+  const btnSalirLector = $<HTMLButtonElement>("[data-hw-salir-lector]");
   const btnNueva = $<HTMLButtonElement>("[data-hw-nueva]");
   const btnPapelera = $<HTMLButtonElement>("[data-hw-abrir-papelera]");
   const dlgPapelera = $<HTMLDialogElement>("#hw-papelera");
@@ -812,7 +814,22 @@ async function iniciar(root: HTMLElement) {
     contVisual.replaceChildren();
   }
 
+  function entrarVistaLector() {
+    if (editando) return;
+    document.documentElement.setAttribute("data-vista-lector", "");
+    btnVerLector.setAttribute("aria-pressed", "true");
+    btnSalirLector.focus();
+  }
+  function salirVistaLector() {
+    document.documentElement.removeAttribute("data-vista-lector");
+    btnVerLector.setAttribute("aria-pressed", "false");
+    btnVerLector.focus();
+  }
+  escuchar(btnVerLector, "click", entrarVistaLector);
+  escuchar(btnSalirLector, "click", salirVistaLector);
+
   function abrirEditor() {
+    if (document.documentElement.hasAttribute("data-vista-lector")) return;
     if (guardando) return;
     if (!pagina || !editable) return;
     editando = true;
