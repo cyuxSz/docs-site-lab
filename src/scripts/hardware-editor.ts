@@ -827,6 +827,12 @@ async function iniciar(root: HTMLElement) {
   }
   escuchar(btnVerLector, "click", entrarVistaLector);
   escuchar(btnSalirLector, "click", salirVistaLector);
+  escuchar(document, "keydown", (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.defaultPrevented) return;
+    if (!document.documentElement.hasAttribute("data-vista-lector")) return;
+    if (document.querySelector("dialog[open]")) return;
+    salirVistaLector();
+  });
 
   function abrirEditor() {
     if (document.documentElement.hasAttribute("data-vista-lector")) return;
