@@ -64,6 +64,11 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
           </section>
 
           <form class="hw-editor" data-hw-editor hidden novalidate>
+            <div class="hw-modo">
+              <button type="button" class="btn" data-hw-modo-markdown aria-pressed="false" aria-describedby="hw-ayuda-visual">Markdown</button>
+            </div>
+            <div class="hw-visual" data-hw-visual></div>
+            <p class="hw-ayuda" id="hw-ayuda-visual" data-hw-ayuda-visual>Puedes pegar o arrastrar imágenes y archivos sobre el editor. Guarda con <kbd>Ctrl</kbd>+<kbd>S</kbd> (o <kbd>Cmd</kbd>+<kbd>S</kbd>). Con <kbd>Tab</kbd> sales del editor hacia los botones; en listas sangra (<kbd>Mayús</kbd>+<kbd>Tab</kbd> quita la sangría) y en un bloque de código sales con <kbd>Esc</kbd> y luego <kbd>Tab</kbd>. El botón «Markdown» cambia al texto plano.</p>
             <div class="hw-pestanas" role="tablist" aria-label="Modo del editor">
               <button type="button" class="btn" role="tab" id="hw-tab-escribir" aria-selected="true" aria-controls="hw-panel-escribir" data-hw-tab="escribir">Escribir</button>
               <button type="button" class="btn" role="tab" id="hw-tab-previa" aria-selected="false" aria-controls="hw-panel-previa" tabindex="-1" data-hw-tab="previa">Vista previa</button>

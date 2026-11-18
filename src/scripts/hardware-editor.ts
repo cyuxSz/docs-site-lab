@@ -3,7 +3,7 @@
 // está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
 import { fechaRelativa } from "../lib/comentarios";
 import { usoDePagina } from "../lib/hw-enlaces";
-import { esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
+import { bloqueDiagrama, esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
 import {
   alAbortar,
   actualizarTituloIndice,
@@ -60,7 +60,7 @@ const ctlPagina = new AbortController();
 w.__hwCtl = ctlPagina;
 const senal = ctlPagina.signal;
 for (const ev of ["astro:before-swap", "pagehide"]) document.addEventListener(ev, () => ctlPagina.abort(), { once: true });
-const escuchar = (el: EventTarget, tipo: string, fn: (e: any) => unknown) => el.addEventListener(tipo, fn, { signal: senal });
+const escuchar = (el: EventTarget, tipo: string, fn: (e: any) => unknown, capture = false) => el.addEventListener(tipo, fn, { signal: senal, capture });
 
 const raiz = document.querySelector<HTMLElement>("[data-hw-proyecto][data-hw-disciplina]");
 if (raiz) void iniciar(raiz);
@@ -116,6 +116,11 @@ async function iniciar(root: HTMLElement) {
   const inputPdf = $<HTMLInputElement>("[data-hw-archivo-pdf]");
   const inputBom = $<HTMLInputElement>("[data-hw-archivo-bom]");
   const dlgDiagramaNuevo = $<HTMLDialogElement>("#hw-diagrama-nuevo");
+  const btnModoMarkdown = $<HTMLButtonElement>("[data-hw-modo-markdown]");
+  const contVisual = $("[data-hw-visual]");
+  const ayudaVisual = $("[data-hw-ayuda-visual]");
+  const pestanasCaja = $(".hw-pestanas");
+  const cuerpoEditor = $(".hw-editor-cuerpo");
 
   let indice: PaginaIndice[] = [];
   let editable = false;
@@ -125,11 +130,27 @@ async function iniciar(root: HTMLElement) {
   let subidasActivas = 0;
   let guardando = false;
   let salidaConfirmada = false; // el usuario eligió "Descartar": no debe salir además el aviso nativo
+  // Editor visual (carga diferida al pulsar «Editar»). Modo por defecto: visual; el conmutador «Markdown» vuelve al textarea.
+  type ModuloVisual = typeof import("./editor-visual");
+  let modVisual: ModuloVisual | null = null;
+  let visual: Awaited<ReturnType<ModuloVisual["montarCrepe"]>> | null = null;
+  let modoMarkdown = false;
+  let generacionEditor = 0; // invalida un montaje que acaba tras cerrar el editor
+  let origen = ""; // Markdown original de la página (o el del textarea al volver a visual)
+  let inicialEditor = ""; // lo que devolvió getMarkdown() al cargar: si no cambia, se guarda `origen` tal cual
+  // Contenido del modo activo: es lo que se guarda, lo que compara hayCambios y lo que conserva el 409.
+  function contenidoActivo(): string {
+    if (modoMarkdown) return textarea.value;
+    if (!visual || !modVisual) return origen;
+    return modVisual.markdownParaGuardar({ actual: visual.getMarkdown(), inicialEditor, origen });
+  }
+  const enfocarActivo = () => (modoMarkdown || !visual ? textarea.focus() : visual.enfocar());
   const cerrojo = crearCerrojoGuardado();
   function actualizarGuardar(avisar = false) {
     const e = estadoGuardar(subidasActivas, guardando);
     btnGuardar.disabled = e.deshabilitado;
     textarea.disabled = guardando;
+    visual?.setSoloLectura(guardando);
     inputArchivo.disabled = guardando;
     btnInsertarDiagrama.disabled = guardando;
     btnInsertarPdf.disabled = guardando;
@@ -403,18 +424,26 @@ async function iniciar(root: HTMLElement) {
       actualizarGuardar();
     }
     if (ctx.enTexto) {
+      // Editor visual: el bloque nuevo entra en el cursor; si ya existía (segundo guardado o «Editar diagrama» de la tarjeta), se reemplaza.
+      const enVisual = !modoMarkdown && visual !== null;
+      const contenidoBuffer = () => (enVisual ? visual!.getMarkdown() : textarea.value);
       let res: { texto: string; cursor: number } | null;
-      if (ctx.anterior === null) res = insertarBloque(textarea.value, textarea.selectionStart, datos);
+      if (ctx.anterior === null) res = enVisual ? { texto: "", cursor: 0 } : insertarBloque(contenidoBuffer(), textarea.selectionStart, datos);
       else {
         // Segundo guardado sin cerrar el editor: reemplaza el bloque que se insertó antes, no lo duplica.
         const { reemplazarDiagrama } = await import("../lib/hardware-md");
-        const t = reemplazarDiagrama(textarea.value, ctx.anterior, datos);
+        const t = reemplazarDiagrama(contenidoBuffer(), ctx.anterior, datos);
         res = t === null ? null : { texto: t, cursor: textarea.selectionStart };
       }
       if (res === null) return { ok: false, error: "El bloque del diagrama ya no está en la página. Revisa el texto antes de guardar." };
-      textarea.value = res.texto;
-      textarea.setSelectionRange(res.cursor, res.cursor);
-      previaViva();
+      if (enVisual) {
+        if (ctx.anterior === null) visual!.insertarMarkdown(bloqueDiagrama(datos));
+        else visual!.reemplazarTodo(res.texto);
+      } else {
+        textarea.value = res.texto;
+        textarea.setSelectionRange(res.cursor, res.cursor);
+        previaViva();
+      }
       ctx.anterior = datos.fuente; // referencia vigente para el siguiente guardado
       lblSubiendo.textContent = "Diagrama insertado. Guarda la página para publicarlo.";
       return { ok: true };
@@ -435,8 +464,8 @@ async function iniciar(root: HTMLElement) {
     return { ok: true };
   }
 
-  async function abrirDiagrama(editor: EditorDiagrama, fuente: string | null, titulo: string, anterior: string | null, disparador: HTMLElement) {
-    const ctx = { editor, titulo, anterior, enTexto: anterior === null };
+  async function abrirDiagrama(editor: EditorDiagrama, fuente: string | null, titulo: string, anterior: string | null, disparador: HTMLElement, enTexto = anterior === null) {
+    const ctx = { editor, titulo, anterior, enTexto };
     try {
       const { abrirEditorDiagrama } = await import("./diagramas");
       await abrirEditorDiagrama({
@@ -452,9 +481,8 @@ async function iniciar(root: HTMLElement) {
     }
   }
 
-  escuchar(lectura, "click", async (e) => {
-    const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-diagrama-editar");
-    if (!b || !editable || !pagina) return;
+  // «Editar diagrama»: desde la lectura reemplaza el bloque con un PUT; desde la tarjeta del editor visual lo reemplaza en el editor.
+  async function editarDiagramaDeBoton(b: HTMLButtonElement, enEditor: boolean) {
     const fuenteId = b.dataset.fuente ?? "";
     const editor = b.dataset.editor === "drawio" ? "drawio" : "excalidraw";
     const titulo = b.closest("figure")?.querySelector("figcaption")?.textContent ?? "";
@@ -473,12 +501,28 @@ async function iniciar(root: HTMLElement) {
     mostrarEstado("");
     if (texto === null) return;
     fuenteNueva = "";
-    await abrirDiagrama(editor, texto, titulo, fuenteId, b);
+    await abrirDiagrama(editor, texto, titulo, fuenteId, b, enEditor);
+    if (enEditor) {
+      if (!document.activeElement || document.activeElement === document.body) enfocarActivo();
+      return;
+    }
     if (!document.activeElement || document.activeElement === document.body) {
       // Tras guardar, la página se repinta y el botón de origen ya no existe: se enfoca el del mismo diagrama (id de fuente nuevo).
       const botones = [...lectura.querySelectorAll<HTMLButtonElement>("button.hw-diagrama-editar")];
       (botones.find((x) => x.dataset.fuente === fuenteNueva || x.dataset.fuente === fuenteId) ?? botones[0] ?? btnEditar).focus();
     }
+  }
+  escuchar(lectura, "click", async (e) => {
+    const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-diagrama-editar");
+    if (!b || !editable || !pagina) return;
+    await editarDiagramaDeBoton(b, false);
+  });
+  // Delegación en la raíz del editor visual: las tarjetas las pinta CodeMirror y se recrean.
+  escuchar(contVisual, "click", async (e) => {
+    const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-diagrama-editar");
+    if (!b || !editable || !pagina || !visual || guardando) return;
+    e.preventDefault();
+    await editarDiagramaDeBoton(b, true);
   });
 
   // Insertar un diagrama nuevo desde el editor de la página: elegir editor y título, dibujar y guardar.
@@ -629,7 +673,7 @@ async function iniciar(root: HTMLElement) {
   }
 
   // ---------- editor ----------
-  const hayCambios = () => debeAvisarSalida({ editando, actual: textarea.value, base: baseMd });
+  const hayCambios = () => debeAvisarSalida({ editando, actual: contenidoActivo(), base: baseMd });
 
   // Escritorio: los dos paneles lado a lado (las pestañas se ocultan por CSS y nada lleva hidden). Móvil: pestañas.
   const mqLado = window.matchMedia(MEDIA_LADO_A_LADO);
@@ -649,7 +693,7 @@ async function iniciar(root: HTMLElement) {
     previa.hidden = !lado && modo !== "previa";
   }
 
-  const previaVisible = () => editando && (mqLado.matches || modoActual === "previa");
+  const previaVisible = () => editando && modoMarkdown && (mqLado.matches || modoActual === "previa");
   // Vista previa en vivo: se repinta al escribir, con debounce, con el mismo renderizador de la lectura.
   const previaViva = crearDebounce(() => {
     if (previaVisible()) void pintarMd(previa, textarea.value, pagina?.titulo);
@@ -657,7 +701,7 @@ async function iniciar(root: HTMLElement) {
   escuchar(textarea, "input", () => previaViva());
   // Al cruzar el umbral se pasa de un modo al otro sin tocar el texto; el foco se conserva si su panel sigue visible.
   escuchar(mqLado, "change", () => {
-    if (!editando) return;
+    if (!editando || !modoMarkdown) return;
     const foco = document.activeElement;
     modoEditor(modoActual);
     if (previaVisible()) void pintarMd(previa, textarea.value, pagina?.titulo);
@@ -670,24 +714,105 @@ async function iniciar(root: HTMLElement) {
     await pintarMd(previa, textarea.value, pagina?.titulo);
   }
 
+  // Muestra el modo activo: el editor visual, o el textarea con sus pestañas y su vista previa (solo en modo Markdown).
+  function mostrarModo() {
+    contVisual.hidden = modoMarkdown;
+    ayudaVisual.hidden = modoMarkdown;
+    pestanasCaja.hidden = !modoMarkdown;
+    cuerpoEditor.hidden = !modoMarkdown;
+    btnModoMarkdown.setAttribute("aria-pressed", String(modoMarkdown));
+    if (modoMarkdown) {
+      modoEditor("escribir");
+      if (mqLado.matches) void pintarMd(previa, textarea.value, pagina?.titulo);
+    } else {
+      for (const x of [btnInsertarDiagrama, btnInsertarPdf, btnInsertarBom]) x.hidden = false;
+      previaViva.cancelar();
+    }
+  }
+
+  // Monta el editor visual con `md`. Si el chunk no carga, se queda el modo Markdown con un aviso.
+  async function montarVisual(md: string, generacion: number) {
+    try {
+      const [mod, { html }] = await Promise.all([import("./editor-visual"), cargarRender()]);
+      if (generacion !== generacionEditor) return;
+      const montado = await mod.montarCrepe(contVisual, md, {
+        renderizarBloque: (lenguaje, contenido) => mod.vistaBloque(html, lenguaje, contenido, { editable }),
+      });
+      if (generacion !== generacionEditor) {
+        void montado.destruir();
+        return;
+      }
+      modVisual = mod;
+      visual = montado;
+    } catch {
+      if (generacion !== generacionEditor) return;
+      cargaRender = null;
+      modoMarkdown = true;
+      mostrarModo();
+      errorEditor(`${mensajeError("red")} Se abrió el modo Markdown.`);
+      textarea.focus();
+      return;
+    }
+    inicialEditor = visual.getMarkdown();
+    origen = md;
+    visual.setSoloLectura(guardando);
+    visual.enfocar();
+  }
+
+  function destruirVisual() {
+    generacionEditor++;
+    const v = visual;
+    visual = null;
+    void v?.destruir().catch(() => {});
+    contVisual.replaceChildren();
+  }
+
   function abrirEditor() {
     if (guardando) return;
     if (!pagina || !editable) return;
     editando = true;
     baseMd = pagina.md;
+    origen = pagina.md;
+    inicialEditor = pagina.md;
     textarea.value = pagina.md;
+    modoMarkdown = false;
     errorEditor("");
-    modoEditor("escribir");
     lectura.hidden = true;
     secUsado.hidden = true;
     form.hidden = false;
     for (const el of soloEditor) if (el.closest("[data-hw-pagina]")) el.hidden = true;
-    textarea.focus();
-    if (mqLado.matches) void pintarMd(previa, textarea.value, pagina?.titulo);
+    mostrarModo();
+    void montarVisual(pagina.md, ++generacionEditor);
   }
+
+  async function cambiarModo() {
+    if (!editando || guardando) return;
+    errorEditor("");
+    if (!modoMarkdown) {
+      // Visual → Markdown: el textarea recibe lo que se guardaría; sin tocar nada es el original.
+      if (!visual) return;
+      textarea.value = modVisual!.markdownParaGuardar({ actual: visual.getMarkdown(), inicialEditor, origen });
+      modoMarkdown = true;
+      mostrarModo();
+      textarea.focus();
+    } else {
+      // Markdown → visual: se carga lo escrito y se toma una referencia nueva.
+      const md = textarea.value;
+      modoMarkdown = false;
+      mostrarModo();
+      if (visual) {
+        visual.reemplazarTodo(md);
+        origen = md;
+        inicialEditor = visual.getMarkdown();
+        visual.enfocar();
+      } else void montarVisual(md, ++generacionEditor);
+    }
+  }
+  escuchar(btnModoMarkdown, "click", () => void cambiarModo());
 
   function cerrarEditor() {
     previaViva.cancelar();
+    destruirVisual();
     editando = false;
     form.hidden = true;
     lectura.hidden = false;
@@ -703,7 +828,7 @@ async function iniciar(root: HTMLElement) {
     if (guardando) return;
     mostrarEstado("");
     if (hayCambios() && !(await preguntar(dlgDescartar))) {
-      textarea.focus();
+      enfocarActivo();
       return;
     }
     if (guardando) return;
@@ -734,10 +859,11 @@ async function iniciar(root: HTMLElement) {
     const scroll = textarea.scrollTop;
     const envio = cerrojo.intentar(async () => {
       const actual = pagina!;
+      const md = contenidoActivo();
       mostrarEstado("Guardando…");
       guardando = true;
       actualizarGuardar();
-      const r = await api("PUT", { cuerpo: { pagina: actual.slug, md: textarea.value, version: actual.version } });
+      const r = await api("PUT", { cuerpo: { pagina: actual.slug, md: md, version: actual.version } });
       guardando = false;
       actualizarGuardar();
       return r;
@@ -745,10 +871,10 @@ async function iniciar(root: HTMLElement) {
     if (!envio) return;
     const r = await envio;
     if (r.status !== 200 || !r.json?.pagina) {
-      // Con 409 (u otro error) el textarea conserva lo escrito.
+      // Con 409 (u otro error) el editor del modo activo conserva lo escrito.
       mostrarEstado("");
       errorEditor(resultadoGuardado(r.status, r).mensaje);
-      textarea.focus();
+      enfocarActivo();
       return;
     }
     indice = actualizarTituloIndice(indice, r.json.pagina);
@@ -757,10 +883,16 @@ async function iniciar(root: HTMLElement) {
       await pintarPagina(r.json.pagina);
     } else {
       baseMd = r.json.pagina.md;
+      if (!modoMarkdown && visual) {
+        origen = r.json.pagina.md;
+        inicialEditor = visual.getMarkdown();
+      }
       await pintarPagina(r.json.pagina);
-      textarea.focus();
-      textarea.setSelectionRange(inicio, fin);
-      textarea.scrollTop = scroll;
+      enfocarActivo();
+      if (modoMarkdown) {
+        textarea.setSelectionRange(inicio, fin);
+        textarea.scrollTop = scroll;
+      }
     }
     mostrarEstado("Guardado");
     if (historial.open) void cargarHistorial();
@@ -785,7 +917,7 @@ async function iniciar(root: HTMLElement) {
     if (!esEnlaceDeLaDisciplina(a.href, location.href, proyecto, disciplina)) return;
     e.preventDefault();
     if (!(await preguntar(dlgDescartar))) {
-      textarea.focus();
+      enfocarActivo();
       return;
     }
     salidaConfirmada = true;
@@ -910,6 +1042,10 @@ async function iniciar(root: HTMLElement) {
   // ---------- subida de archivos ----------
   function insertar(texto: string) {
     if (guardando) return;
+    if (!modoMarkdown && visual) {
+      visual.insertarMarkdown(texto, { enLinea: true });
+      return;
+    }
     const r = insertarEnTexto(textarea.value, textarea.selectionStart, textarea.selectionEnd, texto);
     textarea.value = r.texto;
     textarea.setSelectionRange(r.cursor, r.cursor);
@@ -1021,6 +1157,10 @@ async function iniciar(root: HTMLElement) {
   // Inserta un bloque (```pdf o ```bom) en el cursor, separado por líneas en blanco, y refresca la vista previa.
   function insertarBloqueEnTexto(bloque: string) {
     if (guardando) return;
+    if (!modoMarkdown && visual) {
+      visual.insertarMarkdown(bloque);
+      return;
+    }
     const r = insertarBloqueTexto(textarea.value, textarea.selectionStart, bloque);
     textarea.value = r.texto;
     textarea.setSelectionRange(r.cursor, r.cursor);
@@ -1041,7 +1181,7 @@ async function iniciar(root: HTMLElement) {
       subidasActivas--;
       actualizarGuardar();
     }
-    textarea.focus();
+    enfocarActivo();
   });
   escuchar(btnInsertarBom, "click", () => {
     if (!guardando) inputBom.click();
@@ -1071,14 +1211,14 @@ async function iniciar(root: HTMLElement) {
     }
     insertarBloqueEnTexto(bloqueBom(r.bom));
     lblSubiendo.textContent = "BOM insertado. Guarda la página para publicarlo.";
-    textarea.focus();
+    enfocarActivo();
   });
 
   escuchar(inputArchivo, "change", async () => {
     const archivos = [...(inputArchivo.files ?? [])];
     inputArchivo.value = "";
     await subirVarios(archivos);
-    textarea.focus();
+    enfocarActivo();
   });
   escuchar(textarea, "paste", (e) => {
     const archivos = [...(e.clipboardData?.files ?? [])];
@@ -1093,6 +1233,30 @@ async function iniciar(root: HTMLElement) {
     const archivos = [...(e.dataTransfer?.files ?? [])];
     if (!archivos.length) return;
     e.preventDefault();
+    void subirVarios(archivos);
+  });
+
+  // Editor visual: pegar y soltar archivos se interceptan en captura, antes que ProseMirror, y van por el mismo flujo de subida
+  // (barra de progreso, errores y corte por falta de avance). Pegar o soltar texto sigue su camino normal.
+  const enCaptura = (tipo: string, fn: (e: any) => void) => escuchar(contVisual, tipo, fn, true /* capture: true */);
+  enCaptura("paste", (e) => {
+    const archivos = [...(e.clipboardData?.files ?? [])];
+    if (!archivos.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void subirVarios(archivos);
+  });
+  enCaptura("dragover", (e) => {
+    if (e.dataTransfer?.types.includes("Files")) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+  enCaptura("drop", (e) => {
+    const archivos = [...(e.dataTransfer?.files ?? [])];
+    if (!archivos.length) return;
+    e.preventDefault();
+    e.stopPropagation();
     void subirVarios(archivos);
   });
 
