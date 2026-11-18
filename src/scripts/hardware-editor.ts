@@ -545,6 +545,7 @@ async function iniciar(root: HTMLElement) {
   escuchar(lectura, "click", async (e) => {
     const b = (e.target as Element).closest<HTMLButtonElement>("button.hw-diagrama-editar");
     if (!b || !editable || !pagina) return;
+    if (document.documentElement.hasAttribute("data-vista-lector")) return;
     await editarDiagramaDeBoton(b, false);
   });
   // Delegación en la raíz del editor visual: las tarjetas las pinta CodeMirror y se recrean.
@@ -1278,13 +1279,16 @@ async function iniciar(root: HTMLElement) {
       errorEditor(sel.error);
       return;
     }
+    const sesion = sesionEdicion;
     subidasActivas++;
     actualizarGuardar();
     try {
       let archivo = "";
       let respaldo = "";
       if (!(await subir(sel.kicad as File, undefined, { tipos: ["kicad_sch", "kicad_pcb"], alSubir: (id) => (archivo = id) }))) return;
+      if (sesion !== sesionEdicion || !editando) return;
       if (sel.respaldo && !(await subir(sel.respaldo as File, undefined, { tipos: ["pdf", "svg"], alSubir: (id) => (respaldo = id) }))) return;
+      if (sesion !== sesionEdicion || !editando) return;
       insertarBloqueEnTexto(bloqueKicad({ archivo, respaldo, titulo: tituloDeArchivo(sel.kicad.name) }));
     } finally {
       subidasActivas--;

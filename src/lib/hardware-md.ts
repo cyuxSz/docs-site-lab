@@ -149,44 +149,62 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
 }
 
 const cargasKicanvas = new WeakMap<object, Promise<void>>();
-// Añade una sola vez el <script type=module> de KiCanvas (mismo origen, sin código en línea); memoiza la promesa.
+let reintentosKicanvas = 0;
+// Añade el <script type=module> de KiCanvas (mismo origen, sin código en línea); memoiza la promesa mientras carga o si cargó.
+// Si falla, se borra de la caché y se retira el <script>; el reintento usa otra URL (?reintento=N) porque el mapa de módulos
+// del navegador recuerda el fallo por URL.
 export function cargarKicanvas(doc: any): Promise<void> {
   const previa = cargasKicanvas.get(doc);
   if (previa) return previa;
-  const p = new Promise<void>((resolve, reject) => {
-    const s = doc.createElement("script");
+  const s = doc.createElement("script");
+  const p: Promise<void> = new Promise<void>((resolve, reject) => {
     s.setAttribute("type", "module");
-    s.setAttribute("src", "/vendor/kicanvas/kicanvas.js");
+    s.setAttribute("src", reintentosKicanvas ? `/vendor/kicanvas/kicanvas.js?reintento=${reintentosKicanvas}` : "/vendor/kicanvas/kicanvas.js");
     s.addEventListener("load", () => resolve());
-    s.addEventListener("error", () => reject(new Error("No se pudo cargar KiCanvas")));
+    s.addEventListener("error", () => {
+      if (cargasKicanvas.get(doc) === p) cargasKicanvas.delete(doc);
+      reintentosKicanvas++;
+      s.remove();
+      reject(new Error("No se pudo cargar KiCanvas"));
+    });
     doc.head.appendChild(s);
   });
   cargasKicanvas.set(doc, p);
   return p;
 }
 
-type OpcionesKicad = { cargarScript(): Promise<void>; leer(url: string): Promise<string> };
-async function leerTexto(doc: any, url: string): Promise<string> {
+type OpcionesKicad = { cargarScript(): Promise<void>; leer(url: string): Promise<string>; webgl2(): boolean };
+// KiCanvas necesita WebGL2: se comprueba con un <canvas> desechable.
+export function soportaWebgl2(doc: any): boolean {
+  try {
+    return doc.createElement("canvas").getContext("webgl2") != null;
+  } catch {
+    return false;
+  }
+}
+export async function leerArchivoKicad(doc: any, url: string): Promise<string> {
   const win = doc.defaultView ?? globalThis;
   const res = await win.fetch(url, { credentials: "same-origin" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const largo = Number(res.headers.get("content-length"));
   if (Number.isFinite(largo) && largo > MAX_KICAD_VISOR) throw new Error("Archivo demasiado grande");
-  const texto = await res.text();
-  if (texto.length > MAX_KICAD_VISOR) throw new Error("Archivo demasiado grande");
-  return texto;
+  const bytes: ArrayBuffer = await res.arrayBuffer();
+  if (bytes.byteLength > MAX_KICAD_VISOR) throw new Error("Archivo demasiado grande");
+  return new TextDecoder().decode(bytes);
 }
 
 async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, kicad: OpcionesKicad): Promise<void> {
   if (fig.querySelector("kicanvas-embed") || fig.querySelector("[role=status]") || fig.hasAttribute("data-kicad-montando")) return;
   fig.setAttribute("data-kicad-montando", "");
   try {
+    if (!kicad.webgl2()) throw new Error("Sin WebGL2");
     const texto = await kicad.leer(urlArchivo(proyecto, d.archivo));
     if (texto.length > MAX_KICAD_VISOR || !tipoKicad(texto)) throw new Error("No es un archivo de KiCad");
     await kicad.cargarScript();
     const region = doc.createElement("div");
     region.setAttribute("role", "region");
-    region.setAttribute("aria-label", d.titulo ? `Esquemático de KiCad: ${d.titulo}` : "Esquemático de KiCad");
+    const nombre = tipoKicad(texto) === "pcb" ? "PCB de KiCad" : "Esquemático de KiCad";
+    region.setAttribute("aria-label", d.titulo ? `${nombre}: ${d.titulo}` : nombre);
     const embed = doc.createElement("kicanvas-embed");
     embed.setAttribute("controls", "basic");
     embed.setAttribute("controlslist", "nodownload nofullscreen noflipview");
@@ -222,7 +240,7 @@ export function montarVisores(
   const total = visores.filter((v) => v.tipo === "bom").length;
   let n = 0;
   const montajes: Promise<void>[] = [];
-  const opcKicad: OpcionesKicad = kicad ?? { cargarScript: () => cargarKicanvas(doc), leer: (url) => leerTexto(doc, url) };
+  const opcKicad: OpcionesKicad = kicad ?? { cargarScript: () => cargarKicanvas(doc), leer: (url) => leerArchivoKicad(doc, url), webgl2: () => soportaWebgl2(doc) };
   visores.forEach((v, i) => {
     const fig = figuras[i];
     if (v.tipo === "kicad") {

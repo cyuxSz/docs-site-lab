@@ -996,5 +996,5 @@ figure.hw-kicad [role="status"] { margin: 0 0 8px; color: var(--muted); }
 
 /* C17: vista de lector */
 .hw-aviso-lector { display: none; }
-:root[data-vista-lector] :is([data-hw-solo-editor], .hw-mover, .hw-restaurar, [data-hw-inicializar]) { display: none !important; }
+:root[data-vista-lector] :is([data-hw-solo-editor], .hw-mover, .hw-restaurar, [data-hw-inicializar], .hw-diagrama-editar) { display: none !important; }
 :root[data-vista-lector] .hw-aviso-lector { display: flex; position: sticky; top: 92px; z-index: 20; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--text); }
