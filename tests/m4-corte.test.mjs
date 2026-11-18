@@ -121,3 +121,35 @@ test("README: describe solo Cloudflare, sin respaldo en Vercel, Blob, Upstash ni
     assert.doesNotMatch(r, re, `el README no menciona ${re}`);
   }
 });
+
+// Pasos del job `deploy` como bloques de texto (cada uno empieza en `- ` con la sangría de `steps:`).
+function pasos(s) {
+  const lineas = s.split("\n");
+  const i = lineas.findIndex((l) => /^\s+steps:\s*$/.test(l));
+  assert.ok(i >= 0, "el job tiene steps");
+  const base = sangria(lineas[i]);
+  const out = [];
+  for (let j = i + 1; j < lineas.length; j++) {
+    const l = lineas[j];
+    if (l.trim() === "") continue;
+    if (sangria(l) <= base && !/^\s*-\s/.test(l)) break;
+    if (/^\s*-\s/.test(l) && sangria(l) <= base + 2) out.push(l);
+    else if (out.length) out[out.length - 1] += "\n" + l;
+  }
+  return out;
+}
+
+test("deploy-cloudflare: la guarda «Solo desplegar desde main» es el primer paso, antes del checkout", () => {
+  const ps = pasos(sinComentarios(wf()));
+  const iGuarda = ps.findIndex((p) => /name:\s*["']?Solo desplegar desde main["']?\s*$/m.test(p));
+  const iCheckout = ps.findIndex((p) => /uses:\s*actions\/checkout@/.test(p));
+  assert.ok(iGuarda >= 0, "falta el paso «Solo desplegar desde main»");
+  assert.ok(iCheckout >= 0, "falta el paso de checkout");
+  assert.equal(iGuarda, 0, "la guarda es el primer paso del job");
+  assert.ok(iGuarda < iCheckout, "la guarda va antes del checkout");
+  const g = ps[iGuarda];
+  assert.match(g, /^\s*-?\s*if:\s*["']?github\.ref\s*!=\s*'refs\/heads\/main'["']?\s*$/m, "la guarda tiene if: github.ref != 'refs/heads/main'");
+  assert.match(g, /::error::/, "la guarda emite ::error::");
+  const run = g.split("\n").map((l) => l.trim()).filter(Boolean);
+  assert.equal(run[run.length - 1], "exit 1", "la guarda termina con exit 1");
+});
