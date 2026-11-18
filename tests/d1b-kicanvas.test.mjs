@@ -276,15 +276,16 @@ test("vendor: kicanvas.js parcheado (sin Google Fonts), con su sha256 fijado, y 
   assert.match(lic, /Permission is hereby granted, free of charge/);
 });
 
-test("CSP: KiCanvas cabe en la CSP actual; no se abre nada (sin worker-src, blob:, Google Fonts ni orígenes nuevos)", async () => {
+test("CSP (C15): KiCanvas solo abre img-src a blob: (iconos de zoom); nada más cambia (sin worker-src, Google Fonts ni orígenes nuevos)", async () => {
   const config = (await import("../astro.config.mjs")).default;
   const csp = config.security.csp;
   assert.deepEqual(csp.scriptDirective.resources, ["'self'", "'wasm-unsafe-eval'"]);
   assert.deepEqual(csp.styleDirective.resources, ["'self'", "'unsafe-inline'"]);
   assert.ok(csp.directives.includes("connect-src 'self'"));
-  assert.ok(csp.directives.includes("img-src 'self' data:"));
+  assert.ok(csp.directives.includes("img-src 'self' data: blob:"), "C15: img-src debe permitir blob: (iconos de zoom de KiCanvas)");
+  assert.deepEqual(csp.directives.filter((d) => /blob:/.test(d)), ["img-src 'self' data: blob:"]);
   const todo = JSON.stringify(csp);
-  assert.doesNotMatch(todo, /worker-src|child-src|blob:|googleapis|gstatic|kicanvas\.org/);
+  assert.doesNotMatch(todo, /worker-src|child-src|googleapis|gstatic|kicanvas\.org/);
 });
 
 // ---------- 5. Editor ----------

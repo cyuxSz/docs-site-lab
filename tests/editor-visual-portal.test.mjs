@@ -73,14 +73,15 @@ test("editor-visual.ts (entrada del chunk): CSS de Crepe por partes, sin KaTeX n
 
 // ---------- seguridad ----------
 
-test("CSP sin aflojar: estilos como hoy ('self' 'unsafe-inline'), sin unsafe-eval ni blob:", async () => {
+test("CSP sin aflojar: estilos como hoy ('self' 'unsafe-inline'), sin unsafe-eval; blob: solo en img-src (C15 d1b)", async () => {
   const config = (await import("../astro.config.mjs")).default;
   const csp = config.security.csp;
   assert.deepEqual(csp.styleDirective.resources, ["'self'", "'unsafe-inline'"]);
   assert.deepEqual(csp.scriptDirective.resources, ["'self'", "'wasm-unsafe-eval'"]);
-  assert.ok(csp.directives.includes("img-src 'self' data:"));
+  assert.ok(csp.directives.includes("img-src 'self' data: blob:"));
   assert.ok(csp.directives.includes("connect-src 'self'"));
-  assert.doesNotMatch(JSON.stringify(csp), /'unsafe-eval'|blob:/);
+  assert.doesNotMatch(JSON.stringify(csp), /'unsafe-eval'/);
+  assert.deepEqual(csp.directives.filter((d) => /blob:/.test(d)), ["img-src 'self' data: blob:"]);
   assert.match(leer("worker/index.mjs"), /"Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"/);
 });
 
