@@ -68,7 +68,7 @@ El Worker `docs` (`worker/index.mjs`, `wrangler.jsonc`) sirve los assets de `dis
 | `CLOUDFLARE_ACCOUNT_ID` | Cuenta de Cloudflare |
 | `DOCS_GITHUB_TOKEN` | Token *fine-grained* de solo lectura (Contents: Read) sobre los repos privados de `projects.json`; también lo usa `build.yml` en push a `main` |
 
-La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `database_id` está en `d1_databases` de `wrangler.jsonc` (no es un secreto). El workflow aplica las migraciones (`d1 migrations apply docs-site --remote`) antes de cada deploy. Para probar en local, `npm run cf:dev` con `.dev.vars` (ver «CI y probar en local»).
+La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `database_id` está en `d1_databases` de `wrangler.jsonc` (no es un secreto). El workflow aplica las migraciones (`d1 migrations apply docs-site --remote`) antes de cada deploy. Para probar en local, `npm run cf:dev` con `.dev.vars` (ver «CI y probar en local»). En local, antes de `wrangler dev`: `npx wrangler d1 migrations apply docs-site --local`.
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
 
