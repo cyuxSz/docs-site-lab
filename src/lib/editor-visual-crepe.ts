@@ -33,6 +33,30 @@ function manejadorConUrlIntacta(base: Manejador): Manejador {
   };
 }
 
+const ELEMENTOS_TABULABLES = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+// Tab en un párrafo, encabezado o cita saca el foco del editor (siguiente botón de acción; Mayús+Tab, el anterior al editor), en
+// vez de caer en los botones internos de los bloques de código. En listas (sangrar), tablas y código no actúa: lo resuelven ellos.
+function tabFueraDelEditor(e: KeyboardEvent, vista: any, raiz: HTMLElement) {
+  if (e.key !== "Tab" || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.target !== vista.dom) return;
+  const { $from } = vista.state.selection;
+  if (!$from.parent.isTextblock || $from.parent.type.spec.code) return;
+  for (let d = $from.depth; d > 0; d--) {
+    const n = $from.node(d).type.name;
+    if (n === "list_item" || n.startsWith("table")) return;
+  }
+  const doc = raiz.ownerDocument;
+  const candidatos = Array.from(doc.querySelectorAll<HTMLElement>(ELEMENTOS_TABULABLES)).filter(
+    (el) => !raiz.contains(el) && !(el as HTMLButtonElement).disabled && !el.closest("[hidden]") && el.tabIndex >= 0,
+  );
+  const SIGUIENTE = 4; // Node.DOCUMENT_POSITION_FOLLOWING
+  const despues = candidatos.filter((el) => raiz.compareDocumentPosition(el) & SIGUIENTE);
+  const destino = e.shiftKey ? candidatos.filter((el) => !despues.includes(el)).pop() : despues[0];
+  if (!destino) return;
+  e.preventDefault();
+  destino.focus();
+}
+
 export interface OpcionesCrepe {
   // Tarjeta HTML de un bloque de código (pdf, bom, diagrama) o null para dejarlo como código.
   renderizarBloque?: (lenguaje: string, contenido: string) => string | null;
@@ -82,6 +106,7 @@ export async function montarCrepe(raiz: HTMLElement, md: string, opciones: Opcio
   await crepe.create();
   const editor = crepe.editor;
   const vista = editor.action((ctx) => ctx.get(editorViewCtx));
+  vista.dom.addEventListener("keydown", (e) => tabFueraDelEditor(e as KeyboardEvent, vista, raiz));
   return {
     editor,
     vista,

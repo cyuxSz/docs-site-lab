@@ -48,6 +48,11 @@ html .hw-visual .milkdown {
   }
 }
 
+/* Bordes de tabla con el color de borde del portal (el de Crepe, al 20 %, casi no se ve en el tema oscuro). */
+.hw-visual .milkdown .milkdown-table-block :is(th, td) {
+  border-color: var(--line);
+}
+
 /* Tablas: se desplazan dentro de su caja, sin desbordar la página. */
 .hw-visual .milkdown .milkdown-table-block {
   overflow-x: auto;
@@ -65,11 +70,12 @@ html .hw-visual .milkdown {
 /* El reinicio de Crepe quita borde y fondo a los botones del editor: el de «Editar diagrama» vuelve a verse como .btn. */
 .hw-visual .milkdown figure.hw-diagrama .hw-diagrama-editar {
   border: 1px solid var(--line);
-  background: var(--glass);
+  background: var(--surface);
   color: var(--text);
   border-radius: 999px;
-  padding: 6px 14px;
+  padding: 7px 14px;
   font: inherit;
+  font-size: 14px;
   cursor: pointer;
 }
 .hw-visual .milkdown figure.hw-diagrama .hw-diagrama-editar:hover {
