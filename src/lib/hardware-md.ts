@@ -72,6 +72,11 @@ export function reemplazarDiagrama(md: string, fuenteAnterior: string, nuevo: Pa
   return md.slice(0, inicio) + bloqueDiagrama(nuevo).replace(/\n$/, "") + md.slice(fin);
 }
 
+// true solo si reemplazarDiagrama(md, fuente, …) no daría null: bloque de primer nivel con fuente única.
+export function diagramaReemplazable(md: string, fuente: string): boolean {
+  return localizarBloques(md).filter((x) => x.tipo === "diagrama" && x.datos.fuente === String(fuente).toLowerCase()).length === 1;
+}
+
 const urlArchivo = (proyecto: string, id: string) => `/api/archivos/?proyecto=${encodeURIComponent(proyecto)}&id=${id}`;
 const nombreEnlace = (url: string) => { try { return new URL(url).hostname || url; } catch { return url; } };
 

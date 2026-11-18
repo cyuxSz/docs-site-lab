@@ -1,0 +1,87 @@
+/* Editor visual (Milkdown Crepe) con los colores, las fuentes y el foco del portal. Vale en los dos temas porque solo usa
+   tokens (var(--...)); no hay colores fijos. Se importa desde el chunk del editor (src/scripts/editor-visual.ts). */
+.hw-visual {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+/* Crepe quita el outline del editor: el foco se muestra en el contenedor. */
+.hw-visual:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+html .hw-visual .milkdown {
+  --crepe-color-background: var(--surface);
+  --crepe-color-on-background: var(--text);
+  --crepe-color-surface: var(--surface);
+  --crepe-color-surface-low: color-mix(in srgb, var(--text) 5%, var(--surface));
+  --crepe-color-on-surface: var(--text);
+  --crepe-color-on-surface-variant: var(--muted);
+  --crepe-color-outline: var(--line);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-secondary: var(--accent-soft);
+  --crepe-color-on-secondary: var(--text);
+  --crepe-color-inverse: var(--text);
+  --crepe-color-on-inverse: var(--surface);
+  --crepe-color-inline-code: var(--danger);
+  --crepe-color-error: var(--danger);
+  --crepe-color-hover: color-mix(in srgb, var(--text) 8%, transparent);
+  --crepe-color-selected: color-mix(in srgb, var(--accent) 25%, transparent);
+  --crepe-color-inline-area: color-mix(in srgb, var(--text) 8%, var(--surface));
+  --crepe-font-title: var(--font-head);
+  --crepe-font-default: var(--font-body);
+  --crepe-font-code: var(--mono);
+  --crepe-shadow-1: var(--shadow);
+  --crepe-shadow-2: var(--shadow);
+}
+
+/* Crepe trae un padding muy ancho a los lados: aquí uno propio, más estrecho en móvil (deja sitio al asa de bloque). */
+.hw-visual .milkdown .ProseMirror {
+  padding: 24px 24px 24px 48px;
+  min-height: 40vh;
+}
+@media (max-width: 600px) {
+  .hw-visual .milkdown .ProseMirror {
+    padding: 16px 12px 16px 40px;
+  }
+}
+
+/* Bordes de tabla con el color de borde del portal (el de Crepe, al 20 %, casi no se ve en el tema oscuro). */
+.hw-visual .milkdown .milkdown-table-block :is(th, td) {
+  border-color: var(--line);
+}
+
+/* Tablas: se desplazan dentro de su caja, sin desbordar la página. */
+.hw-visual .milkdown .milkdown-table-block {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.hw-visual .milkdown img {
+  max-width: 100%;
+  height: auto;
+}
+/* Tarjetas de bloques del portal dentro del editor. */
+.hw-visual .milkdown .preview figure {
+  margin: 0;
+}
+
+/* El reinicio de Crepe quita borde y fondo a los botones del editor: el de «Editar diagrama» vuelve a verse como .btn. */
+.hw-visual .milkdown figure.hw-diagrama .hw-diagrama-editar {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.hw-visual .milkdown figure.hw-diagrama .hw-diagrama-editar:hover {
+  border-color: var(--accent);
+}
+.hw-visual .milkdown figure.hw-diagrama .hw-diagrama-editar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -181,7 +181,7 @@ test("mensajeError: 409 pide recargar sin perder el texto; 401/403/413/429/503 c
   assert.ok(mensajeError("red").length > 0, "fallo de red");
 });
 
-test("editor: mientras guarda se deshabilitan textarea y selector de archivos y se ignoran inserciones y subidas", () => {
+test("editor: mientras guarda o carga el editor visual se deshabilita el selector de archivos; mientras guarda, el textarea, y se ignoran inserciones y subidas", async () => {
   const src = leer("src/scripts/hardware-editor.ts");
   const cuerpo = (firma) => {
     const i = src.indexOf(firma);
@@ -189,7 +189,12 @@ test("editor: mientras guarda se deshabilitan textarea y selector de archivos y 
     return src.slice(i, i + 400);
   };
   assert.match(cuerpo("function actualizarGuardar("), /textarea\.disabled = guardando/);
-  assert.match(cuerpo("function actualizarGuardar("), /inputArchivo\.disabled = guardando/);
+  assert.match(cuerpo("function actualizarGuardar("), /inputArchivo\.disabled = insercionBloqueada\(guardando, cargandoVisual\)/);
+  const { insercionBloqueada } = await import("../src/lib/hardware-editor.ts");
+  assert.equal(insercionBloqueada(true, false), true, "bloqueado mientras guarda");
+  assert.equal(insercionBloqueada(false, true), true, "bloqueado mientras carga el editor visual");
+  assert.equal(insercionBloqueada(true, true), true);
+  assert.equal(insercionBloqueada(false, false), false, "libre en reposo");
   assert.match(cuerpo("function insertar("), /if \(guardando\) return/);
   assert.match(cuerpo("async function subirVarios("), /if \(guardando\) return/);
 });

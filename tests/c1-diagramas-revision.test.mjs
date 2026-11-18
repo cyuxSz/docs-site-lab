@@ -160,9 +160,13 @@ test("controlador diagrams.net: una respuesta tardía de una exportación vencid
 });
 
 // ---------- editor de hardware: Insertar diagrama durante el PUT ----------
-test("hardware-editor: Insertar diagrama se deshabilita mientras la página se guarda y el listener lo comprueba", () => {
+test("hardware-editor: Insertar diagrama se deshabilita mientras la página se guarda o carga el editor visual y el listener lo comprueba", async () => {
   const src = readFileSync(raiz + "src/scripts/hardware-editor.ts", "utf8");
-  assert.match(src, /btnInsertarDiagrama\.disabled = guardando/);
+  assert.match(src, /btnInsertarDiagrama\.disabled = insercionBloqueada\(guardando, cargandoVisual\)/);
+  const { insercionBloqueada } = await import("../src/lib/hardware-editor.ts");
+  assert.equal(insercionBloqueada(true, false), true, "bloqueado mientras guarda");
+  assert.equal(insercionBloqueada(false, true), true, "bloqueado mientras carga el editor visual");
+  assert.equal(insercionBloqueada(false, false), false, "libre en reposo");
   assert.match(src, /escuchar\(btnInsertarDiagrama, "click", \(\) => \{\s*if \(guardando\) return;/);
 });
 

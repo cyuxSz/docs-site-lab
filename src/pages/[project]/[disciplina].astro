@@ -63,7 +63,20 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
             <ul data-hw-usado-por-lista></ul>
           </section>
 
+          <p class="sr-only" data-hw-anuncio-carga role="status" aria-live="polite"></p>
           <form class="hw-editor" data-hw-editor hidden novalidate>
+            <div class="hw-modo">
+              <button type="button" class="btn" data-hw-modo-markdown aria-pressed="false" aria-describedby="hw-ayuda-visual">Markdown</button>
+            </div>
+            <div class="hw-visual" data-hw-visual></div>
+            <p class="hw-ayuda" data-hw-cargando-visual aria-hidden="true" hidden>Cargando editor…</p>
+            <ul class="hw-ayuda" id="hw-ayuda-visual" data-hw-ayuda-visual>
+              <li>Pega o arrastra imágenes y archivos sobre el editor.</li>
+              <li>Guarda con <kbd>Ctrl</kbd>+<kbd>S</kbd> (o <kbd>Cmd</kbd>+<kbd>S</kbd>).</li>
+              <li><kbd>Tab</kbd> sangra en listas y pasa de celda en tablas.</li>
+              <li>Para salir del editor: <kbd>Esc</kbd> y luego <kbd>Tab</kbd>.</li>
+              <li>«Markdown» cambia al texto plano.</li>
+            </ul>
             <div class="hw-pestanas" role="tablist" aria-label="Modo del editor">
               <button type="button" class="btn" role="tab" id="hw-tab-escribir" aria-selected="true" aria-controls="hw-panel-escribir" data-hw-tab="escribir">Escribir</button>
               <button type="button" class="btn" role="tab" id="hw-tab-previa" aria-selected="false" aria-controls="hw-panel-previa" tabindex="-1" data-hw-tab="previa">Vista previa</button>
