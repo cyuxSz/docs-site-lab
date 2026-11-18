@@ -78,12 +78,6 @@ test("Base.astro: solo se desplaza .ptabs en horizontal", () => {
   assert.match(b, /prefers-reduced-motion/);
 });
 
-test("servidor-hardware: aplica por pathname todas las reglas de cabeceras (CSP sandbox de /arch/)", () => {
-  const src = read("tests/fixtures/servidor-hardware.mjs");
-  assert.match(src, /cabecerasDe\(url\.pathname\)/);
-  assert.doesNotMatch(src, /\.headers \?\? \[\]\)\[0\]/);
-});
-
 test("resultadoBorrado: 409 da su mensaje y no quita nada del índice; otros errores usan el habitual", () => {
   assert.deepEqual(resultadoBorrado(200), { quitarDelIndice: true, mensaje: "" });
   assert.deepEqual(resultadoBorrado(409), { quitarDelIndice: false, mensaje: "Alguien cambió la página; recárgala antes de borrar" });

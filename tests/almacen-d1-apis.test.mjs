@@ -1,10 +1,10 @@
 // M2c: la misma batería de comentarios, hardware y archivos contra el Redis en memoria y contra D1 (clienteD1 sobre
-// node:sqlite con la API de D1). Los cores no cambian: solo cambia el almacén inyectado. Al final, el Worker elige D1
-// cuando existe env.DB y si no, Upstash.
+// node:sqlite con la API de D1). Los cores no cambian: solo cambia el almacén inyectado. Al final, el Worker usa D1
+// (env.DB) como único almacén: sin binding, 503.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
 import { crearD1 } from "./fixtures/d1-sqlite.mjs";
 import electronica from "../plantillas/electronica.json" with { type: "json" };
 
@@ -20,7 +20,7 @@ const PLANTILLAS = { electronica };
 const SLUG = electronica[0].slug;
 
 const BACKENDS = {
-  "redis-memoria": async () => {
+  "memoria": async () => {
     let t = T0;
     const almacen = fakeRedis();
     almacen.reloj.ahora = () => t;
@@ -337,33 +337,34 @@ test("Worker: con env.DB y sin Upstash, los comentarios funcionan sobre D1 (sin 
   assert.deepEqual(llamadas, []);
 });
 
-test("Worker: con env.DB y también Upstash configurado, gana D1", async () => {
+test("Worker: con env.DB usa D1 y no llama a la red aunque queden variables viejas KV_REST_*", async () => {
   const llamadas = [];
   globalThis.fetch = async (u) => {
     llamadas.push(String(u?.url ?? u));
-    throw new Error("no debe llamar a Upstash");
+    throw new Error("no debe llamar a la red");
   };
   const w = await worker();
-  const env = envWorker({ DB: crearD1(), KV_REST_API_URL: "https://upstash.prueba", KV_REST_API_TOKEN: "tok" });
+  const env = envWorker({ DB: crearD1(), KV_REST_API_URL: "https://almacen-viejo.prueba", KV_REST_API_TOKEN: "tok" });
   const res = await w.fetch(req("/api/hardware/", "GET", { login: "ana", query: BASE }), env, ctx);
   assert.equal(res.status, 200);
   assert.deepEqual(llamadas, []);
 });
 
-test("Worker: sin env.DB sigue usando Upstash (y sin ninguno de los dos, 503)", async () => {
-  const redis = fakeRedis();
+test("Worker: sin env.DB las APIs responden 503 aunque haya KV_REST_*/UPSTASH_* (D1 es el único almacén)", async () => {
   const llamadas = [];
-  globalThis.fetch = async (input, init = {}) => {
-    const url = String(input?.url ?? input);
-    llamadas.push(url);
-    const res = await redis.exec(JSON.parse(init.body));
-    return Response.json(res.map((result) => ({ result })));
+  globalThis.fetch = async (u) => {
+    llamadas.push(String(u?.url ?? u));
+    throw new Error("no debe llamar a la red");
   };
   const w = await worker();
-  const conUpstash = envWorker({ KV_REST_API_URL: "https://upstash.prueba", KV_REST_API_TOKEN: "tok" });
-  const r = await w.fetch(req("/api/comentarios/", "POST", { login: "ana", body: { pagina: PAG, tipo: "duda", texto: "por Upstash" } }), conUpstash, ctx);
-  assert.equal(r.status, 201);
-  assert.ok(llamadas.length > 0 && llamadas.every((u) => u === "https://upstash.prueba/pipeline"));
+  const viejas = { KV_REST_API_URL: "https://almacen-viejo.prueba", KV_REST_API_TOKEN: "tok", UPSTASH_REDIS_REST_URL: "https://almacen-viejo.prueba", UPSTASH_REDIS_REST_TOKEN: "tok" };
+  const post = await w.fetch(req("/api/comentarios/", "POST", { login: "ana", body: { pagina: PAG, tipo: "duda", texto: "sin D1" } }), envWorker(viejas), ctx);
+  assert.equal(post.status, 503, "sin D1 no se escribe en ningún otro almacén");
+  for (const [ruta, query] of [["/api/comentarios/", { pagina: PAG }], ["/api/hardware/", BASE], ["/api/archivos/", { proyecto: "uuv", lista: "1" }]]) {
+    const r = await w.fetch(req(ruta, "GET", { login: "ana", query }), envWorker(viejas), ctx);
+    assert.equal(r.status, 503, ruta);
+  }
+  assert.deepEqual(llamadas, [], "ninguna petición a un almacén externo");
   const sinNada = await w.fetch(req("/api/comentarios/", "GET", { login: "ana", query: { pagina: PAG } }), envWorker(), ctx);
   assert.equal(sinNada.status, 503);
 });

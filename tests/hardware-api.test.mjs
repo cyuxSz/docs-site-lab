@@ -1,9 +1,9 @@
-// Lote 1a: API de documentación de hardware (api/hardware.js → lib/hardware-core.mjs) sobre Upstash Redis (REST).
-// Mismo patrón que tests/comentarios-api.test.mjs: Redis en memoria inyectado y cookie de sesión firmada con HMAC.
+// Lote 1a: API de documentación de hardware (lib/hardware-core.mjs, servida por el Worker en /api/hardware/).
+// Mismo patrón que tests/comentarios-api.test.mjs: almacén en memoria inyectado y cookie de sesión firmada con HMAC.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
 import { DEMO } from "./fixtures/acceso-demo.mjs";
 
 const SECRET = "s".repeat(40);
@@ -625,25 +625,23 @@ test("límite de tasa igual que comentarios: 10 escrituras por minuto y la 11.ª
 
 // ---------- Módulo compartido (sin duplicar el cliente Redis ni la sesión) ----------
 
-test("estructura: hardware-core no duplica clienteRedis ni la verificación de sesión: los toma de un módulo compartido", async () => {
+test("estructura: hardware-core no tiene cliente de almacén propio ni duplica la verificación de sesión (api-comun)", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../lib/hardware-core.mjs", import.meta.url), "utf8");
-  assert.doesNotMatch(src, /\/pipeline/, "sin otra copia del cliente REST de Upstash");
+  assert.doesNotMatch(src, /\/pipeline|fetch\(/, "sin cliente REST propio: el almacén se inyecta");
   assert.doesNotMatch(src, /createHmac|crypto\.subtle/, "sin otra verificación HMAC");
-  const com = await import("../lib/comentarios-core.mjs");
+  assert.match(src, /from\s+["']\.\/api-comun\.mjs["']/);
   const comun = await import("../lib/api-comun.mjs");
-  assert.equal(typeof comun.clienteRedis, "function");
-  assert.equal(com.clienteRedis, comun.clienteRedis, "comentarios-core reexporta el mismo clienteRedis");
+  assert.equal(typeof comun.exigirSesion, "function");
 });
 
-test("estructura: api/hardware.js delega en lib/hardware-core.mjs con projects.json y las plantillas importadas como JSON", async () => {
+test("estructura: worker/index.mjs delega /api/hardware en lib/hardware-core.mjs con projects.json y las plantillas importadas como JSON", async () => {
   const { readFileSync } = await import("node:fs");
-  const src = readFileSync(new URL("../api/hardware.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../worker/index.mjs", import.meta.url), "utf8");
   assert.match(src, /from\s+["']\.\.\/lib\/hardware-core\.mjs["']/);
   assert.match(src, /projects\.json["']\s+with\s+\{\s*type:\s*["']json["']\s*\}/);
   assert.match(src, /plantillas\/electronica\.json["']\s+with/);
   assert.match(src, /plantillas\/mecanica\.json["']\s+with/);
-  for (const m of ["GET", "POST", "PUT", "DELETE"]) assert.match(src, new RegExp(`export const ${m}\\b`));
 });
 
 test("entidad numérica de sustituto (&#xd800;) no rompe la API: devuelve el md tal cual y sin html (el render es del cliente)", async () => {

@@ -197,12 +197,6 @@ test("inicio: las tarjetas de proyecto usan entradaProyecto", () => {
   assert.match(s, /entradaProyecto\(/);
 });
 
-test("vercel.json: /<id>/content/* redirige a /<id>/software/", () => {
-  const v = JSON.parse(read("vercel.json"));
-  const r = v.redirects.find((x) => x.source === "/:project/content/:path*");
-  assert.equal(r?.destination, "/:project/software/");
-});
-
 test("projects.json: ninguna disciplina se llama software", () => {
   for (const p of JSON.parse(read("projects.json"))) assert.ok(!Object.hasOwn(p.disciplinas ?? {}, "software"), p.id);
 });

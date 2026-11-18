@@ -1,7 +1,7 @@
 // M2b: el Markdown de hardware se renderiza en el navegador (opción c). lib/hardware-core.mjs deja de importar satteri
 // y devuelve md + metadatos (sin html, sin accion=previsualizar); el cliente renderiza con marked + DOMPurify
-// (src/lib/hardware-md.ts, carga diferida) y /api/hardware ya responde en el Worker con Upstash.
-// El sanitizador se prueba en un DOM real de jsdom (devDependency exacta). Upstash se simula con el Redis en memoria.
+// (src/lib/hardware-md.ts, carga diferida) y /api/hardware responde en el Worker sobre D1.
+// El sanitizador se prueba en un DOM real de jsdom (devDependency exacta). D1 es node:sqlite (tests/fixtures/d1-sqlite.mjs).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
@@ -10,7 +10,8 @@ import { spawn } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
+import { crearD1 } from "./fixtures/d1-sqlite.mjs";
 
 const root = new URL("../", import.meta.url);
 const raiz = fileURLToPath(root);
@@ -19,7 +20,6 @@ const existe = (rel) => existsSync(new URL(rel, root));
 
 const SECRET = "m".repeat(40);
 const ORIGIN = "https://docs-site-lab.ejemplo.workers.dev";
-const UPSTASH = "https://upstash.prueba";
 const EDITOR = "cyuxSz"; // editor de uuv/electronica en projects.json
 const UUID = "0b7c8f2e-4d1a-4c3b-9e8f-1a2b3c4d5e6f";
 
@@ -120,17 +120,12 @@ test("core: accion=previsualizar ya no existe (la vista previa es local) → 400
 // ======================================================================================================
 
 const realFetch = globalThis.fetch;
-let redis;
+// Sin red: el almacén es el binding D1 (tests/fixtures/d1-sqlite.mjs); un fetch saliente es un error.
+let db;
 beforeEach(() => {
-  redis = fakeRedis();
-  globalThis.fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input.url;
-    if (url === `${UPSTASH}/pipeline`) {
-      assert.equal(new Headers(init.headers).get("authorization"), "Bearer tok-prueba");
-      const res = await redis.exec(JSON.parse(init.body));
-      return Response.json(res.map((result) => ({ result })));
-    }
-    throw new Error(`fetch inesperado: ${url}`);
+  db = crearD1();
+  globalThis.fetch = async (input) => {
+    throw new Error(`fetch inesperado: ${typeof input === "string" ? input : input.url}`);
   };
 });
 afterEach(() => {
@@ -145,8 +140,7 @@ function crearEnv(extra = {}) {
     SESSION_SECRET: SECRET,
     ALLOWED_ORG: "vanttec",
     ALLOWED_USERS: "",
-    KV_REST_API_URL: UPSTASH,
-    KV_REST_API_TOKEN: "tok-prueba",
+    DB: db,
     ASSETS: { async fetch(req) { llamadas.push(req); return new Response("asset"); } },
     ...extra,
   };
@@ -183,7 +177,7 @@ test("worker: /api/hardware (con y sin barra) ya no es 501: índice vacío con e
   assert.equal(llamadas.length, 0, "la API no pasa por ASSETS");
 });
 
-test("worker: inicializar desde la plantilla, leer el índice y una página (md sin html) contra Upstash en memoria", async () => {
+test("worker: inicializar desde la plantilla, leer el índice y una página (md sin html) contra D1", async () => {
   const { env } = crearEnv();
   const ini = await pedir("/api/hardware/", { env, login: EDITOR, method: "POST", cuerpo: { ...BASE, accion: "inicializar" } });
   assert.equal(ini.status, 201);
@@ -218,18 +212,18 @@ test("worker: guardar con versión → 200 v+1; versión vieja → 409 con la ve
   assert.equal(g.pagina.md, "# PCB\n\nCuatro capas.", "ni el 409 ni el 403 pisaron el contenido");
 });
 
-test("worker: /api/hardware sin sesión → 401; otro origen → 403; método no permitido → 405 con Allow; sin Upstash → 503", async () => {
+test("worker: /api/hardware sin sesión → 401; otro origen → 403; método no permitido → 405 con Allow; sin binding DB → 503", async () => {
   const { env } = crearEnv();
   const sin = await pedir(`/api/hardware/?${qs()}`, { env });
   assert.equal(sin.status, 401);
   const otro = await pedir("/api/hardware/", { env, login: EDITOR, method: "POST", cuerpo: { ...BASE, accion: "inicializar" }, origin: "https://malo.example" });
   assert.equal(otro.status, 403);
-  assert.equal(redis.data.size, 0, "nada escrito");
+  assert.deepEqual((await (await pedir(`/api/hardware/?${qs()}`, { env, login: "ana" })).json()).paginas, [], "nada escrito");
   const patch = await pedir("/api/hardware/", { env, login: EDITOR, method: "PATCH", cuerpo: {} });
   assert.equal(patch.status, 405);
   assert.equal(patch.headers.get("allow"), "GET, POST, PUT, DELETE");
-  const { env: sinKv } = crearEnv({ KV_REST_API_URL: undefined, KV_REST_API_TOKEN: undefined });
-  assert.equal((await pedir(`/api/hardware/?${qs()}`, { env: sinKv, login: EDITOR })).status, 503);
+  const { env: sinDb } = crearEnv({ DB: undefined });
+  assert.equal((await pedir(`/api/hardware/?${qs()}`, { env: sinDb, login: EDITOR })).status, 503);
 });
 
 test("worker: importa hardware-core y las plantillas (JSON) sin comentario de 501", () => {
@@ -520,42 +514,4 @@ test("README: la sección de Cloudflare dice que /api/hardware responde en el Wo
   assert.match(sec, /marked/);
   assert.match(sec, /DOMPurify/);
   assert.doesNotMatch(sec, /upstash-local/, "el Upstash simulado ya no se documenta");
-});
-
-// ======================================================================================================
-// 6. tools/upstash-local.mjs (Upstash simulado para wrangler dev)
-// ======================================================================================================
-
-function arrancarUpstash(args) {
-  return new Promise((ok, mal) => {
-    const p = spawn(process.execPath, ["tools/upstash-local.mjs", ...args], { cwd: raiz, stdio: ["ignore", "pipe", "pipe"] });
-    let salida = "";
-    const t = setTimeout(() => (p.kill(), mal(new Error(`no arrancó: ${salida}`))), 15_000);
-    p.stdout.on("data", (d) => {
-      salida += d;
-      const m = salida.match(/http:\/\/127\.0\.0\.1:(\d+)/);
-      if (m) {
-        clearTimeout(t);
-        ok({ p, url: `http://127.0.0.1:${m[1]}` });
-      }
-    });
-    p.stderr.on("data", (d) => (salida += d));
-    p.on("exit", (c) => (clearTimeout(t), mal(new Error(`salió con ${c}: ${salida}`))));
-  });
-}
-
-test("tools/upstash-local.mjs: /pipeline en 127.0.0.1 con el Redis en memoria y Bearer obligatorio", { timeout: 30_000 }, async () => {
-  assert.ok(existe("tools/upstash-local.mjs"), "falta tools/upstash-local.mjs");
-  const { p, url } = await arrancarUpstash(["--puerto", "0", "--token", "tok-local"]);
-  try {
-    const f = (cuerpo, token) => realFetch(`${url}/pipeline`, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(cuerpo) });
-    const r = await f([["SET", "k", "v"], ["GET", "k"]], "tok-local");
-    assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), [{ result: "OK" }, { result: "v" }]);
-    assert.equal((await f([["GET", "k"]])).status, 401, "sin token");
-    assert.equal((await f([["GET", "k"]], "otro")).status, 401, "token distinto");
-    assert.equal((await realFetch(`${url}/otra`, { method: "POST", headers: { authorization: "Bearer tok-local" }, body: "[]" })).status, 404);
-  } finally {
-    p.kill();
-  }
 });

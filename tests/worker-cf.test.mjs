@@ -1,6 +1,6 @@
-// M1: el portal servido desde un Cloudflare Worker con static assets y el mismo login que middleware.js.
-// Todo es aditivo: Vercel sigue en producción, así que también se comprueba que middleware.js, vercel.json y las
-// dependencias de Vercel siguen igual.
+// M1: el portal servido desde un Cloudflare Worker con static assets y el login de lib/login-core.mjs.
+// Desde el lote "quitar Vercel" el Worker es el único despliegue: no quedan middleware.js, vercel.json ni dependencias
+// de Vercel (ver también tests/sin-vercel.test.mjs).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { DEMO } from "./fixtures/acceso-demo.mjs";
@@ -338,7 +338,7 @@ test("worker: 503 si falta GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET o SESSION_SECR
 
 // ---------- Worker: redirecciones y API ----------
 
-test("worker: redirecciones 301 de vercel.json (wiki → grafo, content → software) tras el login", async () => {
+test("worker: redirecciones 301 (wiki → grafo, content → software) tras el login", async () => {
   const casos = [
     ["/uuv/wiki/", "/uuv/grafo/"],
     ["/uuv/wiki", "/uuv/grafo/"],
@@ -368,7 +368,7 @@ test("worker: la redirección nunca produce un Location a otro sitio", async () 
 });
 
 // M2b: /api/hardware ya lo atiende hardware-core en el Worker (tests/m2b-hardware-cliente.test.mjs). Sin Upstash → 503.
-test("worker: /api/hardware con sesión ya no responde 501; sin Upstash → 503 JSON con las cabeceras de API", async () => {
+test("worker: /api/hardware con sesión ya no responde 501; sin binding DB → 503 JSON con las cabeceras de API", async () => {
   const { env, llamadas } = crearEnv();
   for (const [path, method] of [["/api/hardware/?proyecto=uuv&disciplina=electronica", "GET"], ["/api/hardware?proyecto=uuv&disciplina=electronica", "GET"]]) {
     const res = await pedir(path, { env, method, cookie: sesion("ana") });
@@ -381,40 +381,38 @@ test("worker: /api/hardware con sesión ya no responde 501; sin Upstash → 503 
   assert.equal(llamadas.length, 0);
 });
 
-// ---------- Vercel intacto ----------
+// ---------- Sin Vercel ----------
 
-test("vercel: middleware.js es un envoltorio del core y conserva @vercel/functions", () => {
-  const src = leer("middleware.js");
-  assert.ok(/from\s+["']\.\/lib\/login-core\.mjs["']/.test(src), "middleware.js debe importar ./lib/login-core.mjs");
-  assert.ok(/from\s+["']@vercel\/functions["']/.test(src), "middleware.js sigue usando next de @vercel/functions");
-  assert.ok(/export\s+const\s+config/.test(src), "middleware.js conserva config.matcher");
-  assert.ok(!/github\.com\/login\/oauth/.test(src), "la lógica del OAuth vive en el core, no duplicada");
-});
-
-test("vercel: vercel.json no cambió", () => {
-  const esperado = {
-    $schema: "https://openapi.vercel.sh/vercel.json",
-    installCommand: "npm ci",
-    buildCommand: "npm run build",
-    outputDirectory: "dist",
-    framework: null,
-    trailingSlash: true,
-    redirects: [
-      { source: "/:project/wiki/", destination: "/:project/grafo/", permanent: true },
-      { source: "/:project/content/:path*", destination: "/:project/software/", permanent: true },
-    ],
-    headers: [
-      { source: "/(.*)", headers: Object.entries({ "Content-Security-Policy": GLOBALES["content-security-policy"], "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "Permissions-Policy": GLOBALES["permissions-policy"], "Cross-Origin-Opener-Policy": "same-origin" }).map(([key, value]) => ({ key, value })) },
-      { source: "/:project/arch/:file*", headers: [{ key: "Content-Security-Policy", value: SANDBOX }] },
-    ],
+test("core: manejarLogin no tiene modo Vercel: ni la opción vercel ni VERCEL_ENV/PREVIEW_TRUST_VERCEL_AUTH abren nada", async () => {
+  const { manejarLogin } = await cargarCore();
+  const src = leer("lib/login-core.mjs");
+  assert.doesNotMatch(src, /vercel/i, "login-core sin ramas ni menciones de Vercel");
+  let continuo = 0;
+  const continuar = () => {
+    continuo++;
+    return new Response("dentro");
   };
-  assert.deepEqual(JSON.parse(leer("vercel.json")), esperado);
+  const env = { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", VERCEL_ENV: "preview", PREVIEW_TRUST_VERCEL_AUTH: "1" };
+  for (const path of ["/uuv/", "/restringido-demo/"]) {
+    const res = await manejarLogin(new Request(`${ORIGIN}${path}`), env, { continuar, vercel: true, restringidos: DEMO });
+    assert.equal(res.status, 302, `${path}: sin sesión siempre va al login`);
+  }
+  const firmado = await manejarLogin(
+    new Request(`${ORIGIN}/api/archivos/`, { method: "POST", headers: { "x-vercel-signature": "abc", "content-type": "application/json" }, body: "{}" }),
+    env,
+    { continuar, vercel: true, restringidos: DEMO },
+  );
+  assert.equal(firmado.status, 401, "sin excepción para callbacks firmados");
+  assert.equal(continuo, 0, "nada pasa al contenido sin sesión");
+  const sinConfig = await manejarLogin(new Request(`${ORIGIN}/`), { SESSION_SECRET: SECRET }, { continuar, vercel: true });
+  assert.equal(sinConfig.status, 503);
+  assert.doesNotMatch(await sinConfig.text(), /vercel/i, "el 503 no menciona Vercel");
 });
 
-test("vercel: siguen las dependencias de Vercel; wrangler es devDependency con versión exacta", () => {
+test("package.json: sin dependencias de Vercel; wrangler es devDependency con versión exacta", () => {
   const pkg = JSON.parse(leer("package.json"));
-  assert.ok(pkg.dependencies["@vercel/functions"]);
-  assert.ok(pkg.dependencies["@vercel/blob"]);
+  assert.equal(pkg.dependencies["@vercel/functions"], undefined);
+  assert.equal(pkg.dependencies["@vercel/blob"], undefined);
   const v = pkg.devDependencies?.wrangler;
   assert.ok(v, "falta wrangler en devDependencies");
   assert.match(v, /^\d+\.\d+\.\d+$/, "versión exacta, sin ^ ni ~");

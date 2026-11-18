@@ -10,7 +10,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { JSDOM } from "jsdom";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { crearD1 } from "./fixtures/d1-sqlite.mjs";
 import PROYECTOS_REALES from "../projects.json" with { type: "json" };
 
 const A = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
@@ -144,17 +144,16 @@ test("montarVisores: en la vista previa no se crea ningún iframe (no recarga el
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs-site-lab.ejemplo.workers.dev";
-const UPSTASH = "https://upstash.prueba";
 const PDF = new TextEncoder().encode("%PDF-1.4\n%prueba\n");
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
 const realFetch = globalThis.fetch;
 
+// Sin red: el almacén es el binding D1 (tests/fixtures/d1-sqlite.mjs); un fetch saliente es un error.
+let db;
 beforeEach(() => {
-  const redis = fakeRedis();
-  globalThis.fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input.url;
-    if (url === `${UPSTASH}/pipeline`) return Response.json((await redis.exec(JSON.parse(init.body))).map((result) => ({ result })));
-    throw new Error(`fetch inesperado: ${url}`);
+  db = crearD1();
+  globalThis.fetch = async (input) => {
+    throw new Error(`fetch inesperado: ${typeof input === "string" ? input : input.url}`);
   };
 });
 afterEach(() => {
@@ -184,8 +183,7 @@ const env = () => ({
   SESSION_SECRET: SECRET,
   ALLOWED_ORG: "vanttec",
   ALLOWED_USERS: "",
-  KV_REST_API_URL: UPSTASH,
-  KV_REST_API_TOKEN: "tok-prueba",
+  DB: db,
   ASSETS: { fetch: async () => new Response("<h1>asset</h1>", { headers: { "content-type": "text/html" } }) },
   ARCHIVOS: fakeR2(),
 });

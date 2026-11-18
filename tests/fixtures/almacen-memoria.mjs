@@ -1,6 +1,7 @@
-// Redis en memoria con la forma del cliente real (exec(comandos) → resultados crudos de /pipeline de Upstash).
-// Lo usan los tests de hardware y archivos. Strings, hashes (Map), sets (Set) y listas (Array).
-export function fakeRedis() {
+// Almacén en memoria con el mismo protocolo de comandos que clienteD1 (lib/almacen-d1.mjs): exec(comandos) → resultados.
+// Doble de prueba para los tests de los cores (comentarios, hardware y archivos); tests/almacen-d1.test.mjs comprueba
+// que da los mismos resultados que D1. Strings, hashes (Map), sets (Set) y listas (Array).
+export function almacenMemoria() {
   const data = new Map();
   const ttl = new Map();
   const hash = (k) => {

@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
 import { crearD1 } from "./fixtures/d1-sqlite.mjs";
 
 const SECRET = "s".repeat(40);
@@ -31,7 +31,7 @@ const BASE = { proyecto: "uuv", disciplina: "electronica" };
 const ID = /^[a-z0-9-]{1,60}:\d{1,16}$/;
 
 const BACKENDS = {
-  "redis-memoria": async () => {
+  "memoria": async () => {
     let t = T0;
     const almacen = fakeRedis();
     almacen.reloj.ahora = () => t;

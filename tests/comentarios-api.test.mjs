@@ -1,6 +1,6 @@
-// Lote 7a: API de comentarios por página (api/comentarios.js → lib/comentarios-core.mjs) sobre Upstash Redis (REST).
-// El cliente Redis se inyecta: aquí es un fake en memoria con la misma forma que el real (exec(comandos) → resultados
-// crudos de /pipeline de Upstash; HGETALL devuelve [campo, valor, ...]).
+// Lote 7a: API de comentarios por página (lib/comentarios-core.mjs, servida por el Worker en /api/comentarios/).
+// El almacén se inyecta (en producción, clienteD1 sobre el binding DB): aquí es un fake en memoria con el mismo
+// protocolo (exec(comandos) → resultados; HGETALL devuelve [campo, valor, ...]).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
@@ -19,7 +19,6 @@ const core = () => import("../lib/comentarios-core.mjs");
 
 beforeEach(() => {
   process.env.SESSION_SECRET = SECRET;
-  for (const k of ["KV_REST_API_URL", "KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) delete process.env[k];
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -128,68 +127,30 @@ test("503 'Comentarios no configurados' si no hay almacén (sin variables de Ups
   }
 });
 
-test("clienteRedis: null sin variables; acepta KV_REST_API_* o UPSTASH_REDIS_REST_* y usa /pipeline con Bearer", async () => {
-  const { clienteRedis } = await core();
-  assert.equal(clienteRedis({}), null);
-  assert.equal(clienteRedis({ KV_REST_API_URL: "https://x.upstash.io" }), null, "sin token no hay cliente");
-  for (const [url, tok] of [["KV_REST_API_URL", "KV_REST_API_TOKEN"], ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]]) {
-    const llamadas = [];
-    globalThis.fetch = async (input, init = {}) => {
-      llamadas.push({ url: String(input instanceof Request ? input.url : input), init });
-      return Response.json([{ result: [] }, { result: "OK" }]);
-    };
-    const c = clienteRedis({ [url]: "https://x.upstash.io", [tok]: "TOKEN-SECRETO" });
-    assert.ok(c, url);
-    assert.deepEqual(await c.exec([["HGETALL", "k"], ["SET", "a", "1"]]), [[], "OK"]);
-    assert.equal(llamadas.length, 1, "una sola llamada REST por exec");
-    assert.equal(llamadas[0].url, "https://x.upstash.io/pipeline");
-    assert.equal(llamadas[0].init.method, "POST");
-    assert.equal(new Headers(llamadas[0].init.headers).get("authorization"), "Bearer TOKEN-SECRETO");
-    assert.deepEqual(JSON.parse(llamadas[0].init.body), [["HGETALL", "k"], ["SET", "a", "1"]]);
-  }
-});
-
-test("TIMEOUT_MS vale 5000 y es menor que el lease de los candados", async () => {
-  const { TIMEOUT_MS, LEASE_S } = await import("../lib/api-comun.mjs");
-  assert.equal(TIMEOUT_MS, 5000);
-  assert.ok(TIMEOUT_MS < LEASE_S * 1000, "un acceso a Redis no puede durar más que el lease del candado");
-});
-
-test("clienteRedis: el fetch lleva un AbortSignal y un timeout da el mismo error 'Almacén no disponible'", async () => {
-  const { clienteRedis } = await core();
-  let signal;
-  globalThis.fetch = async (_u, init = {}) => {
-    signal = init.signal;
-    throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
-  };
-  const err = await clienteRedis({ KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "TOKEN-SECRETO" }).exec([["GET", "k"]]).then(() => null, (e) => e);
-  assert.ok(signal instanceof AbortSignal, "pasa un AbortSignal");
-  assert.equal(err?.message, "Almacén no disponible");
-});
-
-test("clienteRedis: un error de Upstash lanza sin incluir el token; la API responde 503 genérico", async () => {
-  const { clienteRedis, crearHandler } = await core();
-  const env = { UPSTASH_REDIS_REST_URL: "https://x.upstash.io", UPSTASH_REDIS_REST_TOKEN: "TOKEN-SECRETO" };
-  for (const respuesta of [() => new Response("boom TOKEN-SECRETO", { status: 500 }), () => Response.json([{ error: "WRONGTYPE TOKEN-SECRETO" }])]) {
-    globalThis.fetch = async () => respuesta();
-    const err = await clienteRedis(env).exec([["HGETALL", "k"]]).then(() => null, (e) => e);
-    assert.ok(err instanceof Error, "debe lanzar");
-    assert.ok(!String(err.message).includes("TOKEN-SECRETO"), "el error no filtra el token");
-    const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, proyectos: PROYECTOS, restringidos: DEMO });
-    const res = await handler(req("GET", { login: "ana", pagina: PAG }));
-    assert.equal(res.status, 503);
-    const txt = await res.text();
-    assert.ok(!txt.includes("TOKEN-SECRETO") && !txt.includes("WRONGTYPE") && !txt.includes("boom"), "sin detalles internos");
-  }
-});
-
-test("con variables KV_* el handler construye el cliente desde env y lista (200)", async () => {
+test("sin almacén inyectado → 503 aunque env tenga KV_REST_*/UPSTASH_* (no hay cliente Upstash) y sin tocar la red", async () => {
   const { crearHandler } = await core();
-  globalThis.fetch = async (input, init = {}) => Response.json(JSON.parse(init.body).map(() => ({ result: [] })));
-  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t" }, proyectos: PROYECTOS, restringidos: DEMO });
+  const llamadas = [];
+  // Si quedara un cliente REST, esta respuesta "válida" haría que listara con 200.
+  globalThis.fetch = async (input, init = {}) => {
+    llamadas.push(String(input?.url ?? input));
+    return Response.json(JSON.parse(init.body ?? "[]").map(() => ({ result: [] })));
+  };
+  const env = { SESSION_SECRET: SECRET, KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t", UPSTASH_REDIS_REST_URL: "https://x.upstash.io", UPSTASH_REDIS_REST_TOKEN: "t" };
+  const handler = crearHandler({ env, proyectos: PROYECTOS, restringidos: DEMO });
   const res = await handler(req("GET", { login: "ana", pagina: PAG }));
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { yo: "ana", comentarios: [] });
+  assert.equal(res.status, 503);
+  cabecerasJson(res, "503 sin almacén");
+  assert.deepEqual(llamadas, [], "ninguna llamada a un almacén externo");
+});
+
+test("un error del almacén responde 503 genérico, sin detalles internos", async () => {
+  const { crearHandler } = await core();
+  const roto = { async exec() { throw new Error("D1_ERROR: WRONGTYPE detalle-interno"); } };
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: roto, proyectos: PROYECTOS, restringidos: DEMO });
+  const res = await handler(req("GET", { login: "ana", pagina: PAG }));
+  assert.equal(res.status, 503);
+  const txt = await res.text();
+  assert.ok(!txt.includes("detalle-interno") && !txt.includes("WRONGTYPE") && !txt.includes("D1_ERROR"), "sin detalles internos");
 });
 
 // ---------- Validación ----------
@@ -415,17 +376,7 @@ test("métodos no soportados → 405 JSON con Allow", async () => {
   assert.match(res.headers.get("allow") ?? "", /GET.*POST.*PATCH.*DELETE/);
 });
 
-// ---------- Vercel Function ----------
-
-test("api/comentarios.js exporta GET/POST/PATCH/DELETE que delegan en el core (sin sesión → 401)", async () => {
-  const api = await import("../api/comentarios.js");
-  for (const m of ["GET", "POST", "PATCH", "DELETE"]) assert.equal(typeof api[m], "function", m);
-  const res = await api.GET(new Request(`${URL_API}?pagina=${encodeURIComponent(PAG)}`));
-  assert.equal(res.status, 401);
-  cabecerasJson(res, "api 401");
-});
-
-test("503: con SESSION_SECRET ausente o corto no acepta ninguna cookie (misma política que el middleware)", async () => {
+test("503: con SESSION_SECRET ausente o corto no acepta ninguna cookie (misma política que el login del Worker)", async () => {
   for (const secreto of [undefined, "abc"]) {
     const { handler } = await montar({ env: { SESSION_SECRET: secreto } });
     const res = await handler(req("GET", { cookie: cookieDe("ana", { secret: secreto ?? "" }), pagina: PAG }));

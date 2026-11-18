@@ -1,15 +1,14 @@
 // C1: los diagramas se guardan como archivos normales de /api/archivos (fuente .excalidraw/.drawio + .svg) en el Worker
-// de Cloudflare (R2 + Upstash simulado), y la página se actualiza con PUT /api/hardware. Solo los editores de la
+// de Cloudflare (R2 + D1 de prueba), y la página se actualiza con PUT /api/hardware. Solo los editores de la
 // disciplina pueden subir o guardar; cualquier lector con acceso al proyecto ve el SVG (con la CSP sandbox de siempre)
-// y descarga la fuente como adjunto (nunca en línea). Vercel comparte TIPOS y el core, así que no cambia de forma.
+// y descarga la fuente como adjunto (nunca en línea).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { crearD1 } from "./fixtures/d1-sqlite.mjs";
 
 const SECRET = "c".repeat(40);
 const ORIGIN = "https://docs-site-lab.ejemplo.workers.dev";
-const UPSTASH = "https://upstash.prueba";
 const EDITOR = "cyuxSz"; // editor de uuv/electronica (y mecanica) en projects.json
 const LECTOR = "ana";
 const ID_F = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
@@ -20,16 +19,12 @@ const DRAWIO = new TextEncoder().encode('<mxfile><diagram id="a" name="P">x</dia
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 
 const realFetch = globalThis.fetch;
-let redis;
+// Sin red: el almacén es el binding D1 (tests/fixtures/d1-sqlite.mjs); un fetch saliente es un error.
+let db;
 beforeEach(() => {
-  redis = fakeRedis();
-  globalThis.fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input.url;
-    if (url === `${UPSTASH}/pipeline`) {
-      const res = await redis.exec(JSON.parse(init.body));
-      return Response.json(res.map((result) => ({ result })));
-    }
-    throw new Error(`fetch inesperado: ${url}`);
+  db = crearD1();
+  globalThis.fetch = async (input) => {
+    throw new Error(`fetch inesperado: ${typeof input === "string" ? input : input.url}`);
   };
 });
 afterEach(() => {
@@ -59,8 +54,7 @@ const crearEnv = () => ({
   GITHUB_CLIENT_SECRET: "cs",
   ALLOWED_ORG: "vanttec",
   ALLOWED_USERS: "",
-  KV_REST_API_URL: UPSTASH,
-  KV_REST_API_TOKEN: "tok",
+  DB: db,
   ASSETS: { fetch: async () => new Response("<h1>x</h1>", { headers: { "content-type": "text/html" } }) },
   ARCHIVOS: fakeR2(),
 });
@@ -117,13 +111,14 @@ test("editor de la disciplina sube .excalidraw, .drawio y .svg (201); el lector 
 });
 
 // En projects.json cyuxSz edita electrónica Y mecánica, así que el caso "editor de otra disciplina" usa un fixture
-// propio (mismo core y mismo almacén R2 que el Worker) con un editor distinto por disciplina.
+// propio (mismo core, D1 y almacén R2 que el Worker) con un editor distinto por disciplina.
 test("editor de otra disciplina no sube fuentes de diagrama (403) y no toca R2", async () => {
   const { crearHandler } = await import("../lib/archivos-core.mjs");
   const { crearAlmacenR2 } = await import("../lib/almacen-r2.mjs");
+  const { clienteD1 } = await import("../lib/almacen-d1.mjs");
   const env = crearEnv();
   const proyectos = [{ id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: ["eli"] }, mecanica: { plantilla: "mecanica", editores: ["meca"] } } }];
-  const handler = crearHandler({ env, proyectos, blob: crearAlmacenR2(env.ARCHIVOS) });
+  const handler = crearHandler({ env, proyectos, redis: clienteD1(env.DB), blob: crearAlmacenR2(env.ARCHIVOS) });
   const subirComo = (login, disciplina, id, nombre, bytes) =>
     handler(
       new Request(`${ORIGIN}/api/archivos/?${qs({ proyecto: "uuv", disciplina, id, nombre })}`, {

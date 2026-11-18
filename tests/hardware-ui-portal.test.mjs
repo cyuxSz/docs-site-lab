@@ -1,6 +1,6 @@
 // Lote 1b: interfaz de hardware (estático sobre fuentes). Ruta /<proyecto>/<disciplina>/ (shell que carga por la API con
-// ?p=<slug>), script empaquetado (CSP por hash, sin inline), DOM seguro, editor, subida a Vercel Blob, comentarios por
-// página, estilos con tokens y servidor de prueba local.
+// ?p=<slug>), script empaquetado (CSP por hash, sin inline), DOM seguro, editor, subida directa al Worker (R2),
+// comentarios por página y estilos con tokens. La prueba en navegador se hace con `wrangler dev` (ver README).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -94,15 +94,14 @@ test("hardware-editor.ts: el error de guardado sale de resultadoGuardado (409 co
   assert.match(leer(SCRIPT), /resultadoGuardado\(r\.status,\s*r\)\.mensaje/);
 });
 
-test("hardware-editor.ts: subida con upload() de @vercel/blob/client, privada, a /api/archivos/ con pathname canónico", () => {
+test("hardware-editor.ts: subida directa al Worker (XHR a urlSubidaDirecta, octet-stream, progreso), sin @vercel/blob ni rutaBlob", () => {
   const js = leer(SCRIPT);
-  assert.match(js, /import\s*\{[^}]*\bupload\b[^}]*\}\s*from\s*["']@vercel\/blob\/client["']|import\(\s*["']@vercel\/blob\/client["']\s*\)/);
-  assert.match(js, /handleUploadUrl:\s*["']\/api\/archivos\/["']/);
-  assert.match(js, /access:\s*["']private["']/);
-  assert.match(js, /rutaBlob\(/);
+  assert.doesNotMatch(js, /@vercel\/blob/, "sin el SDK de Vercel Blob");
+  assert.doesNotMatch(js, /\bupload\(|handleUploadUrl|clientPayload|rutaBlob/, "sin la subida de Vercel Blob");
+  assert.match(js, /urlSubidaDirecta\(/);
+  assert.match(js, /["']Content-Type["'],\s*["']application\/octet-stream["']/);
+  assert.match(js, /upload\.onprogress/);
   assert.match(js, /crypto\.randomUUID\(\)/);
-  assert.match(js, /clientPayload:\s*JSON\.stringify\(/);
-  assert.match(js, /onUploadProgress/);
   assert.match(js, /validarArchivo\(/);
   assert.match(js, /enlaceArchivo\(/);
   assert.match(js, /["']paste["']/);
@@ -126,19 +125,6 @@ test("global.css: reglas .hw-* con tokens (sin colores fijos), foco visible y aj
   for (const l of reglas) assert.doesNotMatch(l, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `usa tokens: ${l.trim()}`);
   assert.match(css, /\.hw-[a-z-]+[^{]*:focus-visible/);
   assert.match(css, /@media \(max-width: (4[0-9]{2}|[5-8][0-9]{2})px\)\s*\{[^]*?\.hw-/);
-});
-
-// ---------- servidor de prueba ----------
-test("tests/fixtures/servidor-hardware.mjs: sirve dist/ y monta los handlers reales con Redis en memoria y Blob falso, solo en 127.0.0.1", () => {
-  const src = leer("tests/fixtures/servidor-hardware.mjs");
-  assert.match(src, /lib\/hardware-core\.mjs/);
-  assert.match(src, /lib\/archivos-core\.mjs/);
-  assert.match(src, /lib\/comentarios-core\.mjs/);
-  assert.match(src, /fakeRedis/);
-  assert.match(src, /dist/);
-  assert.match(src, /127\.0\.0\.1/);
-  assert.match(src, /__blob/, "endpoint local que imita la API de Blob para probar la subida");
-  assert.doesNotMatch(src, /0\.0\.0\.0/);
 });
 
 // ---------- correcciones de la verificación en navegador ----------
@@ -189,12 +175,6 @@ test("Acerca de: la explicación de disciplinas no dice que todo vive en openwik
   assert.match(base, /\.ptabs a\[aria-current\]"\)[^]*scrollLeft[^]*prefers-reduced-motion/);
 });
 
-test("servidor de prueba: reescribe la URL de Blob al servir .js y lo documenta en la cabecera", () => {
-  const srv = leer("tests/fixtures/servidor-hardware.mjs");
-  assert.match(srv, /replaceAll\("https:\/\/vercel\.com\/api\/blob"/);
-  assert.match(srv.split("import {")[0], /reescribe/);
-});
-
 test("hardware-editor.ts: el DELETE envía { pagina, version } y decide con resultadoBorrado", () => {
   const js = leer(SCRIPT);
   assert.match(js, /api\("DELETE",\s*\{\s*cuerpo:\s*\{\s*pagina:\s*slug,\s*version:\s*pagina\.version\s*\}\s*\}\)/);
@@ -202,13 +182,12 @@ test("hardware-editor.ts: el DELETE envía { pagina, version } y decide con resu
 });
 
 // ---------- subida: capacidades y cancelación ----------
-test("hardware-editor: capacidades acotadas por inactividad, sin cachear fallo de red; subir() cancelable; abort previo a send", () => {
+test("hardware-editor: sube siempre directo (sin consultar capacidades ni modo 'blob'); subir() cancelable; abort previo a send", () => {
   const src = leer(SCRIPT);
-  const modo = src.slice(src.indexOf("function modoDeSubida"), src.indexOf("function subirDirecto"));
-  assert.match(modo, /SIN_AVANCE_MS/, "la consulta compartida respeta el límite de inactividad");
-  assert.match(modo, /catch \{[^}]*modoSubida = null;[^}]*throw new TypeError\("red"\)/s, "el fallo de red no se cachea");
-  assert.match(modo, /if \(!r\.ok\) return "blob"/);
-  assert.match(src, /Promise\.race\(\[modoDeSubida\(\), cancelada\]\)/, "subir() cancela su espera con corte");
+  assert.doesNotMatch(src, /modoDeSubida|modoSubida|capacidades=1/, "un solo modo de subida: ya no se pregunta al servidor");
+  assert.doesNotMatch(src, /["']blob["']/, "sin el modo 'blob'");
+  assert.match(src, /SIN_AVANCE_MS/, "la subida conserva el límite de inactividad");
+  assert.match(src, /subirDirecto\(archivo, id, corte\.signal/, "subir() pasa su señal de corte a la subida directa");
   assert.match(src, /if \(corte\.aborted\) return reject\(new TypeError\("abortado"\)\)/, "abort previo a send rechaza");
   assert.doesNotMatch(src, /if \(corte\.aborted\) return xhr\.abort\(\)/);
 });

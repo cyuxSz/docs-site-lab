@@ -1,10 +1,10 @@
-// M2c: adaptador clienteD1(db) con la misma forma que clienteRedis: { exec(comandos) → resultados }.
+// M2c: adaptador clienteD1(db) con el protocolo de comandos de los cores: { exec(comandos) → resultados }.
 // Se prueba contra un D1 de prueba (node:sqlite con la API de D1, tests/fixtures/d1-sqlite.mjs) y en paridad con el
-// Redis en memoria (tests/fixtures/redis-memoria.mjs): misma secuencia de comandos → mismos resultados.
+// almacén en memoria (tests/fixtures/almacen-memoria.mjs): misma secuencia de comandos → mismos resultados.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
 import { crearD1, archivosMigracion } from "./fixtures/d1-sqlite.mjs";
 
 const raiz = new URL("../", import.meta.url);

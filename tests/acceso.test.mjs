@@ -1,4 +1,4 @@
-// Proyectos restringidos (access.config.js): una sola fuente de verdad para middleware.js, las APIs y el build.
+// Proyectos restringidos (access.config.js): una sola fuente de verdad para el login del Worker, las APIs y el build.
 // El portal no tiene proyectos restringidos (RESTRICTED = {}), pero el mecanismo se mantiene: canAccess e isRestricted
 // aceptan una tabla opcional como último parámetro, y estas pruebas inyectan la de tests/fixtures/acceso-demo.mjs.
 import { test } from "node:test";
