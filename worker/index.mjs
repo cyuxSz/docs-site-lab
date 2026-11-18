@@ -1,5 +1,5 @@
 // Worker de Cloudflare: login de GitHub (lib/login-core.mjs) delante de los static assets de dist/.
-// Las cabeceras de vercel.json no existen aquí, así que se aplican a mano.
+// Las cabeceras de seguridad se aplican a mano aquí.
 import { manejarLogin } from "../lib/login-core.mjs";
 import { decodificar } from "../lib/decodificar-ruta.mjs";
 import { crearHandler as crearComentarios } from "../lib/comentarios-core.mjs";
@@ -46,8 +46,8 @@ function crearAtenderApi(restringidos, proyectos) {
     let h = handlers.get(env);
     if (!h) handlers.set(env, (h = {}));
     if (!h[nombre]) {
-      // Con binding D1 el almacén es D1 (aunque haya credenciales de Upstash); sin él, undefined → el core usa Upstash.
-      const redis = env.DB ? clienteD1(env.DB) : undefined;
+      // Con binding D1 el almacén es D1; sin él, null y las APIs responden 503.
+      const redis = env.DB ? clienteD1(env.DB) : null;
       h[nombre] =
         nombre === "comentarios"
           ? crearComentarios({ env, proyectos, redis, restringidos })
