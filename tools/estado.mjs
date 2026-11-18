@@ -16,15 +16,15 @@ export function limpiarControl(texto) {
   return typeof texto === "string" ? texto.replace(/[\x00-\x1f\x7f-\x9f]/g, "") : "";
 }
 
-const REDEPLOY = "Vuelve a desplegar el proyecto en Vercel.";
-const LOG = "Revisa el log del build en Vercel para ver el detalle.";
+const REDEPLOY = "Vuelve a lanzar el workflow deploy-cloudflare en GitHub Actions.";
+const LOG = "Revisa el log del workflow deploy-cloudflare para ver el detalle.";
 
 function pasos(causa, p) {
   switch (causa) {
     case "sin-token":
-      return [`Configura DOCS_GITHUB_TOKEN en Vercel con permiso de lectura de ${p.repo}.`, REDEPLOY];
+      return [`Configura DOCS_GITHUB_TOKEN como secret de GitHub Actions con permiso de lectura de ${p.repo}.`, REDEPLOY];
     case "sin-acceso":
-      return [`Renueva DOCS_GITHUB_TOKEN en Vercel y confirma que tiene permiso de lectura de ${p.repo}.`, REDEPLOY];
+      return [`Renueva el secret DOCS_GITHUB_TOKEN de GitHub Actions y confirma que tiene permiso de lectura de ${p.repo}.`, REDEPLOY];
     case "rama":
       return [`Corrige "branch" de ${p.id ?? "este proyecto"} en projects.json para que apunte a una rama que exista.`, REDEPLOY];
     case "red":

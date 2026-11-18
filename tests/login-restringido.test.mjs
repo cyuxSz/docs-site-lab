@@ -1,36 +1,48 @@
-// middleware.js: 403 propio para proyectos restringidos y mensaje de membresía con pasos.
-import { test, beforeEach, afterEach } from "node:test";
+// Login del Worker (lib/login-core.mjs vía worker/index.mjs): 403 propio para proyectos restringidos y mensaje de
+// membresía con pasos. Migrado de tests/middleware.test.mjs (Routing Middleware de Vercel) al quitar Vercel: mismos
+// casos, ahora contra crearWorker() con env inyectado y un env.ASSETS falso. "Pasa al sitio" = llega a env.ASSETS.
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import * as mod from "../middleware.js";
 import { DEMO } from "./fixtures/acceso-demo.mjs";
-
-// El portal no tiene proyectos restringidos por defecto: se prueba un middleware con la tabla de prueba inyectada.
-// Si falta crearMiddleware se usa el default, y las pruebas de "restringido" fallan (no hay nada restringido).
-const middleware = typeof mod.crearMiddleware === "function" ? mod.crearMiddleware({ restringidos: DEMO }) : mod.default;
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
 const realFetch = globalThis.fetch;
 
-beforeEach(() => {
-  Object.assign(process.env, { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", ALLOWED_USERS: "" });
-  delete process.env.VERCEL_ENV;
-  delete process.env.PREVIEW_TRUST_VERCEL_AUTH;
-});
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-// Misma firma que sign() de middleware.js.
+// El portal no tiene proyectos restringidos por defecto: se prueba un Worker con la tabla de prueba inyectada.
+const cargarWorker = async () => (await import("../worker/index.mjs")).crearWorker({ restringidos: DEMO });
+
+function crearEnv(extra = {}) {
+  const llamadas = [];
+  const ASSETS = {
+    async fetch(req) {
+      llamadas.push(req);
+      return new Response("<h1>asset</h1>", { headers: { "content-type": "text/html" } });
+    },
+  };
+  return { env: { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", ALLOWED_USERS: "", ASSETS, ...extra }, llamadas };
+}
+
+// Misma firma que sign() de lib/sesion.mjs.
 function session(login) {
   const body = Buffer.from(JSON.stringify({ login, exp: Date.now() + 864e5 })).toString("base64url");
   const mac = createHmac("sha256", SECRET).update(body).digest("base64url");
   return `docs_session=${encodeURIComponent(`${body}.${mac}`)}`;
 }
 
-const get = (path, cookie) => middleware(new Request(`${ORIGIN}${path}`, { headers: cookie ? { cookie } : {} }));
-const passes = (res) => res.headers.get("x-middleware-next") === "1";
+async function get(path, cookie, extra = {}) {
+  const worker = await cargarWorker();
+  const { env, llamadas } = crearEnv(extra);
+  const res = await worker.fetch(new Request(`${ORIGIN}${path}`, { headers: cookie ? { cookie } : {} }), env, { waitUntil() {}, passThroughOnException() {} });
+  res.paso = llamadas.length > 0;
+  return res;
+}
+const passes = (res) => res.paso === true;
 
 test("restringido: un miembro que no está en la lista recibe 403 'Este proyecto es privado' en cualquier ruta del proyecto", async () => {
   for (const path of ["/restringido-demo/", "/restringido-demo/grafo/", "/restringido-demo/ros.json", "/restringido-demo/arch/general.html", "/restringido-demo"]) {
@@ -66,6 +78,16 @@ test("restringido: sin sesión sigue redirigiendo al login (no revela nada)", as
   assert.match(res.headers.get("location"), /^\/auth\/login\?next=/);
 });
 
+test("restringido: variables de un Preview de Vercel (VERCEL_ENV, PREVIEW_TRUST_VERCEL_AUTH) no abren nada", async () => {
+  const extra = { VERCEL_ENV: "preview", PREVIEW_TRUST_VERCEL_AUTH: "1" };
+  for (const path of ["/restringido-demo/", "/RESTRINGIDO-DEMO/grafo/", "/uuv/"]) {
+    const res = await get(path, undefined, extra);
+    assert.equal(res.status, 302, path);
+    assert.ok(!passes(res), path);
+  }
+  assert.equal((await get("/restringido-demo/", session("otro"), extra)).status, 403);
+});
+
 test("no restringido: el resto del portal sigue igual para cualquier sesión válida", async () => {
   for (const path of ["/", "/uuv/", "/uuv/ros.json", "/restringido-demo-bis/"]) assert.ok(passes(await get(path, session("otro"))), path);
   const me = await get("/auth/me", session("otro"));
@@ -81,8 +103,7 @@ function mockGitHub(login) {
     return new Response(null, { status: 404 });
   };
 }
-const callback = () =>
-  get("/auth/callback?state=S&code=C", `oauth_state=${encodeURIComponent(JSON.stringify({ state: "S", back: "/" }))}`);
+const callback = (extra) => get("/auth/callback?state=S&code=C", `oauth_state=${encodeURIComponent(JSON.stringify({ state: "S", back: "/" }))}`, extra);
 
 test("membresía no confirmada: 403 con pasos numerados (people → buscarte → Private a Public → reintentar)", async () => {
   mockGitHub("ana");
@@ -101,23 +122,11 @@ test("membresía no confirmada: 403 con pasos numerados (people → buscarte →
 });
 
 test("membresía no confirmada: login y org pasan por esc() / encodeURIComponent", async () => {
-  process.env.ALLOWED_ORG = 'v"><script>x</script>';
   mockGitHub("<b>ana</b>");
-  const html = await (await callback()).text();
+  const html = await (await callback({ ALLOWED_ORG: 'v"><script>x</script>' })).text();
   assert.ok(!html.includes("<script>x"), "org sin escapar");
   assert.ok(!html.includes("<b>ana</b>"), "login sin escapar");
   assert.match(html, /github\.com\/orgs\/v%22%3E%3Cscript%3Ex%3C%2Fscript%3E\/people/);
-});
-
-test("preview con PREVIEW_TRUST_VERCEL_AUTH=1: proyecto restringido responde 403 y no pasa al sitio", async () => {
-  Object.assign(process.env, { VERCEL_ENV: "preview", PREVIEW_TRUST_VERCEL_AUTH: "1" });
-  for (const path of ["/restringido-demo/", "/restringido-demo/ros.json", "/RESTRINGIDO-DEMO/grafo/"]) {
-    const res = await get(path);
-    assert.equal(res.status, 403, path);
-    assert.ok(!passes(res), path);
-    assert.match(await res.text(), /revísalo en producción/);
-  }
-  assert.ok(passes(await get("/uuv/")), "el resto de Preview sigue pasando");
 });
 
 test("403 de proyecto privado ofrece un siguiente paso", async () => {

@@ -1,7 +1,8 @@
 // M2a: las APIs del portal (comentarios y archivos sobre R2) en el Worker de Cloudflare, probadas sin cuenta.
-// Upstash se simula interceptando fetch hacia KV_REST_API_URL con el Redis en memoria de fixtures; R2 es un bucket falso
-// en memoria con la forma de la API de Workers (put/get/delete). Hardware ya responde en el Worker desde M2b (render en el
-// navegador; ver tests/m2b-hardware-cliente.test.mjs). Vercel no cambia: se comprueba también el modo "blob".
+// El almacén es D1 (tests/fixtures/d1-sqlite.mjs, node:sqlite con la API del binding); R2 es un bucket falso en memoria
+// con la forma de la API de Workers (put/get/delete). Ninguna API sale a la red: cualquier fetch hace fallar el test.
+// Hardware responde en el Worker desde M2b (render en el navegador; ver tests/m2b-hardware-cliente.test.mjs).
+// Los fallos del almacén a mitad de una subida se prueban en el core (tests/hardware-archivos.test.mjs).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { DEMO, ID_DEMO } from "./fixtures/acceso-demo.mjs";
@@ -12,7 +13,8 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
+import { crearD1 } from "./fixtures/d1-sqlite.mjs";
 
 const root = new URL("../", import.meta.url);
 const raiz = fileURLToPath(root);
@@ -29,7 +31,6 @@ const cargarR2 = async () => import("../lib/almacen-r2.mjs");
 
 const SECRET = "w".repeat(40);
 const ORIGIN = "https://docs-site-lab.ejemplo.workers.dev";
-const UPSTASH = "https://upstash.prueba";
 const EDITOR = "cyuxSz"; // editor de uuv/electronica en projects.json y único con acceso a restringido-demo (tabla de prueba)
 const ID = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
 const ID2 = "7a1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3b";
@@ -40,20 +41,11 @@ const PDF = new TextEncoder().encode("%PDF-1.4\n%prueba\n");
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 
 const realFetch = globalThis.fetch;
-let redis;
 
-// Upstash REST falso: POST <url>/pipeline con [[cmd,...],...] → [{result}, ...], ejecutado contra el Redis en memoria.
+// Sin red: el almacén es el binding D1 y los archivos van a R2; un fetch saliente es un error.
 beforeEach(() => {
-  redis = fakeRedis();
-  globalThis.fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input.url;
-    if (url === `${UPSTASH}/pipeline`) {
-      assert.equal(new Headers(init.headers).get("authorization"), "Bearer tok-prueba");
-      const cmds = JSON.parse(init.body);
-      const res = await redis.exec(cmds);
-      return Response.json(res.map((result) => ({ result })));
-    }
-    throw new Error(`fetch inesperado: ${url}`);
+  globalThis.fetch = async (input) => {
+    throw new Error(`fetch inesperado: ${typeof input === "string" ? input : input.url}`);
   };
 });
 afterEach(() => {
@@ -99,8 +91,7 @@ function crearEnv(extra = {}) {
     SESSION_SECRET: SECRET,
     ALLOWED_ORG: "vanttec",
     ALLOWED_USERS: "",
-    KV_REST_API_URL: UPSTASH,
-    KV_REST_API_TOKEN: "tok-prueba",
+    DB: crearD1(),
     ASSETS,
     ARCHIVOS,
     ...extra,
@@ -195,22 +186,20 @@ test("rutas: sin sesión → 401 en las APIs (también la subida directa), sin e
 });
 
 test("worker: no lee process.env (variables solo de env)", async () => {
-  const antes = { url: process.env.KV_REST_API_URL, s: process.env.SESSION_SECRET };
-  delete process.env.KV_REST_API_URL;
+  const antes = { s: process.env.SESSION_SECRET };
   delete process.env.SESSION_SECRET;
   try {
     const { env } = crearEnv();
     const res = await pedir("/api/archivos/?proyecto=uuv&lista=1", { env, login: "ana" });
     assert.equal(res.status, 200);
   } finally {
-    if (antes.url !== undefined) process.env.KV_REST_API_URL = antes.url;
     if (antes.s !== undefined) process.env.SESSION_SECRET = antes.s;
   }
 });
 
 // ---------- Comentarios ----------
 
-test("comentarios: crear y leer contra Upstash (en memoria) desde el Worker", async () => {
+test("comentarios: crear y leer contra D1 desde el Worker", async () => {
   const { env } = crearEnv();
   const nuevo = await pedir("/api/comentarios", { env, login: "ana", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pagina: "/uuv/arquitectura/", tipo: "duda", texto: "hola desde el Worker" }) });
   assert.equal(nuevo.status, 201);
@@ -229,8 +218,8 @@ test("comentarios: escritura desde otro origen → 403; proyecto restringido apl
   assert.equal((await pedir("/api/comentarios/?pagina=%2Frestringido-demo%2Farquitectura%2F", { env, login: EDITOR })).status, 200);
 });
 
-test("comentarios: sin Upstash configurado → 503 (con sesión)", async () => {
-  const { env } = crearEnv({ KV_REST_API_URL: undefined, KV_REST_API_TOKEN: undefined });
+test("comentarios: sin binding DB → 503 (con sesión), aunque queden variables KV_REST_* viejas", async () => {
+  const { env } = crearEnv({ DB: undefined, KV_REST_API_URL: "https://almacen-viejo.prueba", KV_REST_API_TOKEN: "tok" });
   const res = await pedir("/api/comentarios/?pagina=%2Fuuv%2Farquitectura%2F", { env, login: "ana" });
   assert.equal(res.status, 503);
 });
@@ -255,7 +244,7 @@ test("archivos: subir PNG y PDF, leerlos con las cabeceras de hoy y borrarlos", 
   const pdf = await subir(env, { id: ID2, nombre: "esquema v2.pdf", bytes: PDF });
   assert.equal(pdf.status, 201);
 
-  // Clave R2 única por intento (<id>-<uuid>-<nombre>) para que dos subidas del mismo id no se pisen (la copia Blob→R2 de M4 sí conserva el pathname de Blob), y Content-Type de la lista blanca, no del cliente.
+  // Clave R2 única por intento (<id>-<uuid>-<nombre>) para que dos subidas del mismo id no se pisen, y Content-Type de la lista blanca, no del cliente.
   const clavePng = [...r2.objetos.keys()].find((k) => new RegExp(`^hw/uuv/electronica/${ID}-[0-9a-f-]{36}-placa\.png$`).test(k));
   assert.ok(clavePng, [...r2.objetos.keys()].join(", "));
   assert.equal(r2.objetos.get(clavePng).httpMetadata.contentType, "image/png");
@@ -282,30 +271,6 @@ test("archivos: subir PNG y PDF, leerlos con las cabeceras de hoy y borrarlos", 
   assert.equal((await getArchivo(env, ID)).status, 404);
   // Un id borrado no se puede reutilizar (lápida, como hoy).
   assert.equal((await subir(env, { id: ID })).status, 409);
-});
-
-test("archivos: carrera de dos subidas del mismo id; el perdedor (EVAL=0) no borra el objeto del ganador", async () => {
-  const { env, r2 } = crearEnv();
-  const GANADOR = new Uint8Array([137, 80, 78, 71, 1, 1, 1, 1]);
-  assert.equal((await subir(env, { id: ID, bytes: GANADOR })).status, 201);
-  const [claveGanadora] = [...r2.objetos.keys()];
-  // El perdedor pasa el HEXISTS (lo hizo antes de que el ganador insertara) y su EVAL devuelve 0.
-  const fetchNormal = globalThis.fetch;
-  globalThis.fetch = async (input, init = {}) => {
-    const cmds = JSON.parse(init.body);
-    return Response.json(cmds.map((c) => ({ result: c[0] === "HEXISTS" || c[0] === "SISMEMBER" || c[0] === "EVAL" ? 0 : null })));
-  };
-  let perdedor;
-  try {
-    perdedor = await subir(env, { id: ID, bytes: PNG });
-  } finally {
-    globalThis.fetch = fetchNormal;
-  }
-  assert.equal(perdedor.status, 409);
-  assert.deepEqual([...r2.objetos.keys()], [claveGanadora], "solo queda el objeto del ganador");
-  const g = await getArchivo(env, ID);
-  assert.equal(g.status, 200);
-  assert.deepEqual(new Uint8Array(await g.arrayBuffer()), GANADOR);
 });
 
 test("archivos: SVG se sirve como adjunto con la CSP sandbox propia (el Worker no la pisa con la global)", async () => {
@@ -363,7 +328,7 @@ test("archivos: la subida exige mismo origen, octet-stream e id/disciplina váli
   assert.equal(r2.objetos.size, 1);
 });
 
-test("archivos: en modo R2 no hay token ni callback de Vercel Blob", async () => {
+test("archivos: no hay token ni callback de subida firmada: esos cuerpos se rechazan sin escribir en R2", async () => {
   const { env, r2 } = crearEnv();
   const token = await pedir("/api/archivos/", { env, login: EDITOR, method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "blob.generate-client-token", payload: { pathname: `hw/uuv/electronica/${ID}-placa.png`, multipart: false, clientPayload: JSON.stringify({ proyecto: "uuv", disciplina: "electronica", nombre: "placa.png", tamano: 10 }) } }) });
   assert.ok(token.status >= 400 && token.status < 500, `token → ${token.status}`);
@@ -394,34 +359,42 @@ test("almacen-r2: subir/leer/borrar sobre el binding con la interfaz que espera 
   assert.equal(bucket.objetos.size, 0);
 });
 
-// ---------- Vercel intacto ----------
+// ---------- Sin Vercel ni Upstash ----------
 
-test("vercel: archivos-core con el cliente de Blob anuncia subida 'blob' y sigue rechazando la subida directa", async () => {
+test("archivos-core: solo R2; BLOB_READ_WRITE_TOKEN no activa ningún almacén y capacidades nunca dice 'blob'", async () => {
   const { crearHandler } = await import("../lib/archivos-core.mjs");
-  const blob = { async handleUpload() { throw new Error("no"); }, async leer() { return null; }, async borrar() {} };
-  const h = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: fakeRedis(), blob, proyectos: [{ id: "uuv", disciplinas: { electronica: { editores: [EDITOR] } } }] });
-  const cap = await h(new Request(`${ORIGIN}/api/archivos/?capacidades=1`, { headers: { cookie: sesion("ana") } }));
-  assert.equal(cap.status, 200);
-  assert.deepEqual(await cap.json(), { subida: "blob" });
-  const directa = await h(new Request(`${ORIGIN}/api/archivos/?${qs({ proyecto: "uuv", disciplina: "electronica", id: ID, nombre: "a.png" })}`, { method: "POST", headers: { cookie: sesion(EDITOR), origin: ORIGIN, "content-type": "application/octet-stream", "content-length": String(PNG.length) }, body: PNG }));
-  assert.ok(directa.status >= 400 && directa.status < 500, `subida directa en Vercel → ${directa.status}`);
+  const proyectos = [{ id: "uuv", disciplinas: { electronica: { editores: [EDITOR] } } }];
+  const conToken = crearHandler({ env: { SESSION_SECRET: SECRET, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_falso" }, redis: fakeRedis(), proyectos });
+  const cap = await conToken(new Request(`${ORIGIN}/api/archivos/?capacidades=1`, { headers: { cookie: sesion("ana") } }));
+  assert.equal(cap.status, 503, "sin almacén R2 inyectado no hay archivos, haya o no token de Blob");
+  const r2 = (await cargarR2()).crearAlmacenR2(fakeR2());
+  const conR2 = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: fakeRedis(), blob: r2, proyectos });
+  const ok = await conR2(new Request(`${ORIGIN}/api/archivos/?capacidades=1`, { headers: { cookie: sesion("ana") } }));
+  assert.deepEqual(await ok.json(), { subida: "directa" });
 });
 
-test("vercel: api/*.js siguen delegando en los cores con process.env y @vercel/blob sigue en archivos-core", () => {
-  for (const f of ["api/comentarios.js", "api/hardware.js", "api/archivos.js"]) {
-    assert.match(leer(f), /crearHandler\(\{\s*env:\s*process\.env/, f);
+test("cores: sin @vercel/*, sin cliente Upstash (clienteRedis, /pipeline, KV_REST_*, UPSTASH_*) ni subida de Blob", async () => {
+  for (const f of ["lib/api-comun.mjs", "lib/comentarios-core.mjs", "lib/hardware-core.mjs", "lib/archivos-core.mjs", "lib/almacen-r2.mjs", "lib/login-core.mjs", "worker/index.mjs"]) {
+    const src = leer(f);
+    assert.doesNotMatch(src, /@vercel\//, `${f} importa @vercel/*`);
+    assert.doesNotMatch(src, /\bclienteRedis\b|\/pipeline|KV_REST_API|UPSTASH_REDIS/, `${f} conserva el cliente de Upstash`);
+    assert.doesNotMatch(src, /handleUpload|blob\.generate-client-token|blob\.upload-completed|BLOB_READ_WRITE_TOKEN|x-vercel-signature/, `${f} conserva la subida de Vercel Blob`);
   }
-  assert.match(leer("lib/archivos-core.mjs"), /@vercel\/blob\/client/);
-  assert.match(leer("astro.config.mjs"), /connect-src 'self' https:\/\/vercel\.com\/api\/blob\//, "la CSP de Vercel se queda hasta M4");
+  const comun = await import("../lib/api-comun.mjs");
+  assert.equal(comun.clienteRedis, undefined, "api-comun ya no exporta clienteRedis");
+  const com = await import("../lib/comentarios-core.mjs");
+  assert.equal(com.clienteRedis, undefined, "comentarios-core ya no reexporta clienteRedis");
 });
 
 // ---------- Cliente del navegador ----------
 
-test("cliente: elige el modo con ?capacidades=1 y conserva upload() de Vercel Blob", () => {
+test("cliente: sube siempre directo al Worker (urlSubidaDirecta), sin upload() de @vercel/blob/client ni modo 'blob'", () => {
   const src = leer("src/scripts/hardware-editor.ts");
-  assert.match(src, /capacidades=1/, "pregunta el modo de subida a /api/archivos/?capacidades=1");
-  assert.match(src, /from\s+["']@vercel\/blob\/client["']/, "Vercel sigue usando upload()");
   assert.match(src, /urlSubidaDirecta\(/, "modo directo con la URL de src/lib/hardware-editor.ts");
+  assert.doesNotMatch(src, /@vercel\/blob/, "sin el SDK de Vercel Blob");
+  assert.doesNotMatch(src, /\bupload\s*\(/, "sin upload() del SDK");
+  assert.doesNotMatch(src, /["']blob["']/, "sin el modo de subida 'blob'");
+  assert.doesNotMatch(leer("src/lib/hardware-editor.ts"), /\brutaBlob\b/, "sin el pathname de Blob (rutaBlob)");
 });
 
 test("cliente: urlSubidaDirecta arma /api/archivos/?proyecto&disciplina&id&nombre (nombre saneado y codificado)", async () => {
@@ -459,12 +432,13 @@ function jsonc(texto) {
   return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
 }
 
-test("wrangler.jsonc: binding R2 ARCHIVOS → docs-hardware; .dev.vars.example con Upstash sin valores", () => {
+test("wrangler.jsonc: binding R2 ARCHIVOS → docs-hardware; .dev.vars.example sin valores y sin Upstash", () => {
   const c = jsonc(leer("wrangler.jsonc"));
   assert.deepEqual(c.r2_buckets, [{ binding: "ARCHIVOS", bucket_name: "docs-hardware" }]);
   assert.ok(!c.vars || !Object.keys(c.vars).some((k) => /KV_REST|TOKEN|SECRET/.test(k)), "las credenciales no van en vars");
   const ej = leer(".dev.vars.example").split(/\r?\n/);
-  for (const k of ["KV_REST_API_URL", "KV_REST_API_TOKEN", "SESSION_SECRET"]) assert.ok(ej.includes(`${k}=`), `${k}= sin valor`);
+  for (const k of ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "SESSION_SECRET", "ALLOWED_ORG", "ALLOWED_USERS"]) assert.ok(ej.includes(`${k}=`), `${k}= sin valor`);
+  assert.ok(!ej.some((l) => /^(KV_REST_API|UPSTASH_|BLOB_READ_WRITE)/.test(l)), ".dev.vars.example ya no lista credenciales de Upstash ni de Blob");
 });
 
 test("README: la sección de Cloudflare describe R2 (ARCHIVOS) y hardware, sin Upstash", () => {
@@ -513,60 +487,3 @@ test("wrangler: el Worker se empaqueta (deploy --dry-run) sin satteri ni process
   }
 });
 
-test("archivos: si el EVAL aplica la inserción pero la respuesta se pierde, el objeto se conserva y se puede leer", async () => {
-  const { env, r2 } = crearEnv();
-  const fetchNormal = globalThis.fetch;
-  globalThis.fetch = async (input, init = {}) => {
-    const cmds = JSON.parse(init.body);
-    const res = await fetchNormal(input, init);
-    if (cmds[0][0] === "EVAL") throw new TypeError("respuesta perdida");
-    return res;
-  };
-  let r;
-  try {
-    r = await subir(env, { id: ID });
-  } finally {
-    globalThis.fetch = fetchNormal;
-  }
-  assert.equal(r.status, 201, "la re-lectura confirma que el meta apunta al objeto");
-  assert.equal(r2.objetos.size, 1);
-  const g = await getArchivo(env, ID);
-  assert.equal(g.status, 200);
-  assert.deepEqual(new Uint8Array(await g.arrayBuffer()), PNG);
-});
-
-test("archivos: si el EVAL lanza y la re-lectura también falla, se conserva el objeto y responde 503", async () => {
-  const { env, r2 } = crearEnv();
-  const fetchNormal = globalThis.fetch;
-  let fallar = false;
-  globalThis.fetch = async (input, init = {}) => {
-    const cmds = JSON.parse(init.body);
-    if (cmds[0][0] === "EVAL") fallar = true;
-    if (fallar) throw new TypeError("sin red");
-    return fetchNormal(input, init);
-  };
-  let r;
-  try {
-    r = await subir(env, { id: ID });
-  } finally {
-    globalThis.fetch = fetchNormal;
-  }
-  assert.equal(r.status, 503);
-  assert.equal(r2.objetos.size, 1, "huérfano posible, pero no se pierde el dato");
-});
-
-test("archivos: si el EVAL lanza sin haberse aplicado, se borra el objeto", async () => {
-  const { env, r2 } = crearEnv();
-  const fetchNormal = globalThis.fetch;
-  globalThis.fetch = async (input, init = {}) => {
-    const cmds = JSON.parse(init.body);
-    if (cmds[0][0] === "EVAL") throw new TypeError("timeout");
-    return fetchNormal(input, init);
-  };
-  try {
-    await subir(env, { id: ID });
-  } finally {
-    globalThis.fetch = fetchNormal;
-  }
-  assert.equal(r2.objetos.size, 0);
-});

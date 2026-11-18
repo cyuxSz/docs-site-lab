@@ -1,6 +1,6 @@
-// Lote 7a: la sesión (sign/verify/cookies) sale a lib/sesion.mjs y la comparten middleware.js y la API de comentarios.
-// El middleware no cambia su comportamiento, salvo /api/*: sin sesión responde 401 JSON en vez de redirigir a GitHub
-// (un fetch del navegador no puede seguir el login de OAuth).
+// Lote 7a: la sesión (sign/verify/cookies) vive en lib/sesion.mjs y la comparten el login (lib/login-core.mjs, servido
+// por worker/index.mjs) y las APIs. /api/* sin sesión responde 401 JSON en vez de redirigir a GitHub (un fetch del
+// navegador no puede seguir el login de OAuth).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
@@ -9,15 +9,19 @@ import { readFileSync } from "node:fs";
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
 const sesion = () => import("../lib/sesion.mjs");
-const mw = async () => (await import("../middleware.js")).default;
+// El Worker recibe la configuración en env (sin process.env) y sirve el contenido con env.ASSETS.
+const ENV = { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", ALLOWED_USERS: "" };
+async function pedirWorker(request) {
+  const { crearWorker } = await import("../worker/index.mjs");
+  const ASSETS = { fetch: async () => new Response("<h1>asset</h1>", { headers: { "content-type": "text/html" } }) };
+  return crearWorker().fetch(request, { ...ENV, ASSETS }, { waitUntil() {}, passThroughOnException() {} });
+}
 
 beforeEach(() => {
-  Object.assign(process.env, { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", ALLOWED_USERS: "" });
-  delete process.env.VERCEL_ENV;
-  delete process.env.PREVIEW_TRUST_VERCEL_AUTH;
+  process.env.SESSION_SECRET = SECRET;
 });
 
-// Misma firma que usaba middleware.js (HMAC-SHA256 en base64url sobre el cuerpo JSON en base64url).
+// Formato de la cookie que emitía el login desde el principio (HMAC-SHA256 en base64url sobre el cuerpo JSON en base64url).
 function token(payload, secret = SECRET) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`;
@@ -33,7 +37,7 @@ test("sesion: sign → verify devuelve el payload y es compatible con las cookie
   const { sign, verify } = await sesion();
   const exp = Date.now() + 864e5;
   assert.deepEqual(await verify(await sign({ login: "ana", exp })), { login: "ana", exp });
-  assert.deepEqual(await verify(token({ login: "ana", exp })), { login: "ana", exp }, "una cookie emitida por el middleware actual sigue valiendo");
+  assert.deepEqual(await verify(token({ login: "ana", exp })), { login: "ana", exp }, "una cookie ya emitida sigue valiendo");
 });
 
 test("sesion: verify devuelve null (sin lanzar) con token alterado, caducado, de otro secreto o basura", async () => {
@@ -62,30 +66,30 @@ test("sesion: cookies() tolera un % mal formado y separa por ;", async () => {
   assert.ok(!("a" in jar));
 });
 
-test("middleware.js usa lib/sesion.mjs y ya no define su propia firma", () => {
-  const src = readFileSync(new URL("../middleware.js", import.meta.url), "utf8");
-  assert.match(src, /from\s+["']\.\/lib\/sesion\.mjs["']/);
+test("lib/login-core.mjs usa ./sesion.mjs y no define su propia firma", () => {
+  const src = readFileSync(new URL("../lib/login-core.mjs", import.meta.url), "utf8");
+  assert.match(src, /from\s+["']\.\/sesion\.mjs["']/);
   assert.doesNotMatch(src, /async function (hmac|sign|verify)\b/);
   assert.doesNotMatch(src, /function cookies\b/);
 });
 
-test("middleware: /api/comentarios/ con sesión válida pasa a la función", async () => {
-  const middleware = await mw();
+test("worker: /api/comentarios/ con sesión válida llega a la API (no es el 401 del login)", async () => {
   const cookie = `docs_session=${encodeURIComponent(token({ login: "ana", exp: Date.now() + 864e5 }))}`;
-  const res = await middleware(new Request(`${ORIGIN}/api/comentarios/?pagina=/uuv/a/`, { headers: { cookie } }));
-  assert.equal(res.headers.get("x-middleware-next"), "1");
+  const res = await pedirWorker(new Request(`${ORIGIN}/api/comentarios/?pagina=/uuv/a/`, { headers: { cookie } }));
+  assert.notEqual(res.status, 401);
+  assert.notEqual(res.status, 302);
+  assert.match(res.headers.get("content-type") ?? "", /application\/json/);
 });
 
-test("middleware: /api/* sin sesión responde 401 JSON no-store (no redirige al login)", async () => {
-  const middleware = await mw();
+test("worker: /api/* sin sesión responde 401 JSON no-store (no redirige al login)", async () => {
   for (const path of ["/api/comentarios", "/api/comentarios/?pagina=/uuv/a/"]) {
-    const res = await middleware(new Request(`${ORIGIN}${path}`, { headers: { cookie: "docs_session=basura.x" } }));
+    const res = await pedirWorker(new Request(`${ORIGIN}${path}`, { headers: { cookie: "docs_session=basura.x" } }));
     assert.equal(res.status, 401, path);
     assert.equal(res.headers.get("location"), null, path);
     assert.match(res.headers.get("content-type") ?? "", /application\/json/);
     assert.match(res.headers.get("cache-control") ?? "", /no-store/);
     assert.equal(typeof (await res.json()).error, "string");
   }
-  const pagina = await middleware(new Request(`${ORIGIN}/uuv/`));
+  const pagina = await pedirWorker(new Request(`${ORIGIN}/uuv/`));
   assert.equal(pagina.status, 302, "el resto del portal sigue redirigiendo al login");
 });

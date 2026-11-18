@@ -119,10 +119,10 @@ test("moverEnOrden: sube o baja un slug sin mutar; en los extremos no cambia", (
 });
 
 // ---------- archivos ----------
-test("rutaBlob: pathname canónico hw/<proyecto>/<disciplina>/<uuid>-<nombre saneado>", () => {
-  const { rutaBlob } = L();
-  assert.equal(rutaBlob("uuv", "electronica", UUID, "../mi foto.png"), `hw/uuv/electronica/${UUID}-mi-foto.png`);
-  assert.equal(rutaBlob("uuv", "mecanica", UUID, "C:\\x\\Casco.STEP"), `hw/uuv/mecanica/${UUID}-Casco.STEP`);
+test("rutaBlob ya no existe: la clave del objeto la arma el servidor (subida directa); el cliente usa urlSubidaDirecta", () => {
+  const lib = L();
+  assert.equal(lib.rutaBlob, undefined, "sin el pathname de Vercel Blob");
+  assert.equal(typeof lib.urlSubidaDirecta, "function");
 });
 
 test("validarArchivo: tipo de la lista blanca y tamaño máximo, con mensajes en español", () => {

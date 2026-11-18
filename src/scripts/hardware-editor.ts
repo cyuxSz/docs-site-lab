@@ -1,7 +1,6 @@
 // Documentación de hardware (Electrónica / Mecánica): lectura, editor Markdown, índice, historial y subida de archivos.
-// Habla con /api/hardware/ (misma sesión) y sube a Vercel Blob con upload() contra /api/archivos/. La lógica pura
+// Habla con /api/hardware/ (misma sesión) y sube los archivos directo al Worker (/api/archivos/). La lógica pura
 // está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
-import { upload } from "@vercel/blob/client";
 import { fechaRelativa } from "../lib/comentarios";
 import { usoDePagina } from "../lib/hw-enlaces";
 import { esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
@@ -30,7 +29,6 @@ import {
   resultadoBorrado,
   resultadoGuardado,
   resultadoRestaurarPapelera,
-  rutaBlob,
   slugDeTitulo,
   slugUnico,
   urlPagina,
@@ -918,33 +916,9 @@ async function iniciar(root: HTMLElement) {
     previaViva();
   }
 
-  // Sin avance durante este tiempo se aborta: el SDK reintenta en silencio los fallos de red y, sin esto, la barra
+  // Sin avance durante este tiempo se aborta: si la subida se queda parada, la barra
   // se quedaría en 0 sin decir nada.
   const SIN_AVANCE_MS = 45_000;
-
-  // Modo de subida que anuncia el servidor (el HTML es el mismo en Vercel y Cloudflare). Se consulta una vez por página.
-  let modoSubida: Promise<"directa" | "blob"> | null = null;
-  function modoDeSubida(): Promise<"directa" | "blob"> {
-    modoSubida ??= (async () => {
-      // Dentro del límite de inactividad: si el servidor no responde, la consulta se corta y no deja la subida colgada.
-      const cortar = new AbortController();
-      alAbortar(senal, () => cortar.abort());
-      const t = setTimeout(() => cortar.abort(), SIN_AVANCE_MS);
-      try {
-        const r = await fetch("/api/archivos/?capacidades=1", { credentials: "same-origin", signal: cortar.signal });
-        if (!r.ok) return "blob";
-        const j = await r.json();
-        return j?.subida === "directa" ? "directa" : "blob";
-      } catch {
-        // Un fallo de red no se cachea: la siguiente subida vuelve a consultar.
-        modoSubida = null;
-        throw new TypeError("red");
-      } finally {
-        clearTimeout(t);
-      }
-    })();
-    return modoSubida;
-  }
 
   // Subida directa al Worker con XHR (para tener upload.onprogress). Rechaza con TypeError si no hay red.
   function subirDirecto(archivo: File, id: string, corte: AbortSignal, alAvanzar: (cargado: number, total: number) => void): Promise<void> {
@@ -1002,29 +976,10 @@ async function iniciar(root: HTMLElement) {
       armar();
       alAbortar(senal, () => corte.abort());
       try {
-        // Cada subida puede cancelar su espera de la consulta compartida (corte), para llegar siempre al finally.
-        const cancelada = new Promise<never>((_, rechazar) => {
-          if (corte.signal.aborted) return rechazar(new TypeError("abortado"));
-          alAbortar(corte.signal, () => rechazar(new TypeError("abortado")));
+        await subirDirecto(archivo, id, corte.signal, (cargado, total) => {
+          armar();
+          progreso.value = porcentaje(cargado, total);
         });
-        cancelada.catch(() => {});
-        if ((await Promise.race([modoDeSubida(), cancelada])) === "directa") {
-          await subirDirecto(archivo, id, corte.signal, (cargado, total) => {
-            armar();
-            progreso.value = porcentaje(cargado, total);
-          });
-        } else {
-          await upload(rutaBlob(proyecto, disciplina, id, archivo.name), archivo, {
-            access: "private",
-            handleUploadUrl: "/api/archivos/",
-            clientPayload: JSON.stringify({ proyecto, disciplina, nombre: archivo.name, tamano: archivo.size }),
-            abortSignal: corte.signal,
-            onUploadProgress: ({ loaded, total }) => {
-              armar();
-              progreso.value = porcentaje(loaded, total);
-            },
-          });
-        }
       } catch (err) {
         if (sinAvance) throw new TypeError("sin avance");
         throw err;
@@ -1034,7 +989,7 @@ async function iniciar(root: HTMLElement) {
       lblSubiendo.textContent = diagrama ? "" : `${nombre} subido`;
       return true;
     } catch (err) {
-      // El SDK no expone el estado HTTP del token (400, 403, 413 o 429): se da una causa general.
+      // Si el error no trae un estado HTTP conocido se da una causa general.
       const red = err instanceof TypeError;
       lblSubiendo.textContent = "";
       const texto = err instanceof ErrorSubida ? `${quien}: ${mensajeError(err.status)}` : red ? `${quien}: ${mensajeError("red")}` : `No se pudo ${diagrama ? "guardar el diagrama" : `subir ${nombre}`}. Revisa el tipo y el tamaño, o espera un momento si subiste muchos archivos seguidos.`;

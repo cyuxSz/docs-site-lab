@@ -1,13 +1,12 @@
-// Lote 1a: archivos de hardware (api/archivos.js → lib/archivos-core.mjs) sobre Vercel Blob con client uploads.
-// El cliente Blob se inyecta ({ handleUpload, leer, borrar }); aquí es un fake que imita a @vercel/blob:
-//   - handleUpload con "blob.generate-client-token" llama a onBeforeGenerateToken(pathname, clientPayload, multipart)
-//     y devuelve { type, clientToken };
-//   - con "blob.upload-completed" exige la firma (x-vercel-signature) y llama a onUploadCompleted(payload).
+// Lote 1a (migrado en el lote "quitar Vercel"): archivos de hardware en lib/archivos-core.mjs con subida directa.
+// El navegador sube el cuerpo binario al Worker y el core lo escribe en el almacén de objetos (R2 en producción). Aquí el
+// almacén de objetos es un doble con la interfaz de lib/almacen-r2.mjs ({ subir, leer, borrar }) y los metadatos van al
+// almacén en memoria (tests/fixtures/almacen-memoria.mjs), que se puede intervenir para simular fallos a mitad de subida.
+// El recorrido completo por el Worker con D1 y un bucket R2 falso está en tests/worker-apis.test.mjs.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fakeRedis } from "./fixtures/redis-memoria.mjs";
+import { almacenMemoria as fakeRedis } from "./fixtures/almacen-memoria.mjs";
 import { DEMO } from "./fixtures/acceso-demo.mjs";
 
 const SECRET = "s".repeat(40);
@@ -18,7 +17,7 @@ const EDITOR = "edi";
 const ID = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
 const ID2 = "7a1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3b";
 const MB = 1024 * 1024;
-const BLOB_HOST = "https://abc123.private.blob.vercel-storage.com";
+const PNG = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
 
 const PROYECTOS = [
   { id: "uuv", disciplinas: { electronica: { plantilla: "electronica", editores: [EDITOR] }, mecanica: { plantilla: "mecanica", editores: ["meca"] } } },
@@ -37,44 +36,33 @@ function cookieDe(login, { exp = Date.now() + 864e5, secret = SECRET } = {}) {
   return `docs_session=${encodeURIComponent(`${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`)}`;
 }
 
-function fakeBlob() {
+// Almacén de objetos falso con la interfaz de lib/almacen-r2.mjs. Registra lo que se lee y se borra.
+function fakeNube() {
   return {
-    tokens: [],
+    objetos: new Map(),
     leidos: [],
     borrados: [],
-    objetos: new Map(),
-    async handleUpload({ body, request, onBeforeGenerateToken, onUploadCompleted }) {
-      if (body?.type === "blob.generate-client-token") {
-        const { pathname, clientPayload, multipart } = body.payload;
-        const opciones = await onBeforeGenerateToken(pathname, clientPayload, multipart);
-        // Como el SDK real: callbackUrl solo viaja en el token si el servidor pasó onUploadCompleted.
-        this.tokens.push({ pathname, opciones, callbackUrl: onUploadCompleted ? "https://docs.example/api/archivos/" : undefined });
-        return { type: "blob.generate-client-token", clientToken: "vercel_blob_client_falso" };
-      }
-      if (body?.type === "blob.upload-completed") {
-        if (request.headers.get("x-vercel-signature") !== "firma-valida") throw new Error("Invalid callback signature");
-        await onUploadCompleted?.(body.payload);
-        return { type: "blob.upload-completed", response: "ok" };
-      }
-      throw new Error("Invalid event type");
+    async subir(clave, stream, { contentType } = {}) {
+      const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+      this.objetos.set(clave, { bytes, contentType });
     },
-    async leer(url) {
-      this.leidos.push(url);
-      const o = this.objetos.get(url);
+    async leer(clave) {
+      this.leidos.push(clave);
+      const o = this.objetos.get(clave);
       if (!o) return null;
       return { stream: new Response(o.bytes).body, contentType: o.contentType, size: o.bytes.length };
     },
-    async borrar(url) {
-      this.borrados.push(url);
-      this.objetos.delete(url);
+    async borrar(clave) {
+      this.borrados.push(clave);
+      this.objetos.delete(clave);
     },
   };
 }
 
-async function montar({ redis = fakeRedis(), blob = fakeBlob(), env = {} } = {}) {
+async function montar({ redis = fakeRedis(), nube = fakeNube(), env = {} } = {}) {
   const { crearHandler } = await core();
-  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, blob, proyectos: PROYECTOS, restringidos: DEMO, ahora: () => T0 });
-  return { handler, redis, blob };
+  const handler = crearHandler({ env: { SESSION_SECRET: SECRET, ...env }, redis, blob: nube, proyectos: PROYECTOS, restringidos: DEMO, ahora: () => T0 });
+  return { handler, redis, nube };
 }
 
 function req(method, { login, cookie, body, query = {}, origin = ORIGIN, ct = "application/json", headers: extra = {} } = {}) {
@@ -86,29 +74,22 @@ function req(method, { login, cookie, body, query = {}, origin = ORIGIN, ct = "a
     if (origin) headers.origin = origin;
   }
   const qs = new URLSearchParams(query).toString();
-  return new Request(qs ? `${URL_API}?${qs}` : URL_API, { method, headers, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) });
+  const cuerpo = body === undefined ? undefined : body instanceof Uint8Array || typeof body === "string" ? body : JSON.stringify(body);
+  return new Request(qs ? `${URL_API}?${qs}` : URL_API, { method, headers, body: cuerpo });
 }
 
-const payload = (extra = {}) => ({ proyecto: "uuv", disciplina: "electronica", nombre: "placa.png", tamano: 1000, ...extra });
-const pedirToken = (h, { login = EDITOR, pathname, cp = payload(), ...extra } = {}) =>
-  h(req("POST", { login, body: { type: "blob.generate-client-token", payload: { pathname: pathname ?? `hw/${cp.proyecto}/${cp.disciplina}/${ID}-${cp.nombre}`, multipart: false, clientPayload: JSON.stringify(cp) } }, ...extra }));
+// Subida directa: POST octet-stream con proyecto, disciplina, id y nombre en la query.
+function pedirSubida(h, { login = EDITOR, proyecto = "uuv", disciplina = "electronica", id = ID, nombre = "placa.png", bytes = PNG, origin = ORIGIN } = {}) {
+  return h(req("POST", { login, origin, ct: "application/octet-stream", headers: { "content-length": String(bytes.length) }, body: bytes, query: { proyecto, disciplina, id, nombre } }));
+}
 
-// Simula el callback de Vercel Blob: sin cookie ni Origin, con firma.
-const completar = (h, { tokenPayload, pathname, url, firma = "firma-valida", contentType = "image/png" }) =>
-  h(req("POST", { origin: null, headers: firma ? { "x-vercel-signature": firma } : {}, body: { type: "blob.upload-completed", payload: { blob: { url, downloadUrl: `${url}?download=1`, pathname, contentType, contentDisposition: "inline" }, tokenPayload } } }));
-
-// Sube un archivo completo (token + callback + objeto en el fake). Devuelve el id.
-async function subir(m, { nombre = "placa.png", disciplina = "electronica", login = EDITOR, id = ID, bytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3]), contentType = "image/png" } = {}) {
-  const cp = payload({ nombre, disciplina, tamano: bytes.length });
-  const pathname = `hw/uuv/${disciplina}/${id}-${nombre}`;
-  const res = await pedirToken(m.handler, { login, pathname, cp });
-  assert.equal(res.status, 200, `token para ${nombre}`);
-  const { opciones } = m.blob.tokens.at(-1);
-  const url = `${BLOB_HOST}/${pathname}`;
-  m.blob.objetos.set(url, { bytes, contentType });
-  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url, contentType });
-  assert.equal(fin.status, 200, `callback de ${nombre}`);
-  return { id, url, pathname };
+// Sube un archivo completo y devuelve su id y la clave en el almacén de objetos.
+async function subir(m, opciones = {}) {
+  const antes = new Set(m.nube.objetos.keys());
+  const res = await pedirSubida(m.handler, opciones);
+  assert.equal(res.status, 201, `subida de ${opciones.nombre ?? "placa.png"}`);
+  const [clave] = [...m.nube.objetos.keys()].filter((k) => !antes.has(k));
+  return { id: opciones.id ?? ID, clave };
 }
 
 const getArchivo = (h, id, login = "ana", proyecto = "uuv") => h(req("GET", { login, query: { proyecto, id } }));
@@ -153,142 +134,71 @@ test("lista blanca de tipos: extensión → Content-Type, tamaño máximo (imág
 
 // ---------- Token de subida (client upload) ----------
 
-test("token: 401 sin sesión, 403 no editor, 403 proyecto restringido, 404 disciplina no configurada; sin token emitido", async () => {
+// ---------- Subida directa: permisos y validación ----------
+
+test("subida: 401 sin sesión, 403 no editor, 403 editor de otra disciplina, 403 proyecto restringido, 404 disciplina no configurada; nada se escribe", async () => {
   const m = await montar();
-  assert.equal((await pedirToken(m.handler, { login: null })).status, 401);
-  assert.equal((await pedirToken(m.handler, { login: "ana" })).status, 403, "no editor");
-  assert.equal((await pedirToken(m.handler, { login: "meca" })).status, 403, "editor de otra disciplina");
-  assert.equal((await pedirToken(m.handler, { login: "ana", cp: payload({ proyecto: "restringido-demo" }) })).status, 403, "restringido");
-  assert.equal((await pedirToken(m.handler, { cp: payload({ disciplina: "software" }) })).status, 404);
-  assert.equal((await pedirToken(m.handler, { cp: payload({ proyecto: "usv" }) })).status, 404);
-  assert.equal(m.blob.tokens.length, 0);
+  assert.equal((await pedirSubida(m.handler, { login: null })).status, 401);
+  assert.equal((await pedirSubida(m.handler, { login: "ana" })).status, 403, "no editor");
+  assert.equal((await pedirSubida(m.handler, { login: "meca" })).status, 403, "editor de otra disciplina");
+  assert.equal((await pedirSubida(m.handler, { login: "otro", proyecto: "restringido-demo" })).status, 403, "restringido");
+  assert.equal((await pedirSubida(m.handler, { disciplina: "inexistente" })).status, 404);
+  assert.equal(m.nube.objetos.size, 0);
+  assert.ok(!m.redis.data.has("hw:arch:uuv"), "sin metadatos");
 });
 
-test("token: el editor recibe clientToken con tipos y tamaño máximo según la extensión, sin sobrescribir", async () => {
+test("subida: id no uuid → 400; el nombre se sanea y la clave es hw/<proy>/<disc>/<uuid>-<intento>-<nombre saneado>", async () => {
   const m = await montar();
-  const res = await pedirToken(m.handler);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get("cache-control") ?? "", /no-store/);
-  assert.equal((await res.json()).clientToken, "vercel_blob_client_falso");
-  const { pathname, opciones } = m.blob.tokens[0];
-  assert.equal(pathname, `hw/uuv/electronica/${ID}-placa.png`);
-  assert.equal(opciones.maximumSizeInBytes, 10 * MB);
-  assert.ok(opciones.allowedContentTypes.includes("image/png"));
-  assert.ok(!opciones.allowedContentTypes.some((t) => /html|\*/.test(t)), "sin comodines ni html");
-  assert.equal(opciones.addRandomSuffix, false);
-  assert.notEqual(opciones.allowOverwrite, true);
-  const tp = JSON.parse(opciones.tokenPayload);
-  assert.equal(tp.proyecto, "uuv");
-  assert.equal(tp.disciplina, "electronica");
-  assert.equal(tp.id, ID);
-  assert.equal(tp.subidoPor, EDITOR);
-
-  await pedirToken(m.handler, { cp: payload({ nombre: "casco.step", tamano: 40 * MB }) });
-  assert.equal(m.blob.tokens[1].opciones.maximumSizeInBytes, 50 * MB, "CAD: 50 MB");
+  for (const id of ["../x", "123", ""]) assert.equal((await pedirSubida(m.handler, { id })).status, 400, id);
+  const res = await pedirSubida(m.handler, { nombre: "../../otro-proyecto/mi placa.png" });
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).nombre, "mi-placa.png");
+  const [clave] = [...m.nube.objetos.keys()];
+  assert.match(clave, new RegExp(`^hw/uuv/electronica/${ID}-[0-9a-f-]{36}-mi-placa\\.png$`));
 });
 
-test("token: tipos fuera de la lista blanca → 400; tamaño declarado mayor al máximo → 413", async () => {
+test("subida: tipo fuera de la lista blanca → 400; tamaño declarado mayor al máximo → 413; solo octet-stream y mismo origen", async () => {
   const m = await montar();
-  for (const nombre of ["virus.exe", "pagina.html", "x.js", "x.svgz", "sin-extension", "x.png.exe", "x.htm", "x.mjs"]) {
-    const res = await pedirToken(m.handler, { cp: payload({ nombre }) });
-    assert.equal(res.status, 400, nombre);
-  }
-  assert.equal((await pedirToken(m.handler, { cp: payload({ nombre: "foto.png", tamano: 10 * MB + 1 }) })).status, 413);
-  assert.equal((await pedirToken(m.handler, { cp: payload({ nombre: "casco.step", tamano: 50 * MB + 1 }) })).status, 413);
-  for (const tamano of [-1, "10", null, 1.5]) assert.equal((await pedirToken(m.handler, { cp: payload({ tamano }) })).status, 400, `tamano ${tamano}`);
-  assert.equal(m.blob.tokens.length, 0);
-  // La extensión se compara sin distinguir mayúsculas.
-  assert.equal((await pedirToken(m.handler, { cp: payload({ nombre: "Foto.PNG" }), pathname: `hw/uuv/electronica/${ID}-Foto.PNG` })).status, 200);
+  assert.equal((await pedirSubida(m.handler, { nombre: "x.html" })).status, 400);
+  assert.equal((await pedirSubida(m.handler, { nombre: "x.exe" })).status, 400);
+  const grande = await m.handler(req("POST", { login: EDITOR, ct: "application/octet-stream", headers: { "content-length": String(10 * MB + 1) }, body: PNG, query: { proyecto: "uuv", disciplina: "electronica", id: ID, nombre: "a.png" } }));
+  assert.equal(grande.status, 413);
+  const json = await m.handler(req("POST", { login: EDITOR, body: { type: "blob.generate-client-token", payload: {} } }));
+  assert.equal(json.status, 415, "un cuerpo JSON (petición de token) no es una subida");
+  assert.equal((await pedirSubida(m.handler, { origin: "https://evil.example" })).status, 403);
+  assert.equal((await pedirSubida(m.handler, { origin: null })).status, 403);
+  assert.equal(m.nube.objetos.size, 0);
 });
 
-test("token: el pathname debe ser exactamente hw/<proy>/<disc>/<uuid>-<nombre saneado>; con ../ u otro proyecto → 400", async () => {
+test("sin sesión no hay excepción para callbacks firmados: POST sin cookie → 401 y no se escribe nada", async () => {
   const m = await montar();
-  const malos = [
-    `hw/uuv/electronica/${ID}-../../x.png`,
-    `hw/uuv/electronica/../mecanica/${ID}-placa.png`,
-    `hw/restringido-demo/electronica/${ID}-placa.png`,
-    `hw/uuv/mecanica/${ID}-placa.png`,
-    `hw/uuv/electronica/no-uuid-placa.png`,
-    `hw/uuv/electronica/${ID}-otra.png`,
-    `/hw/uuv/electronica/${ID}-placa.png`,
-    `otro/uuv/electronica/${ID}-placa.png`,
-  ];
-  for (const pathname of malos) assert.equal((await pedirToken(m.handler, { pathname })).status, 400, pathname);
-  const { sanearNombre } = await core();
-  const cp = payload({ nombre: "../../etc/passwd.png" });
-  assert.equal((await pedirToken(m.handler, { cp, pathname: `hw/uuv/electronica/${ID}-../../etc/passwd.png` })).status, 400, "nombre sin sanear");
-  assert.equal((await pedirToken(m.handler, { cp, pathname: `hw/uuv/electronica/${ID}-${sanearNombre(cp.nombre)}` })).status, 200, "nombre saneado");
-  assert.equal(m.blob.tokens.length, 1);
-  assert.ok(!m.blob.tokens[0].pathname.includes(".."));
-});
-
-test("token: solo JSON y mismo origen (415 / 403)", async () => {
-  const m = await montar();
-  assert.equal((await pedirToken(m.handler, { ct: "text/plain" })).status, 415);
-  assert.equal((await pedirToken(m.handler, { origin: "https://evil.example" })).status, 403);
-  assert.equal(m.blob.tokens.length, 0);
-});
-
-// ---------- Callback de Vercel Blob (onUploadCompleted) ----------
-
-test("callback firmado guarda metadatos en hw:arch:<proy> (id → JSON) sin cookie de sesión", async () => {
-  const m = await montar();
-  const { url } = await subir(m);
-  const h = m.redis.data.get("hw:arch:uuv");
-  assert.ok(h instanceof Map, "hash de archivos por proyecto");
-  const meta = JSON.parse(h.get(ID));
-  assert.equal(meta.nombre, "placa.png");
-  assert.equal(meta.tipo, "png");
-  assert.equal(meta.tamano, 7);
-  assert.equal(meta.blobUrl, url);
-  assert.equal(meta.subidoPor, EDITOR);
-  assert.equal(meta.fecha, new Date(T0).toISOString());
-  assert.equal(meta.disciplina, "electronica");
-});
-
-test("el token incluye callbackUrl (handleUpload recibe onUploadCompleted al generarlo); sin él Vercel nunca llamaría al callback", async () => {
-  const m = await montar();
-  await pedirToken(m.handler);
-  assert.ok(m.blob.tokens.at(-1).callbackUrl, "token con callbackUrl");
-});
-
-test("callback sin firma válida o con pathname distinto al del token → error y no guarda nada", async () => {
-  const m = await montar();
-  await pedirToken(m.handler);
-  const { opciones } = m.blob.tokens[0];
-  const pathname = `hw/uuv/electronica/${ID}-placa.png`;
-  const url = `${BLOB_HOST}/${pathname}`;
-  for (const firma of [null, "falsa"]) {
-    const res = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url, firma });
-    assert.ok(res.status >= 400, `firma ${firma} → ${res.status}`);
-  }
-  const otro = `hw/uuv/electronica/${ID2}-otra.png`;
-  const res = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname: otro, url: `${BLOB_HOST}/${otro}` });
-  assert.ok(res.status >= 400, "pathname que no corresponde al token");
-  assert.ok(!m.redis.data.has("hw:arch:uuv"), "nada guardado");
+  const res = await m.handler(req("POST", { origin: null, headers: { "x-vercel-signature": "firma" }, body: { type: "blob.upload-completed", payload: { blob: { url: "https://x/y", pathname: `hw/uuv/electronica/${ID}-placa.png` }, tokenPayload: "{}" } } }));
+  assert.equal(res.status, 401);
+  assert.ok(!m.redis.data.has("hw:arch:uuv"));
 });
 
 // ---------- Lectura: lista y proxy ----------
 
-test("lista: GET ?proyecto&lista=1 devuelve metadatos sin blobUrl; 401 sin sesión; 403 restringido", async () => {
+test("lista: GET ?proyecto&lista=1 devuelve metadatos sin la clave del almacén; 401 sin sesión; 403 restringido", async () => {
   const m = await montar();
-  const { url } = await subir(m);
+  const { clave } = await subir(m);
   const res = await listar(m.handler);
   assert.equal(res.status, 200);
   assert.match(res.headers.get("cache-control") ?? "", /no-store/);
   const texto = await res.text();
-  assert.ok(!texto.includes(url) && !texto.includes("blob.vercel-storage.com") && !texto.includes("blobUrl"), "nunca expone la URL del Blob");
+  assert.ok(!texto.includes(clave) && !texto.includes("blobUrl"), "nunca expone la clave del objeto");
   const { archivos } = JSON.parse(texto);
   assert.deepEqual(Object.keys(archivos[0]).sort(), ["disciplina", "fecha", "id", "nombre", "subidoPor", "tamano", "tipo"]);
   assert.equal((await m.handler(req("GET", { query: { proyecto: "uuv", lista: "1" } }))).status, 401);
   assert.equal((await listar(m.handler, "ana", "restringido-demo")).status, 403);
 });
 
-test("proxy: GET ?proyecto&id sirve los bytes con Content-Type de la lista blanca, nosniff e inline (png); nunca la URL del Blob", async () => {
+test("proxy: GET ?proyecto&id sirve los bytes con Content-Type de la lista blanca, nosniff e inline (png); nunca la clave del objeto", async () => {
   const m = await montar();
   const bytes = new Uint8Array([137, 80, 78, 71, 9, 9]);
-  // El Blob dice text/html: el proxy no le hace caso.
-  const { url } = await subir(m, { bytes, contentType: "text/html" });
+  const { clave } = await subir(m, { bytes });
+  // El almacén dice text/html: el proxy no le hace caso.
+  m.nube.objetos.get(clave).contentType = "text/html";
   const res = await getArchivo(m.handler, ID);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "image/png");
@@ -296,14 +206,14 @@ test("proxy: GET ?proyecto&id sirve los bytes con Content-Type de la lista blanc
   assert.match(res.headers.get("content-disposition") ?? "", /^inline;/);
   assert.equal(res.headers.get("cache-control"), "no-store");
   assert.equal(res.headers.get("location"), null);
-  for (const [k, v] of res.headers) assert.ok(!v.includes(url) && !v.includes("blob.vercel-storage.com"), `cabecera ${k} expone el Blob`);
+  for (const [k, v] of res.headers) assert.ok(!v.includes(clave), `cabecera ${k} expone la clave`);
   assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytes);
-  assert.deepEqual(m.blob.leidos, [url]);
+  assert.deepEqual(m.nube.leidos, [clave]);
 });
 
 test("proxy: svg va como attachment con CSP sandbox; CAD y otros como attachment", async () => {
   const m = await montar();
-  await subir(m, { nombre: "logo.svg", id: ID, bytes: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'), contentType: "image/svg+xml" });
+  await subir(m, { nombre: "logo.svg", id: ID, bytes: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>') });
   const svg = await getArchivo(m.handler, ID);
   assert.equal(svg.status, 200);
   assert.equal(svg.headers.get("content-type"), "image/svg+xml");
@@ -311,7 +221,7 @@ test("proxy: svg va como attachment con CSP sandbox; CAD y otros como attachment
   assert.equal(svg.headers.get("content-security-policy"), "sandbox; default-src 'none'; style-src 'unsafe-inline'");
   assert.equal(svg.headers.get("x-content-type-options"), "nosniff");
 
-  await subir(m, { nombre: "casco.step", id: ID2, bytes: new Uint8Array([1, 2, 3]), contentType: "application/octet-stream" });
+  await subir(m, { nombre: "casco.step", id: ID2, bytes: new Uint8Array([1, 2, 3]) });
   const step = await getArchivo(m.handler, ID2);
   assert.equal(step.status, 200);
   assert.match(step.headers.get("content-disposition") ?? "", /^attachment;/);
@@ -320,9 +230,7 @@ test("proxy: svg va como attachment con CSP sandbox; CAD y otros como attachment
 
 test("proxy: Content-Disposition con el nombre saneado (sin comillas, CR/LF, / ni ..)", async () => {
   const m = await montar();
-  const { sanearNombre } = await core();
-  const nombre = sanearNombre('../a"b\r\nSet-Cookie: x=1.pdf');
-  await subir(m, { nombre, bytes: new Uint8Array([37, 80, 68, 70]), contentType: "application/pdf" });
+  await subir(m, { nombre: '../a"b\r\nSet-Cookie: x=1.pdf', bytes: new Uint8Array([37, 80, 68, 70]) });
   const res = await getArchivo(m.handler, ID);
   assert.equal(res.status, 200);
   const cd = res.headers.get("content-disposition") ?? "";
@@ -332,132 +240,149 @@ test("proxy: Content-Disposition con el nombre saneado (sin comillas, CR/LF, / n
   assert.equal(res.headers.get("set-cookie"), null);
 });
 
-test("proxy: 401 sin sesión, 403 proyecto restringido, 400 id no uuid, 404 id inexistente; no lee el Blob", async () => {
+test("proxy: 401 sin sesión, 403 proyecto restringido, 400 id no uuid, 404 id inexistente; no lee el almacén", async () => {
   const m = await montar();
   await subir(m);
   assert.equal((await m.handler(req("GET", { query: { proyecto: "uuv", id: ID } }))).status, 401);
   assert.equal((await getArchivo(m.handler, ID, "ana", "restringido-demo")).status, 403);
   for (const id of ["../x", "123", ""]) assert.equal((await getArchivo(m.handler, id)).status, 400, id);
   assert.equal((await getArchivo(m.handler, ID2)).status, 404);
-  assert.equal(m.blob.leidos.length, 0);
+  assert.equal(m.nube.leidos.length, 0);
 });
 
-test("proyecto restringido (tabla inyectada): el login autorizado lista, pide token y lee; sin acceso → 403 en los tres", async () => {
+test("proyecto restringido (tabla inyectada): el login autorizado sube, lista y lee; sin acceso → 403 en los tres", async () => {
   const m = await montar();
-  const cp = payload({ proyecto: "restringido-demo" });
-  const pathname = `hw/restringido-demo/electronica/${ID}-placa.png`;
-  // Las dos llamadas a canAccess del core, con casos que solo pasan si respeta la tabla inyectada:
-  //  - token (POST): "ana" es editora de restringido-demo/electronica pero no está en la tabla; su 403 no puede venir
-  //    del chequeo de editor, solo de canAccess. cyuxSz (editor y en la tabla) recibe el token.
-  //  - lectura (GET lista / proxy): no hay chequeo de editor, así que el 403 de "otro" solo viene de canAccess.
-  assert.equal((await pedirToken(m.handler, { login: "ana", pathname, cp })).status, 403, "token: editora sin acceso");
-  assert.equal(m.blob.tokens.length, 0, "no se emitió token sin acceso");
+  // "ana" es editora de restringido-demo/electronica pero no está en la tabla: su 403 al subir solo puede venir de canAccess.
+  // En lectura (lista / proxy) no hay chequeo de editor, así que el 403 de "otro" también viene de canAccess.
+  assert.equal((await pedirSubida(m.handler, { login: "ana", proyecto: "restringido-demo" })).status, 403, "subida: editora sin acceso");
+  assert.equal(m.nube.objetos.size, 0, "nada se escribió sin acceso");
   assert.equal((await listar(m.handler, "otro", "restringido-demo")).status, 403, "lista sin acceso");
   assert.equal((await getArchivo(m.handler, ID, "otro", "restringido-demo")).status, 403, "proxy sin acceso");
-  assert.equal((await pedirToken(m.handler, { login: "CyuxSZ", pathname, cp })).status, 200, "token con acceso");
-  assert.equal((await listar(m.handler, "cyuxSz", "restringido-demo")).status, 200, "lista con acceso");
   assert.equal((await getArchivo(m.handler, ID, "cyuxSz", "restringido-demo")).status, 404, "proxy con acceso: pasa el 403 y llega al 404 de id inexistente");
+  assert.equal((await pedirSubida(m.handler, { login: "CyuxSZ", proyecto: "restringido-demo" })).status, 201, "subida con acceso");
+  assert.equal((await listar(m.handler, "cyuxSz", "restringido-demo")).status, 200, "lista con acceso");
+  assert.equal((await getArchivo(m.handler, ID, "cyuxSz", "restringido-demo")).status, 200, "proxy con acceso");
+});
+
+test("sin acceso al proyecto el 403 va antes del 404 de disciplina", async () => {
+  const m = await montar();
+  const res = await pedirSubida(m.handler, { login: "ana", proyecto: "restringido-demo", disciplina: "inexistente" });
+  assert.equal(res.status, 403);
 });
 
 // ---------- Borrado ----------
 
-test("DELETE {proyecto, id}: solo editores de la disciplina del archivo; borra el Blob y los metadatos", async () => {
+test("DELETE {proyecto, id}: solo editores de la disciplina del archivo; borra el objeto y los metadatos", async () => {
   const m = await montar();
-  const { url } = await subir(m);
+  const { clave } = await subir(m);
   const del = (login, body = { proyecto: "uuv", id: ID }, extra = {}) => m.handler(req("DELETE", { login, body, ...extra }));
   assert.equal((await del(null)).status, 401);
   assert.equal((await del("ana")).status, 403);
   assert.equal((await del("meca")).status, 403, "editor de otra disciplina");
   assert.equal((await del(EDITOR, { proyecto: "uuv", id: ID }, { origin: "https://evil.example" })).status, 403);
-  assert.equal(m.blob.borrados.length, 0);
+  assert.equal(m.nube.borrados.length, 0);
   const res = await del(EDITOR);
   assert.equal(res.status, 200);
-  assert.deepEqual(m.blob.borrados, [url]);
+  assert.deepEqual(m.nube.borrados, [clave]);
   assert.ok(!(m.redis.data.get("hw:arch:uuv")?.has(ID)), "metadatos borrados");
   assert.equal((await del(EDITOR)).status, 404);
+  assert.equal((await pedirSubida(m.handler, { id: ID })).status, 409, "un id borrado no se reutiliza (lápida)");
 });
 
 // ---------- Configuración ----------
 
-test("503 si no hay Blob ni Redis configurados", async () => {
+test("503 si no hay almacén de objetos o de metadatos", async () => {
   const { crearHandler } = await core();
-  const sinBlob = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: fakeRedis(), blob: null, proyectos: PROYECTOS, restringidos: DEMO });
-  assert.equal((await sinBlob(req("GET", { login: "ana", query: { proyecto: "uuv", id: ID } }))).status, 503);
-  const sinRedis = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: null, blob: fakeBlob(), proyectos: PROYECTOS, restringidos: DEMO });
-  assert.equal((await sinRedis(req("GET", { login: "ana", query: { proyecto: "uuv", lista: "1" } }))).status, 503);
+  const sinNube = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: fakeRedis(), blob: null, proyectos: PROYECTOS, restringidos: DEMO });
+  assert.equal((await sinNube(req("GET", { login: "ana", query: { proyecto: "uuv", id: ID } }))).status, 503);
+  const sinMeta = crearHandler({ env: { SESSION_SECRET: SECRET }, redis: null, blob: fakeNube(), proyectos: PROYECTOS, restringidos: DEMO });
+  assert.equal((await sinMeta(req("GET", { login: "ana", query: { proyecto: "uuv", lista: "1" } }))).status, 503);
+  const sinNada = crearHandler({ env: { SESSION_SECRET: SECRET }, proyectos: PROYECTOS, restringidos: DEMO });
+  assert.equal((await sinNada(req("GET", { login: "ana", query: { proyecto: "uuv", lista: "1" } }))).status, 503, "sin inyección no hay almacén por defecto");
 });
 
-test("api/archivos.js delega en lib/archivos-core.mjs y usa @vercel/blob (handleUpload de @vercel/blob/client)", () => {
-  const src = readFileSync(new URL("../api/archivos.js", import.meta.url), "utf8");
-  assert.match(src, /lib\/archivos-core\.mjs/);
-  assert.match(src, /projects\.json["']\s+with\s+\{\s*type:\s*["']json["']\s*\}/);
-  for (const m of ["GET", "POST", "DELETE"]) assert.match(src, new RegExp(`export const ${m}\\b`));
-  const coreSrc = readFileSync(new URL("../lib/archivos-core.mjs", import.meta.url), "utf8");
-  assert.match(coreSrc + src, /@vercel\/blob\/client/);
-  assert.doesNotMatch(coreSrc, /\/pipeline/, "reutiliza clienteRedis del módulo compartido");
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  assert.match(pkg.dependencies?.["@vercel/blob"] ?? "", /^\d+\.\d+\.\d+$/, "@vercel/blob fijada a versión exacta");
-});
-
-// ---------- Unicidad de id y replay ----------
+// ---------- Unicidad de id y carreras ----------
 
 test("un editor de mecanica no puede pisar el id de un archivo de electronica (409) y los metadatos no cambian", async () => {
   const m = await montar();
   await subir(m);
   const antes = m.redis.data.get("hw:arch:uuv").get(ID);
-  const cp = payload({ disciplina: "mecanica" });
-  const res = await pedirToken(m.handler, { login: "meca", pathname: `hw/uuv/mecanica/${ID}-placa.png`, cp });
+  const res = await pedirSubida(m.handler, { login: "meca", disciplina: "mecanica", id: ID });
   assert.equal(res.status, 409);
-  // Callback directo con tokenPayload propio: HSETNX no sobrescribe.
-  const tokenPayload = JSON.stringify({ proyecto: "uuv", disciplina: "mecanica", id: ID, nombre: "placa.png", tipo: "png", tamano: 5, subidoPor: "meca", pathname: `hw/uuv/mecanica/${ID}-placa.png` });
-  const fin = await completar(m.handler, { tokenPayload, pathname: `hw/uuv/mecanica/${ID}-placa.png`, url: `${BLOB_HOST}/otro` });
-  assert.equal(fin.status, 200);
   assert.equal(m.redis.data.get("hw:arch:uuv").get(ID), antes);
+  assert.equal(m.nube.objetos.size, 1, "el intento rechazado no deja objeto");
 });
 
-test("replay del callback tras DELETE no reinserta el archivo", async () => {
+test("carrera de dos subidas del mismo id: el perdedor (EVAL=0) no borra el objeto del ganador", async () => {
   const m = await montar();
-  const { url, pathname } = await subir(m);
-  const { opciones } = m.blob.tokens.at(-1);
-  assert.equal((await m.handler(req("DELETE", { login: EDITOR, body: { proyecto: "uuv", id: ID } }))).status, 200);
-  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url });
-  assert.equal(fin.status, 200);
-  assert.ok(!m.redis.data.get("hw:arch:uuv")?.has(ID));
-  assert.equal((await pedirToken(m.handler, { pathname: `hw/uuv/electronica/${ID}-placa.png` })).status, 409);
+  const GANADOR = new Uint8Array([137, 80, 78, 71, 1, 1, 1, 1]);
+  const { clave } = await subir(m, { bytes: GANADOR });
+  // El perdedor pasa el HEXISTS (lo hizo antes de que el ganador insertara) y su EVAL devuelve 0.
+  const orig = m.redis.exec.bind(m.redis);
+  m.redis.exec = async (cmds) => cmds.map((c) => (["HEXISTS", "SISMEMBER", "EVAL"].includes(c[0]) ? 0 : null));
+  let perdedor;
+  try {
+    perdedor = await pedirSubida(m.handler, { bytes: PNG });
+  } finally {
+    m.redis.exec = orig;
+  }
+  assert.equal(perdedor.status, 409);
+  assert.deepEqual([...m.nube.objetos.keys()], [clave], "solo queda el objeto del ganador");
+  const g = await getArchivo(m.handler, ID);
+  assert.equal(g.status, 200);
+  assert.deepEqual(new Uint8Array(await g.arrayBuffer()), GANADOR);
 });
 
-test("callback: lápida + inserción en un único EVAL; un DELETE justo antes de la inserción no se reinserta", async () => {
+test("lápida + inserción en un único EVAL: sin SISMEMBER/HSETNX sueltos al insertar", async () => {
   const m = await montar();
-  const { url, pathname } = await subir(m);
-  const { opciones } = m.blob.tokens.at(-1);
-  m.redis.data.get("hw:arch:uuv").delete(ID); // callback aún en vuelo
+  m.redis.comandos.length = 0;
+  await subir(m);
+  assert.ok(m.redis.comandos.some((c) => c[0] === "EVAL"), "inserta con EVAL");
+  assert.ok(!m.redis.comandos.some((c) => String(c[0]).toUpperCase() === "HSETNX"), "sin HSETNX suelto");
+});
+
+test("si el EVAL aplica la inserción pero la respuesta se pierde, el objeto se conserva y se puede leer", async () => {
+  const m = await montar();
   const orig = m.redis.exec.bind(m.redis);
   m.redis.exec = async (cmds) => {
-    // El DELETE se cuela justo antes de que llegue el check+insert.
-    if (cmds.some((c) => c[0] === "EVAL")) m.redis.data.set("hw:arch:borrados:uuv", new Set([ID]));
+    const res = await orig(cmds);
+    if (cmds[0][0] === "EVAL") throw new TypeError("respuesta perdida");
+    return res;
+  };
+  let r;
+  try {
+    r = await pedirSubida(m.handler);
+  } finally {
+    m.redis.exec = orig;
+  }
+  assert.equal(r.status, 201, "la re-lectura confirma que el meta apunta al objeto");
+  assert.equal(m.nube.objetos.size, 1);
+  const g = await getArchivo(m.handler, ID);
+  assert.equal(g.status, 200);
+  assert.deepEqual(new Uint8Array(await g.arrayBuffer()), PNG);
+});
+
+test("si el EVAL lanza y la re-lectura también falla, se conserva el objeto y responde 503", async () => {
+  const m = await montar();
+  const orig = m.redis.exec.bind(m.redis);
+  let fallar = false;
+  m.redis.exec = async (cmds) => {
+    if (cmds[0][0] === "EVAL") fallar = true;
+    if (fallar) throw new TypeError("sin red");
     return orig(cmds);
   };
-  m.redis.comandos.length = 0;
-  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url });
-  assert.equal(fin.status, 200);
-  assert.ok(!m.redis.data.get("hw:arch:uuv")?.has(ID), "no se reinserta");
-  assert.ok(!m.redis.comandos.some((c) => ["SISMEMBER", "HSETNX"].includes(String(c[0]).toUpperCase())), "sin SISMEMBER/HSETNX sueltos");
+  const r = await pedirSubida(m.handler);
+  assert.equal(r.status, 503);
+  assert.equal(m.nube.objetos.size, 1, "huérfano posible, pero no se pierde el dato");
 });
 
-test("callback sin lápida inserta con EVAL y no pisa un existente", async () => {
+test("si el EVAL lanza sin haberse aplicado, se borra el objeto", async () => {
   const m = await montar();
-  const { url, pathname } = await subir(m);
-  const { opciones } = m.blob.tokens.at(-1);
-  const antes = m.redis.data.get("hw:arch:uuv").get(ID);
-  assert.ok(antes);
-  const fin = await completar(m.handler, { tokenPayload: opciones.tokenPayload, pathname, url: `${url}-otro` });
-  assert.equal(fin.status, 200);
-  assert.equal(m.redis.data.get("hw:arch:uuv").get(ID), antes);
-});
-
-test("sin acceso al proyecto el 403 va antes del 404 de disciplina", async () => {
-  const m = await montar();
-  const cp = payload({ proyecto: "restringido-demo", disciplina: "inexistente" });
-  const res = await pedirToken(m.handler, { login: "ana", pathname: `hw/restringido-demo/inexistente/${ID}-placa.png`, cp });
-  assert.equal(res.status, 403);
+  const orig = m.redis.exec.bind(m.redis);
+  m.redis.exec = async (cmds) => {
+    if (cmds[0][0] === "EVAL") throw new TypeError("timeout");
+    return orig(cmds);
+  };
+  await pedirSubida(m.handler);
+  assert.equal(m.nube.objetos.size, 0);
 });

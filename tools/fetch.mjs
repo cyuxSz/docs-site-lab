@@ -47,14 +47,14 @@ async function tokenAlert() {
   if (!TOKEN) return null;
   try {
     const res = await fetch("https://api.github.com/rate_limit", { headers: { Authorization: `Bearer ${TOKEN}`, "User-Agent": "docs-site-lab" } });
-    if (res.status === 401) return { level: "error", text: "DOCS_GITHUB_TOKEN ya no es válido (caducó o se revocó). Genera otro y actualízalo en Vercel." };
+    if (res.status === 401) return { level: "error", text: "DOCS_GITHUB_TOKEN ya no es válido (caducó o se revocó). Genera otro y actualiza el secret en GitHub." };
     const raw = res.headers.get("github-authentication-token-expiration");
     if (!raw) return null;
     const expires = new Date(raw.replace(/^(\S+) (\S+) ([+-]\d\d)(\d\d)$/, "$1T$2$3:$4"));
     const days = Math.floor((expires - Date.now()) / 864e5);
     if (Number.isNaN(days) || days > 14) return null;
     const when = expires.toLocaleDateString("es-MX", { dateStyle: "medium" });
-    return { level: days < 0 ? "error" : "warn", text: days < 0 ? `DOCS_GITHUB_TOKEN caducó el ${when}.` : `DOCS_GITHUB_TOKEN caduca el ${when} (en ${days} día(s)). Renuévalo en GitHub y actualízalo en Vercel.` };
+    return { level: days < 0 ? "error" : "warn", text: days < 0 ? `DOCS_GITHUB_TOKEN caducó el ${when}.` : `DOCS_GITHUB_TOKEN caduca el ${when} (en ${days} día(s)). Renuévalo y actualiza el secret en GitHub.` };
   } catch {
     return null;
   }

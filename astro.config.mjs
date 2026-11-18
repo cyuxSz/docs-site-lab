@@ -1,4 +1,4 @@
-// Sitio estático: el login lo hace middleware.js (Routing Middleware de Vercel), no Astro.
+// Sitio estático: el login lo hace el Worker (worker/index.mjs), no Astro.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { defineConfig } from "astro/config";
@@ -24,22 +24,21 @@ export default defineConfig({
     // CSP en <meta> por página: solo corren los scripts que Astro emite (por hash) y los de este origen,
     // así que un <script> o un onclick metido en el Markdown de una wiki no se ejecuta.
     // Estilos con 'unsafe-inline' porque Mermaid y Shiki los escriben en línea.
-    // connect-src añade solo https://vercel.com/api/blob/ (prefijo de ruta): upload() de @vercel/blob/client sube ahí
-    // los archivos de hardware directo desde el navegador (no usa Workers, así que no hace falta worker-src).
+    // connect-src se queda en 'self': los archivos de hardware se suben directo al Worker.
     // frame-src añade 'self' (visor de PDF de /api/archivos en iframe, D1a: solo el PDF responde con frame-ancestors 'self')
     // y https://embed.diagrams.net (editor de diagramas en iframe, C1). Excalidraw no necesita nada más:
     // sus fuentes salen de este origen ('self', ver tools/postbuild.mjs), el SVG se exporta sin incrustar fuentes (así no corre el
     // subsetting WASM/embind, que usa new Function y pediría 'unsafe-eval') y 'wasm-unsafe-eval' ya estaba.
-    // Este <meta> está en dist/, así que vale igual en Vercel y en el Worker: las cabeceras CSP globales no definen directivas
+    // Este <meta> está en dist/, así que vale tal cual en el Worker: las cabeceras CSP globales no definen directivas
     // de carga (se intersecarían con el <meta>).
-    // frame-ancestors no funciona en <meta>: va como cabecera en vercel.json.
+    // frame-ancestors no funciona en <meta>: lo pone la cabecera del Worker.
     csp: {
       scriptDirective: { resources: ["'self'", "'wasm-unsafe-eval'"], hashes: [temaHash] },
       styleDirective: { resources: ["'self'", "'unsafe-inline'"] },
       directives: [
         "default-src 'self'",
         "img-src 'self' data:",
-        "connect-src 'self' https://vercel.com/api/blob/",
+        "connect-src 'self'",
         "frame-src 'self' https://embed.diagrams.net",
         "object-src 'none'",
         "base-uri 'self'",

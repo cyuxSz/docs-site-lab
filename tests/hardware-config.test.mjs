@@ -1,9 +1,9 @@
-// Lote 1a: configuración de disciplinas (projects.json + data.ts), plantillas, excepción del middleware para el
-// callback de Vercel Blob y README.
+// Lote 1a: configuración de disciplinas (projects.json + data.ts), plantillas y README. Desde el lote "quitar Vercel",
+// el login del Worker no tiene ninguna excepción sin sesión en /api/archivos (ya no hay callback de Vercel Blob).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
-import middleware from "../middleware.js";
+import { crearWorker } from "../worker/index.mjs";
 
 const leer = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 const SLUG = /^[a-z0-9-]{1,60}$/;
@@ -58,26 +58,27 @@ test("src/lib/data.ts: ProjectSummary tiene disciplinas opcional tipada (plantil
   assert.match(m[1], /disciplinas\?:\s*Record<string,\s*\{[^}]*plantilla:\s*string;?[^}]*editores:\s*string\[\];?[^}]*\}>/);
 });
 
-// ---------- middleware: callback de Vercel Blob ----------
+// ---------- login: sin excepciones sin sesión en /api ----------
 
 const SECRET = "s".repeat(40);
 const ORIGIN = "https://docs.example";
 beforeEach(() => {
-  Object.assign(process.env, { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", ALLOWED_USERS: "" });
-  delete process.env.VERCEL_ENV;
-  delete process.env.PREVIEW_TRUST_VERCEL_AUTH;
+  process.env.SESSION_SECRET = SECRET;
 });
-const pasa = (res) => res.headers.get("x-middleware-next") === "1";
+const ENV = { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", SESSION_SECRET: SECRET, ALLOWED_ORG: "vanttec", ALLOWED_USERS: "" };
+async function middleware(request) {
+  let paso = false;
+  const ASSETS = { fetch: async () => ((paso = true), new Response("asset")) };
+  const res = await crearWorker().fetch(request, { ...ENV, ASSETS }, { waitUntil() {}, passThroughOnException() {} });
+  res.paso = paso;
+  return res;
+}
+const pasa = (res) => res.paso === true;
 
-test("middleware: POST /api/archivos/ con x-vercel-signature y sin sesión pasa a la función (ella valida la firma)", async () => {
-  for (const path of ["/api/archivos/", "/api/archivos"]) {
-    const res = await middleware(new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "x-vercel-signature": "abc", "content-type": "application/json" }, body: "{}" }));
-    assert.ok(pasa(res), `${path} debe pasar`);
-  }
-});
-
-test("middleware: la excepción es solo esa: sin firma, otro método u otra ruta siguen en 401 sin sesión", async () => {
+test("worker: sin sesión todo /api responde 401, también POST /api/archivos con x-vercel-signature (sin excepción)", async () => {
   const casos = [
+    ["POST", "/api/archivos/", { "x-vercel-signature": "abc", "content-type": "application/json" }],
+    ["POST", "/api/archivos", { "x-vercel-signature": "abc", "content-type": "application/json" }],
     ["POST", "/api/archivos/", {}],
     ["GET", "/api/archivos/", { "x-vercel-signature": "abc" }],
     ["DELETE", "/api/archivos/", { "x-vercel-signature": "abc" }],

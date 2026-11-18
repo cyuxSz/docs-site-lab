@@ -65,25 +65,23 @@ test("README: la sección de proyectos restringidos explica el mecanismo sin nom
   assert.ok(!NOMBRE.test(sec) && !sec.includes("cyuxSz"), "no nombra proyectos ni logins concretos");
 });
 
-test("middleware.js: exporta crearMiddleware y el default usa RESTRICTED (sin tabla inyectada)", async () => {
-  const mod = await import("../middleware.js");
-  assert.equal(typeof mod.crearMiddleware, "function", "falta crearMiddleware({ restringidos })");
-  assert.equal(typeof mod.default, "function");
-  assert.ok(mod.config?.matcher, "se conserva el config del Routing Middleware");
-  const src = read("middleware.js");
-  assert.match(src, /export default crearMiddleware\(\)/, "el default no debe recibir una tabla");
+test("worker/index.mjs: exporta crearWorker y el default usa RESTRICTED (sin tabla inyectada)", async () => {
+  const mod = await import("../worker/index.mjs");
+  assert.equal(typeof mod.crearWorker, "function", "falta crearWorker({ restringidos })");
+  assert.equal(typeof mod.default?.fetch, "function");
+  const src = read("worker/index.mjs");
+  assert.match(src, /export default crearWorker\(\)/, "el default no debe recibir una tabla");
 });
 
-// Que cada crearHandler y crearMiddleware respeten la tabla inyectada se prueba por comportamiento (con RESTRICTED
+// Que cada crearHandler y el Worker respeten la tabla inyectada se prueba por comportamiento (con RESTRICTED
 // vacío, un 403 solo puede venir de la tabla inyectada; el login autorizado debe entrar):
-//   - comentarios: tests/comentarios-api.test.mjs  «proyecto restringido: sin acceso → 403 …; con acceso → permitido»
-//   - hardware:    tests/hardware-api.test.mjs     «proyecto restringido (canAccess): otro login recibe 403 …; cyuxSz entra»
-//   - archivos:    tests/hardware-archivos.test.mjs «proyecto restringido (tabla inyectada): el login autorizado lista, pide token y lee …»
-//   - middleware:  tests/middleware.test.mjs        «restringido: …» (403 para otro login; cyuxSz pasa)
-test("APIs de producción no inyectan tabla: usan RESTRICTED de access.config.js", () => {
-  for (const f of ["api/comentarios.js", "api/hardware.js", "api/archivos.js"]) {
-    assert.ok(!/restringidos/.test(read(f)), `${f} no debe pasar restringidos a crearHandler`);
-  }
+//   - comentarios: tests/comentarios-api.test.mjs   «proyecto restringido: sin acceso → 403 …; con acceso → permitido»
+//   - hardware:    tests/hardware-api.test.mjs      «proyecto restringido (canAccess): otro login recibe 403 …; cyuxSz entra»
+//   - archivos:    tests/hardware-archivos.test.mjs «proyecto restringido (tabla inyectada): el login autorizado sube, lista y lee …»
+//   - login:       tests/login-restringido.test.mjs «restringido: …» (403 para otro login; cyuxSz pasa)
+test("el Worker de producción no inyecta tabla: los cores reciben restringidos solo desde crearWorker", () => {
+  const src = read("worker/index.mjs");
+  assert.doesNotMatch(src, /restringidos:\s*(DEMO|\{)/, "worker/index.mjs no fija una tabla propia");
 });
 
 test("la tabla de prueba es un id que no existe en el portal", () => {

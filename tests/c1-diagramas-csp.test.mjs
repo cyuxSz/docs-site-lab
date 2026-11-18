@@ -1,12 +1,12 @@
 // C1: CSP para los editores de diagramas.
-// - La CSP de las páginas va en <meta> (astro.config.mjs) y está dentro de dist/, así que es la misma en Vercel y en el
+// - La CSP de las páginas va en <meta> (astro.config.mjs) y está dentro de dist/, así que la sirve tal cual el
 //   Worker de Cloudflare. Se añade solo `frame-src https://embed.diagrams.net` (diagrams.net en iframe). D1a añade 'self' en
 //   frame-src para el visor de PDF (/api/archivos); las páginas propias siguen sin poder enmarcarse (frame-ancestors 'none').
 // - Excalidraw no necesita nada nuevo: sus fuentes se sirven desde este origen (EXCALIDRAW_ASSET_PATH, 'self') y el SVG se
 //   exporta sin incrustar fuentes, así que no corre el subsetting WASM/embind (que usa new Function → 'unsafe-eval') ni su
 //   Worker. Prohibido 'unsafe-eval', comodines y CDNs.
-// - Las cabeceras CSP globales (Worker y vercel.json) no definen frame-src/child-src/default-src: si lo hicieran, se
-//   intersecarían con el <meta> y bloquearían el iframe en un despliegue y no en el otro.
+// - La cabecera CSP global del Worker no define frame-src/child-src/default-src: si lo hiciera, se intersecaría con el
+//   <meta> y bloquearía el iframe.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ const config = (await import("../astro.config.mjs")).default;
 const DIRECTIVAS = [
   "default-src 'self'",
   "img-src 'self' data:",
-  "connect-src 'self' https://vercel.com/api/blob/",
+  "connect-src 'self'",
   "frame-src 'self' https://embed.diagrams.net", // D1a: 'self' para el visor de PDF
   "object-src 'none'",
   "base-uri 'self'",
@@ -81,18 +81,9 @@ test("Worker: la CSP global de las páginas no restringe la carga (no tapa el fr
   assert.doesNotMatch(csp, DIRECTIVAS_DE_CARGA);
 });
 
-test("vercel.json: la CSP global tampoco define directivas de carga (mismo comportamiento que el Worker)", () => {
-  const v = JSON.parse(leer("vercel.json"));
-  const global = v.headers.find((h) => h.source === "/(.*)");
-  const csp = global.headers.find((x) => /content-security-policy/i.test(x.key)).value;
-  assert.match(csp, /frame-ancestors 'none'/);
-  assert.doesNotMatch(csp, DIRECTIVAS_DE_CARGA);
-});
-
-test("el HTML construido lleva la misma CSP en Vercel y Cloudflare: viene del <meta> de dist/, no de cabeceras propias del Worker", () => {
-  // Si alguien añade frame-src al Worker o a vercel.json en vez de al <meta>, un despliegue quedaría distinto del otro.
+test("la CSP de carga viene del <meta> de dist/, no de cabeceras propias del Worker", () => {
+  // Si alguien añade frame-src al Worker en vez de al <meta>, se intersecaría con el <meta>.
   const w = leer("worker/index.mjs");
   assert.doesNotMatch(w, /embed\.diagrams\.net/, "el Worker no lleva su propia lista de frames");
-  assert.doesNotMatch(leer("vercel.json"), /embed\.diagrams\.net/);
   assert.match(leer("astro.config.mjs"), /frame-src 'self' https:\/\/embed\.diagrams\.net/);
 });
