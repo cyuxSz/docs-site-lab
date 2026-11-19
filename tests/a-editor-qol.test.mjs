@@ -80,11 +80,11 @@ function montarMenu({ ocultar = [], deshabilitar = [] } = {}) {
       <div class="hw-insertar">
         <button type="button" class="btn" data-hw-menu-insertar aria-haspopup="menu" aria-expanded="false" aria-controls="hw-insertar-menu">Insertar</button>
         <div class="hw-insertar-menu" id="hw-insertar-menu" role="menu" aria-label="Insertar" hidden>
-          <button type="button" role="menuitem" tabindex="-1" data-hw-adjuntar>Adjuntar archivo</button>
-          <button type="button" role="menuitem" tabindex="-1" data-hw-insertar-diagrama aria-haspopup="dialog">Diagrama</button>
-          <button type="button" role="menuitem" tabindex="-1" data-hw-insertar-pdf>PDF</button>
-          <button type="button" role="menuitem" tabindex="-1" data-hw-insertar-bom>BOM (CSV)</button>
-          <button type="button" role="menuitem" tabindex="-1" data-hw-insertar-kicad>Esquemático o PCB de KiCad</button>
+          <button type="button" class="btn" data-hw-adjuntar role="menuitem" tabindex="-1">Adjuntar archivo</button>
+          <button type="button" class="btn" data-hw-insertar-diagrama role="menuitem" tabindex="-1" aria-haspopup="dialog">Diagrama</button>
+          <button type="button" class="btn" data-hw-insertar-pdf role="menuitem" tabindex="-1">PDF</button>
+          <button type="button" class="btn" data-hw-insertar-bom role="menuitem" tabindex="-1">BOM (CSV)</button>
+          <button type="button" class="btn" data-hw-insertar-kicad role="menuitem" tabindex="-1">Insertar esquemático (KiCad)</button>
         </div>
       </div>
     </div>
@@ -169,13 +169,15 @@ test("C2b página: el menú tiene las 5 acciones en orden, como menuitem, y cons
     ["data-hw-insertar-diagrama", "Diagrama"],
     ["data-hw-insertar-pdf", "PDF"],
     ["data-hw-insertar-bom", "BOM (CSV)"],
-    ["data-hw-insertar-kicad", "Esquemático o PCB de KiCad"],
+    // Texto y atributos iniciales fijados por tests/d1b-kicanvas.test.mjs (lote b-kicanvas-claro en paralelo).
+    ["data-hw-insertar-kicad", "Insertar esquemático (KiCad)"],
   ];
   assert.equal(items.length, 5, "5 acciones");
   esperado.forEach(([attr, texto], i) => {
     const it = items[i];
     assert.equal(it.tagName, "BUTTON", `${texto}: es <button>`);
     assert.equal(it.getAttribute("type"), "button");
+    assert.ok(it.classList.contains("btn"), `${texto}: conserva class="btn" (las 5 acciones, igual marcado)`);
     assert.ok(it.hasAttribute(attr), `${texto}: conserva ${attr}`);
     assert.equal(it.textContent.trim(), texto);
     assert.equal(it.getAttribute("tabindex"), "-1", `${texto}: fuera del orden de tabulación (roving)`);

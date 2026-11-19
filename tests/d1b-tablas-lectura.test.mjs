@@ -105,9 +105,23 @@ const TOKENS = {
 };
 
 test("C16 tokens: global.css define una vez los --hw-* con los valores de Crepe", () => {
+  // La definición base (fuera de @media) es única. Lote a-editor-qol: solo los tres tamaños de título pueden
+  // redefinirse, y solo dentro de @media (max-width: 600px).
+  const base = G.fuera.map((r) => r.decl).join(";");
+  const AJUSTABLES = ["--hw-h1-size", "--hw-h2-size", "--hw-h3-size"];
   for (const [k, val] of Object.entries(TOKENS)) {
-    const defs = [...css.matchAll(new RegExp(`${k}:\\s*([^;}]+)`, "g"))].map((m) => m[1].trim());
+    const re = () => new RegExp(`${k}:\\s*([^;}]+)`, "g");
+    const defs = [...base.matchAll(re())].map((m) => m[1].trim());
     assert.deepEqual(defs, [val], `${k}: ${JSON.stringify(defs)}`);
+    const total = [...css.matchAll(re())].length;
+    for (const m of G.medias) {
+      const n = [...m.reglas.map((r) => r.decl).join(";").matchAll(re())].length;
+      if (!n) continue;
+      assert.ok(AJUSTABLES.includes(k), `${k} no se redefine en @media`);
+      assert.match(m.cond, /max-width:\s*600px/, `${k} solo se redefine en @media (max-width: 600px), no en ${m.cond}`);
+      assert.equal(n, 1, `${k}: una sola redefinición en ${m.cond}`);
+    }
+    assert.ok(total <= (AJUSTABLES.includes(k) ? 2 : 1), `${k}: ${total} definiciones en global.css`);
   }
 });
 

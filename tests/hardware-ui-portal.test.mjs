@@ -45,7 +45,9 @@ test("[disciplina].astro: estados con aria-live, vacío con Inicializar, metadat
   assert.match(src, /<textarea[^>]*id="hw-md"/);
   assert.match(src, /<label[^>]*for="hw-md"/);
   assert.match(src, /<input[^>]*type="file"[^>]*id="hw-archivo"|<input[^>]*id="hw-archivo"[^>]*type="file"/);
-  assert.match(src, /<label[^>]*for="hw-archivo"/);
+  // Lote a-editor-qol: el input ya no tiene <label>; lo abre la acción «Adjuntar archivo» del menú «Insertar».
+  assert.match(src, /<button[^>]*data-hw-adjuntar[^>]*>\s*Adjuntar archivo\s*<\/button>/);
+  assert.match(leer(SCRIPT), /\[data-hw-adjuntar\]/, "el script conecta la acción con #hw-archivo");
   assert.match(src, /<progress\b/);
   assert.match(src, /data-hw-autor/);
   assert.match(src, /data-hw-actualizado/);
