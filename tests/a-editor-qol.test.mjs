@@ -504,6 +504,89 @@ test("C4e script: el estado se actualiza al escribir (textarea y Crepe con alCam
   assert.match(SCRIPT, /montarCrepe\([^)]*alCambiar\s*:/s, "Crepe avisa de cada cambio con alCambiar");
 });
 
+// C4f (hilo de CodeRabbit en el PR #59): al volver de Markdown a visual, mostrarModo() calcula el aviso antes de que
+// el editor tenga el contenido nuevo; al fijar la referencia (origen, inicialEditor) hay que recalcularlo.
+// Doble del estado del script: mismas variables y mismo contenidoActivo(), con las funciones reales de src/lib.
+async function editorDoble({ base, aviso = "" }) {
+  const { markdownParaGuardar } = await import("../src/lib/editor-visual.ts");
+  const dom = new JSDOM(`<p class="hw-sin-guardar" data-hw-sin-guardar role="status">${aviso}</p>`);
+  const lbl = dom.window.document.querySelector("[data-hw-sin-guardar]");
+  const e = { visual: null, origen: base, inicialEditor: base, escrituras: 0, lbl };
+  const contenidoActivo = () => (!e.visual ? e.origen : markdownParaGuardar({ actual: e.visual.getMarkdown(), inicialEditor: e.inicialEditor, origen: e.origen }));
+  e.actualizarSinGuardar = () => {
+    const t = hwLib.textoSinGuardar({ editando: true, actual: contenidoActivo(), base });
+    if (lbl.textContent !== t) {
+      lbl.textContent = t;
+      e.escrituras++;
+    }
+  };
+  e.fijar = (ref) => {
+    e.origen = ref.origen;
+    e.inicialEditor = ref.inicialEditor;
+  };
+  return e;
+}
+
+test("C4f tomarReferenciaVisual: tras editar en Markdown y volver a visual, «Cambios sin guardar» sigue visible sin teclear de nuevo", async () => {
+  const { tomarReferenciaVisual } = K();
+  assert.equal(typeof tomarReferenciaVisual, "function", "falta tomarReferenciaVisual en src/lib/editor-controles.ts");
+  const base = "# A\n";
+  const md = "# A\n\ntexto nuevo\n"; // lo escrito en el textarea
+  const e = await editorDoble({ base });
+  // mostrarModo() corre antes del montaje: sin editor visual, contenidoActivo() es el `origen` viejo y el aviso se borra.
+  e.actualizarSinGuardar();
+  assert.equal(e.lbl.textContent, "", "premisa: antes de montar el aviso se calcula con el contenido viejo");
+  // Termina el montaje: Crepe serializa a su manera lo cargado.
+  e.visual = { getMarkdown: () => "# A\n\ntexto nuevo\n\n" };
+  tomarReferenciaVisual(e.visual, md, e.fijar, e.actualizarSinGuardar);
+  assert.equal(e.origen, md, "origen = lo cargado en el editor");
+  assert.equal(e.inicialEditor, "# A\n\ntexto nuevo\n\n", "inicialEditor = lo que serializa el editor recién cargado");
+  assert.equal(e.lbl.textContent, "Cambios sin guardar", "el aviso refleja el contenido cargado");
+});
+
+test("C4f tomarReferenciaVisual: recalcula una sola vez y después de fijar la referencia; sin cambios el aviso queda vacío", async () => {
+  const { tomarReferenciaVisual } = K();
+  assert.equal(typeof tomarReferenciaVisual, "function", "falta tomarReferenciaVisual en src/lib/editor-controles.ts");
+  const orden = [];
+  tomarReferenciaVisual(
+    { getMarkdown: () => (orden.push("getMarkdown"), "x\n") },
+    "x",
+    (ref) => orden.push(["fijar", ref.origen, ref.inicialEditor]),
+    () => orden.push("recalcular"),
+  );
+  assert.deepEqual(orden, ["getMarkdown", ["fijar", "x", "x\n"], "recalcular"]);
+  // Al abrir (o al volver con el texto ya guardado) no hay cambios: el aviso no aparece aunque Crepe normalice el Markdown.
+  const base = "* a\n";
+  const e = await editorDoble({ base });
+  e.visual = { getMarkdown: () => "- a\n" };
+  tomarReferenciaVisual(e.visual, base, e.fijar, e.actualizarSinGuardar);
+  assert.equal(e.lbl.textContent, "");
+  assert.equal(e.escrituras, 0, "no se reescribe la región viva si el texto no cambia");
+  // Aviso viejo en pantalla y se vuelve a visual con el texto guardado: se borra.
+  const f = await editorDoble({ base, aviso: "Cambios sin guardar" });
+  f.visual = { getMarkdown: () => "- a\n" };
+  tomarReferenciaVisual(f.visual, base, f.fijar, f.actualizarSinGuardar);
+  assert.equal(f.lbl.textContent, "");
+});
+
+test("C4f script: montarVisual y la vuelta desde Markdown fijan la referencia con tomarReferenciaVisual y recalculan el aviso", () => {
+  assert.match(SCRIPT, /import\s*\{[^}]*\btomarReferenciaVisual\b[^}]*\}\s*from\s*["']\.\.\/lib\/editor-controles["']/);
+  const trozo = (desde, hasta) => {
+    const i = SCRIPT.indexOf(desde);
+    const j = SCRIPT.indexOf(hasta, i);
+    assert.ok(i > 0 && j > i, `no se encontró ${desde}`);
+    return SCRIPT.slice(i, j);
+  };
+  const llamada = /tomarReferenciaVisual\(\s*visual\s*,\s*md\s*,[\s\S]*?,\s*actualizarSinGuardar\s*\)/;
+  const montar = trozo("async function montarVisual(", "function destruirVisual(");
+  const trasFinally = montar.slice(montar.indexOf("finally"));
+  assert.match(trasFinally.slice(trasFinally.indexOf("actualizarGuardar()")), llamada, "tras el finally (después de su actualizarGuardar) se fija la referencia y se recalcula el aviso");
+  assert.doesNotMatch(montar, /\borigen = md\b|\binicialEditor = visual\.getMarkdown\(\)/, "montarVisual no asigna la referencia a mano (se saltaría el recálculo)");
+  const cambiar = trozo("async function cambiarModo(", "function cerrarEditor(");
+  assert.match(cambiar.slice(cambiar.indexOf("reemplazarTodo(")), llamada, "tras reemplazarTodo también se fija la referencia y se recalcula");
+  assert.doesNotMatch(cambiar, /\borigen = md\b|\binicialEditor = visual\.getMarkdown\(\)/, "cambiarModo no asigna la referencia a mano");
+});
+
 // =====================================================================
 // C5: títulos en móvil
 // =====================================================================
