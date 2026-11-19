@@ -1,5 +1,6 @@
 import { Marked } from "marked";
 import createDOMPurify from "dompurify";
+import { guardarFondoKicad, leerFondoKicad, temaKicad, type FondoKicad } from "./kicad-fondo.ts";
 import { bloqueDiagrama, parsearBloque, type Diagrama } from "./diagramas.ts";
 import { csvBom, formatoCantidad, formatoCosto, formatoUnitario, nombreCsvBom, parsearBom, parsearKicad, parsearPdf, tipoKicad, MAX_KICAD_VISOR, type Bom, type DatosKicad, type DatosPdf } from "./visores.ts";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -193,6 +194,31 @@ export async function leerArchivoKicad(doc: any, url: string): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
+type VisorKicad = { texto: string; region: any; boton: any };
+const visoresKicad = new WeakMap<object, VisorKicad>();
+const fondoPagina = new WeakMap<object, FondoKicad>();
+const fondoActual = (doc: any): FondoKicad => fondoPagina.get(doc) ?? leerFondoKicad(doc.defaultView);
+
+function crearEmbed(doc: any, texto: string, fondo: FondoKicad): any {
+  const embed = doc.createElement("kicanvas-embed");
+  embed.setAttribute("controls", "basic");
+  embed.setAttribute("controlslist", "nodownload nofullscreen noflipview");
+  embed.setAttribute("theme", temaKicad(fondo));
+  const fuente = doc.createElement("kicanvas-source");
+  fuente.textContent = texto;
+  embed.appendChild(fuente);
+  return embed;
+}
+// KiCanvas lee `theme` solo al crear el visor: se recrea el embed con el texto ya descargado.
+function aplicarFondo(doc: any, fondo: FondoKicad): void {
+  for (const fig of doc.querySelectorAll("figure.hw-kicad")) {
+    const v = visoresKicad.get(fig);
+    if (!v) continue;
+    v.region.replaceChildren(crearEmbed(doc, v.texto, fondo));
+    v.boton.setAttribute("aria-pressed", String(fondo === "oscuro"));
+  }
+}
+
 async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, kicad: OpcionesKicad): Promise<void> {
   if (fig.querySelector("kicanvas-embed") || fig.querySelector("[role=status]") || fig.hasAttribute("data-kicad-montando")) return;
   fig.setAttribute("data-kicad-montando", "");
@@ -205,13 +231,24 @@ async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, 
     region.setAttribute("role", "region");
     const nombre = tipoKicad(texto) === "pcb" ? "PCB de KiCad" : "Esquemático de KiCad";
     region.setAttribute("aria-label", d.titulo ? `${nombre}: ${d.titulo}` : nombre);
-    const embed = doc.createElement("kicanvas-embed");
-    embed.setAttribute("controls", "basic");
-    embed.setAttribute("controlslist", "nodownload nofullscreen noflipview");
-    const fuente = doc.createElement("kicanvas-source");
-    fuente.textContent = texto;
-    embed.appendChild(fuente);
-    region.appendChild(embed);
+    const fondo = fondoActual(doc);
+    region.appendChild(crearEmbed(doc, texto, fondo));
+    const boton = doc.createElement("button");
+    boton.setAttribute("type", "button");
+    boton.className = "btn";
+    boton.setAttribute("aria-pressed", String(fondo === "oscuro"));
+    boton.textContent = "Fondo oscuro";
+    boton.addEventListener("click", () => {
+      const nuevo: FondoKicad = boton.getAttribute("aria-pressed") === "true" ? "claro" : "oscuro";
+      fondoPagina.set(doc, nuevo);
+      guardarFondoKicad(doc.defaultView, nuevo);
+      aplicarFondo(doc, nuevo);
+    });
+    const enlaces = [...fig.children].filter((c: any) => c.tagName === "A");
+    const ultimo = enlaces[enlaces.length - 1];
+    if (ultimo) ultimo.after(boton);
+    else fig.insertBefore(boton, fig.querySelector("figcaption"));
+    visoresKicad.set(fig, { texto, region, boton });
     fig.insertBefore(region, fig.firstChild);
   } catch {
     const aviso = doc.createElement("p");

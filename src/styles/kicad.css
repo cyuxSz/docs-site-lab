@@ -1,0 +1,2 @@
+figure.hw-kicad > .btn { margin: 6px 8px 0 0; }
+figure.hw-kicad > .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
