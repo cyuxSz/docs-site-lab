@@ -72,10 +72,11 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
           <form class="hw-editor" data-hw-editor hidden novalidate>
             <div class="hw-modo">
               <button type="button" class="btn" data-hw-modo-markdown aria-pressed="false" aria-describedby="hw-ayuda-visual">Markdown</button>
+              <button type="button" class="btn" data-hw-atajos aria-expanded="false" aria-controls="hw-ayuda-visual">Atajos</button>
             </div>
             <div class="hw-visual" data-hw-visual></div>
             <p class="hw-ayuda" data-hw-cargando-visual aria-hidden="true" hidden>Cargando editor…</p>
-            <ul class="hw-ayuda" id="hw-ayuda-visual" data-hw-ayuda-visual>
+            <ul class="hw-ayuda" id="hw-ayuda-visual" data-hw-ayuda-visual hidden>
               <li>Pega o arrastra imágenes y archivos sobre el editor.</li>
               <li>Guarda con <kbd>Ctrl</kbd>+<kbd>S</kbd> (o <kbd>Cmd</kbd>+<kbd>S</kbd>).</li>
               <li><kbd>Tab</kbd> sangra en listas y pasa de celda en tablas.</li>
@@ -95,15 +96,20 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
               <div class="prose hw-previa" id="hw-panel-previa" role="tabpanel" aria-labelledby="hw-tab-previa" data-hw-previa tabindex="0" hidden></div>
             </div>
             <div class="hw-subida">
-              <input type="file" id="hw-archivo" class="hw-archivo" />
-              <label for="hw-archivo" class="btn">Adjuntar</label>
-              <button type="button" class="btn" data-hw-insertar-diagrama aria-haspopup="dialog">Insertar diagrama</button>
+              <input type="file" id="hw-archivo" class="hw-archivo" tabindex="-1" aria-hidden="true" />
               <input type="file" class="hw-archivo" data-hw-archivo-pdf accept=".pdf,application/pdf" tabindex="-1" aria-hidden="true" />
-              <button type="button" class="btn" data-hw-insertar-pdf>Insertar PDF</button>
               <input type="file" class="hw-archivo" data-hw-archivo-bom accept=".csv,text/csv" tabindex="-1" aria-hidden="true" />
-              <button type="button" class="btn" data-hw-insertar-bom>Insertar BOM</button>
               <input type="file" class="hw-archivo" data-hw-archivo-kicad accept=".kicad_sch,.kicad_pcb,.pdf,.svg" multiple tabindex="-1" aria-hidden="true" />
-              <button type="button" class="btn" data-hw-insertar-kicad>Insertar esquemático (KiCad)</button>
+              <div class="hw-insertar">
+                <button type="button" class="btn" data-hw-menu-insertar aria-haspopup="menu" aria-expanded="false" aria-controls="hw-insertar-menu">Insertar</button>
+                <div class="hw-insertar-menu" id="hw-insertar-menu" role="menu" aria-label="Insertar" hidden>
+                  <button type="button" class="btn" data-hw-adjuntar role="menuitem" tabindex="-1">Adjuntar archivo</button>
+                  <button type="button" class="btn" data-hw-insertar-diagrama role="menuitem" tabindex="-1" aria-haspopup="dialog">Diagrama</button>
+                  <button type="button" class="btn" data-hw-insertar-pdf role="menuitem" tabindex="-1">PDF</button>
+                  <button type="button" class="btn" data-hw-insertar-bom role="menuitem" tabindex="-1">BOM (CSV)</button>
+                  <button type="button" class="btn" data-hw-insertar-kicad role="menuitem" tabindex="-1">Insertar esquemático (KiCad)</button>
+                </div>
+              </div>
               <progress class="hw-progreso" data-hw-progreso max="100" value="0" aria-label="Progreso de la subida" hidden></progress>
               <span class="hw-subiendo" data-hw-subiendo aria-live="polite"></span>
             </div>
@@ -111,6 +117,7 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
             <div class="hw-acciones">
               <button type="submit" class="btn btn-primary" data-hw-guardar>Guardar</button>
               <button type="button" class="btn" data-hw-cancelar>Cancelar</button>
+              <p class="hw-sin-guardar" data-hw-sin-guardar role="status"></p>
             </div>
           </form>
 

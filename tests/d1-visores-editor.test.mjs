@@ -1,4 +1,4 @@
-// D1a: en el editor de hardware, "Insertar PDF" (sube el PDF con el flujo de adjuntos y mete un bloque ```pdf con su uuid) e
+// D1a: en el editor de hardware, "Insertar > PDF" (sube el PDF con el flujo de adjuntos y mete un bloque ```pdf con su uuid) e
 // "Insertar BOM" (lee un .csv local, lo valida con parsearBom y mete el bloque ```bom canónico; no sube nada).
 // La página de lectura monta los visores (montarVisores) después de pintar el fragmento ya saneado.
 import { test } from "node:test";
@@ -46,10 +46,11 @@ test("bomDeArchivo: solo .csv de hasta 64 KB; quita el BOM UTF-8 inicial y valid
   assert.match(malo.error, /costo|referencia|cantidad/i);
 });
 
-test("página de hardware: botones 'Insertar PDF' e 'Insertar BOM' junto a Adjuntar, con inputs de archivo restringidos", () => {
+// Lote a-editor-qol: las acciones viven en el menú «Insertar» (role=menuitem); el nombre ya no repite «Insertar».
+test("página de hardware: acciones 'PDF' y 'BOM (CSV)' del menú «Insertar», con inputs de archivo restringidos", () => {
   const p = leer("src/pages/[project]/[disciplina].astro");
-  assert.match(p, /<button type="button" class="btn" data-hw-insertar-pdf[^>]*>Insertar PDF<\/button>/);
-  assert.match(p, /<button type="button" class="btn" data-hw-insertar-bom[^>]*>Insertar BOM<\/button>/);
+  assert.match(p, /<button type="button" class="btn" data-hw-insertar-pdf[^>]*role="menuitem"[^>]*>PDF<\/button>/);
+  assert.match(p, /<button type="button" class="btn" data-hw-insertar-bom[^>]*role="menuitem"[^>]*>BOM \(CSV\)<\/button>/);
   assert.match(p, /<input type="file"[^>]*data-hw-archivo-pdf[^>]*accept="\.pdf,application\/pdf"/);
   assert.match(p, /<input type="file"[^>]*data-hw-archivo-bom[^>]*accept="\.csv,text\/csv"/);
 });

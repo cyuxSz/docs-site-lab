@@ -48,6 +48,30 @@ html .hw-visual .milkdown {
   }
 }
 
+/* Menú «/» de Crepe acotado: alto máximo con scroll solo en la lista de grupos (la fila de pestañas queda fija) y por encima de la
+   cabecera fija (.topbar, z-index 20). El display:flex exige repetir el ocultado de Crepe. */
+.hw-visual .milkdown .milkdown-slash-menu {
+  max-height: min(320px, 45vh);
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+  overflow: hidden;
+}
+.hw-visual .milkdown .milkdown-slash-menu > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+}
+.hw-visual .milkdown .milkdown-slash-menu .menu-groups {
+  min-height: 0;
+  overflow-y: auto;
+  max-height: none;
+}
+.hw-visual .milkdown .milkdown-slash-menu[data-show="false"] {
+  display: none;
+}
+
 /* Bordes de tabla con el color de borde del portal (el de Crepe, al 20 %, casi no se ve en el tema oscuro). */
 .hw-visual .milkdown .milkdown-table-block :is(th, td) {
   border-color: var(--line);
