@@ -3,6 +3,7 @@
 // está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
 import { fechaRelativa } from "../lib/comentarios";
 import { usoDePagina } from "../lib/hw-enlaces";
+import { conectarMenuInsertar, conectarPlegable } from "../lib/editor-controles";
 import { bloqueDiagrama, esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
 import {
   alAbortar,
@@ -34,6 +35,7 @@ import {
   resultadoRestaurarPapelera,
   slugDeTitulo,
   slugUnico,
+  textoSinGuardar,
   urlPagina,
   urlSubidaDirecta,
   validarArchivo,
@@ -115,6 +117,11 @@ async function iniciar(root: HTMLElement) {
   const dlgNueva = $<HTMLDialogElement>("#hw-nueva");
   const dlgBorrar = $<HTMLDialogElement>("#hw-borrar");
   const dlgDescartar = $<HTMLDialogElement>("#hw-descartar");
+  const btnMenuInsertar = $<HTMLButtonElement>("[data-hw-menu-insertar]");
+  const menuInsertarEl = $("#hw-insertar-menu");
+  const btnAdjuntar = $<HTMLButtonElement>("[data-hw-adjuntar]");
+  const btnAtajos = $<HTMLButtonElement>("[data-hw-atajos]");
+  const lblSinGuardar = $("[data-hw-sin-guardar]");
   const btnInsertarDiagrama = $<HTMLButtonElement>("[data-hw-insertar-diagrama]");
   const btnInsertarPdf = $<HTMLButtonElement>("[data-hw-insertar-pdf]");
   const btnInsertarBom = $<HTMLButtonElement>("[data-hw-insertar-bom]");
@@ -157,6 +164,16 @@ async function iniciar(root: HTMLElement) {
     return modVisual.markdownParaGuardar({ actual: visual.getMarkdown(), inicialEditor, origen });
   }
   const enfocarActivo = () => (modoMarkdown || !visual ? textarea.focus() : visual.enfocar());
+  // «Cambios sin guardar» en la barra fija: solo se escribe si el texto cambia, para no repetir el anuncio de la región viva.
+  function actualizarSinGuardar() {
+    const t = textoSinGuardar({ editando, actual: contenidoActivo(), base: baseMd });
+    if (lblSinGuardar.textContent !== t) lblSinGuardar.textContent = t;
+  }
+  const menuInsertarCtl = conectarMenuInsertar(btnMenuInsertar, menuInsertarEl, senal);
+  conectarPlegable(btnAtajos, senal);
+  escuchar(btnAdjuntar, "click", () => {
+    if (!insercionBloqueada(guardando, cargandoVisual)) inputArchivo.click();
+  });
   const cerrojo = crearCerrojoGuardado();
   function actualizarGuardar(avisar = false) {
     const e = estadoGuardar(subidasActivas, guardando, cargandoVisual);
@@ -168,6 +185,8 @@ async function iniciar(root: HTMLElement) {
     btnInsertarPdf.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnInsertarBom.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnInsertarKicad.disabled = insercionBloqueada(guardando, cargandoVisual);
+    btnMenuInsertar.disabled = insercionBloqueada(guardando, cargandoVisual);
+    if (btnMenuInsertar.disabled) menuInsertarCtl.cerrar();
     btnGuardar.title = e.aviso;
     const c = estadoCancelar(guardando);
     btnCancelar.disabled = c.deshabilitado;
@@ -464,6 +483,7 @@ async function iniciar(root: HTMLElement) {
         textarea.value = res.texto;
         textarea.setSelectionRange(res.cursor, res.cursor);
         previaViva();
+        actualizarSinGuardar();
       }
       ctx.anterior = datos.fuente; // referencia vigente para el siguiente guardado
       lblSubiendo.textContent = "Diagrama insertado. Guarda la página para publicarlo.";
@@ -566,14 +586,14 @@ async function iniciar(root: HTMLElement) {
   });
   escuchar(dlgDiagramaNuevo.querySelector("[data-hw-no]")!, "click", () => {
     dlgDiagramaNuevo.close();
-    btnInsertarDiagrama.focus();
+    btnMenuInsertar.focus();
   });
   escuchar(formDiagramaNuevo, "submit", async (e) => {
     e.preventDefault();
     const editor = new FormData(formDiagramaNuevo).get("editor") === "drawio" ? "drawio" : "excalidraw";
     const titulo = limpiarTitulo(String(new FormData(formDiagramaNuevo).get("titulo") ?? ""));
     dlgDiagramaNuevo.close();
-    await abrirDiagrama(editor, null, titulo, null, btnInsertarDiagrama);
+    await abrirDiagrama(editor, null, titulo, null, btnMenuInsertar);
   });
 
   // ---------- carga ----------
@@ -730,7 +750,10 @@ async function iniciar(root: HTMLElement) {
   const previaViva = crearDebounce(() => {
     if (previaVisible()) void pintarMd(previa, textarea.value, pagina?.titulo);
   }, DEBOUNCE_PREVIA_MS);
-  escuchar(textarea, "input", () => previaViva());
+  escuchar(textarea, "input", () => {
+    previaViva();
+    actualizarSinGuardar();
+  });
   // Al cruzar el umbral se pasa de un modo al otro sin tocar el texto; el foco se conserva si su panel sigue visible.
   escuchar(mqLado, "change", () => {
     if (!editando || !modoMarkdown) return;
@@ -749,7 +772,10 @@ async function iniciar(root: HTMLElement) {
   // Muestra el modo activo: el editor visual, o el textarea con sus pestañas y su vista previa (solo en modo Markdown).
   function mostrarModo() {
     contVisual.hidden = modoMarkdown;
-    ayudaVisual.hidden = modoMarkdown;
+    // «Atajos» y su lista solo existen en modo visual; la lista se ve si «Atajos» está expandido.
+    btnAtajos.hidden = modoMarkdown;
+    if (modoMarkdown) ayudaVisual.hidden = true;
+    else ayudaVisual.hidden = btnAtajos.getAttribute("aria-expanded") !== "true";
     pestanasCaja.hidden = !modoMarkdown;
     cuerpoEditor.hidden = !modoMarkdown;
     btnModoMarkdown.setAttribute("aria-pressed", String(modoMarkdown));
@@ -760,6 +786,7 @@ async function iniciar(root: HTMLElement) {
       for (const x of [btnInsertarDiagrama, btnInsertarPdf, btnInsertarBom, btnInsertarKicad]) x.hidden = false;
       previaViva.cancelar();
     }
+    actualizarSinGuardar();
   }
 
   // Monta el editor visual con `md`. Si el chunk no carga, se queda el modo Markdown con un aviso.
@@ -775,6 +802,7 @@ async function iniciar(root: HTMLElement) {
       const [mod, { html }] = await Promise.all([import("./editor-visual"), cargarRender()]);
       if (generacion !== generacionEditor) return;
       const montado = await mod.montarCrepe(contVisual, md, {
+        alCambiar: () => actualizarSinGuardar(),
         renderizarBloque: (lenguaje, contenido) => mod.vistaBloque(html, lenguaje, contenido, { editable }),
       });
       if (generacion !== generacionEditor) {
@@ -889,6 +917,7 @@ async function iniciar(root: HTMLElement) {
     previaViva.cancelar();
     destruirVisual();
     editando = false;
+    actualizarSinGuardar();
     form.hidden = true;
     lectura.hidden = false;
     if (pagina) pintarUsadoPor(pagina.slug);
@@ -966,6 +995,7 @@ async function iniciar(root: HTMLElement) {
         origen = r.json.pagina.md;
         inicialEditor = serializado;
       }
+      actualizarSinGuardar();
       await pintarPagina(r.json.pagina);
       enfocarActivo();
       if (modoMarkdown) {
@@ -1121,11 +1151,16 @@ async function iniciar(root: HTMLElement) {
   // ---------- subida de archivos ----------
   function insertar(texto: string): boolean {
     if (guardando) return false;
-    if (!modoMarkdown && visual) return visual.insertarMarkdown(texto, { enLinea: true });
+    if (!modoMarkdown && visual) {
+      const ok = visual.insertarMarkdown(texto, { enLinea: true });
+      actualizarSinGuardar();
+      return ok;
+    }
     const r = insertarEnTexto(textarea.value, textarea.selectionStart, textarea.selectionEnd, texto);
     textarea.value = r.texto;
     textarea.setSelectionRange(r.cursor, r.cursor);
     previaViva();
+    actualizarSinGuardar();
     return true;
   }
 
@@ -1241,6 +1276,7 @@ async function iniciar(root: HTMLElement) {
     if (guardando) return;
     if (!modoMarkdown && visual) {
       visual.insertarMarkdown(bloque);
+      actualizarSinGuardar();
       return;
     }
     const r = insertarBloqueTexto(textarea.value, textarea.selectionStart, bloque);

@@ -233,6 +233,11 @@ export function debeAvisarSalida({ editando, actual, base }: { editando: boolean
   return editando && actual !== base;
 }
 
+export const TEXTO_SIN_GUARDAR = "Cambios sin guardar";
+export function textoSinGuardar(c: { editando: boolean; actual: string; base: string }): string {
+  return debeAvisarSalida(c) ? TEXTO_SIN_GUARDAR : "";
+}
+
 // Enlace que navega dentro de la misma disciplina (mismo origen y ruta /<proyecto>/<disciplina>/), sin anclas.
 export function esEnlaceDeLaDisciplina(href: string, actual: string, proyecto: string, disciplina: string): boolean {
   try {
