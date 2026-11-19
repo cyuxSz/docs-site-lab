@@ -3,7 +3,7 @@
 // está en src/lib/hardware-editor.ts. El Markdown se renderiza en el navegador (marked + DOMPurify, carga diferida) y entra al DOM por un único punto.
 import { fechaRelativa } from "../lib/comentarios";
 import { usoDePagina } from "../lib/hw-enlaces";
-import { conectarMenuInsertar, conectarPlegable } from "../lib/editor-controles";
+import { conectarMenuInsertar, conectarPlegable, tomarReferenciaVisual } from "../lib/editor-controles";
 import { bloqueDiagrama, esSvg, insertarBloque, limpiarTitulo, nombresArchivos, type EditorDiagrama } from "../lib/diagramas";
 import {
   alAbortar,
@@ -789,6 +789,11 @@ async function iniciar(root: HTMLElement) {
     actualizarSinGuardar();
   }
 
+  function fijarReferencia(ref: { origen: string; inicialEditor: string }) {
+    origen = ref.origen;
+    inicialEditor = ref.inicialEditor;
+  }
+
   // Monta el editor visual con `md`. Si el chunk no carga, se queda el modo Markdown con un aviso.
   async function montarVisual(md: string, generacion: number) {
     cargandoVisual = true;
@@ -829,8 +834,7 @@ async function iniciar(root: HTMLElement) {
         actualizarGuardar();
       }
     }
-    inicialEditor = visual.getMarkdown();
-    origen = md;
+    tomarReferenciaVisual(visual, md, fijarReferencia, actualizarSinGuardar);
     visual.setSoloLectura(guardando);
     visual.enfocar();
   }
@@ -905,8 +909,7 @@ async function iniciar(root: HTMLElement) {
       mostrarModo();
       if (visual) {
         visual.reemplazarTodo(md);
-        origen = md;
-        inicialEditor = visual.getMarkdown();
+        tomarReferenciaVisual(visual, md, fijarReferencia, actualizarSinGuardar);
         visual.enfocar();
       } else void montarVisual(md, ++generacionEditor);
     }

@@ -141,3 +141,16 @@ export function conectarPlegable(boton: HTMLElement, senal?: AbortSignal): void 
     { signal: senal },
   );
 }
+
+// Fija la referencia del editor visual recién cargado (lo que serializa Crepe) y recalcula el aviso de cambios sin guardar,
+// que mostrarModo() calculó antes de que el editor tuviera el contenido.
+export function tomarReferenciaVisual(
+  visual: { getMarkdown(): string },
+  md: string,
+  fijar: (ref: { origen: string; inicialEditor: string }) => void,
+  recalcular: () => void,
+): void {
+  const inicialEditor = visual.getMarkdown();
+  fijar({ origen: md, inicialEditor });
+  recalcular();
+}
