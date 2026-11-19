@@ -804,9 +804,11 @@ ul.hw-ayuda { padding-left: 1.2em; }
 .hw-insertar-menu [role="menuitem"]:hover { background: var(--accent-soft); }
 .hw-insertar-menu [role="menuitem"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hw-insertar-menu [role="menuitem"][hidden] { display: none; }
+.hw-insertar-menu [role="menuitem"]:disabled { opacity: .6; cursor: default; }
+html[data-hw-editando] { scroll-padding-bottom: 72px; }
 .hw-progreso { width: 12rem; max-width: 100%; height: 10px; accent-color: var(--accent); }
 .hw-subiendo { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
-.hw-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; position: sticky; bottom: 0; z-index: 5; padding: 10px 0; background: var(--surface); border-top: 1px solid var(--line); }
+.hw-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; position: sticky; bottom: 0; z-index: 5; padding: 10px 12px; background: var(--surface); border-top: 1px solid var(--line); }
 .hw-sin-guardar { margin: 0; font-size: 13px; color: var(--muted); }
 .hw-historial ol { margin-top: 8px; }
 .hw-historial li { gap: 6px; }

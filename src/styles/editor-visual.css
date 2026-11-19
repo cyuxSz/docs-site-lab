@@ -55,6 +55,13 @@ html .hw-visual .milkdown {
   display: flex;
   flex-direction: column;
   z-index: 30;
+  overflow: hidden;
+}
+.hw-visual .milkdown .milkdown-slash-menu > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
 }
 .hw-visual .milkdown .milkdown-slash-menu .menu-groups {
   min-height: 0;

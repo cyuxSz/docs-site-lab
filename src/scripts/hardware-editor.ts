@@ -868,6 +868,7 @@ async function iniciar(root: HTMLElement) {
     if (guardando) return;
     if (!pagina || !editable) return;
     editando = true;
+    document.documentElement.setAttribute("data-hw-editando", "");
     sesionEdicion++;
     baseMd = pagina.md;
     origen = pagina.md;
@@ -917,6 +918,7 @@ async function iniciar(root: HTMLElement) {
     previaViva.cancelar();
     destruirVisual();
     editando = false;
+    document.documentElement.removeAttribute("data-hw-editando");
     actualizarSinGuardar();
     form.hidden = true;
     lectura.hidden = false;
