@@ -147,3 +147,91 @@ export function leerSvg(ruta) {
 export const resumen = (pines) => pines.map((p) => `${p.lado}:${p.numero}:${p.nombre}:${p.tipo}`);
 
 export { existsSync, mkdirSync, readFileSync, writeFileSync, join };
+
+// ── Lote e-seguimiento ──────────────────────────────────────────────────────────────────────────────────────────────
+// Corre el intérprete aislado (-I) con un programa y, si se da, texto por stdin.
+export function correrPython(programa, args = [], { entrada } = {}) {
+  const r = spawnSync(PYTHON, ["-I", "-c", programa, ...args], {
+    encoding: "utf8", timeout: 60_000, windowsHide: true, input: entrada,
+    env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
+  });
+  return { codigo: r.status, salida: r.stdout || "", error: r.stderr || "" };
+}
+
+// Detector estático del criterio «solo biblioteca estándar, sin procesos ni ejecución dinámica». Lee el código por stdin y
+// escribe AJENOS= (imports que no son de la biblioteca estándar, o relativos), MODULOS= y PROHIBIDO= (lo que no debe usarse).
+// Mira imports (también `from os import system` y `import *`), nombres sueltos (`eval`, `getattr`, `__import__`…) y accesos
+// por atributo (`os.system`, `os.popen`, `os.exec*`, `os.spawn*`, `sys.modules`, `x.__dict__`…). Es una alarma, no un
+// aislamiento: no pretende detectar código ofuscado a propósito.
+export const ANALISIS = `
+import ast, re, sys
+arbol = ast.parse(sys.stdin.buffer.read())
+MODULOS_PROHIBIDOS = {
+    "subprocess", "socket", "urllib", "http", "ssl", "ftplib", "pickle", "marshal", "shelve", "ctypes", "importlib",
+    "multiprocessing", "runpy", "pty", "webbrowser", "builtins", "code", "codeop", "smtplib", "telnetlib", "xmlrpc",
+    "asyncio", "concurrent", "imp", "pkgutil", "zipimport", "socketserver", "poplib", "imaplib", "nntplib",
+}
+NOMBRES = {"eval", "exec", "compile", "__import__", "getattr", "setattr", "globals", "locals", "vars", "__builtins__",
+           "breakpoint", "execfile"}
+ATRIBUTOS = re.compile(
+    r"^(system|popen[0-9]?|startfile|fork|forkpty|posix_spawnp?|exec|eval|exec[lv]p?e?|spawn[lv]p?e?|__import__|import_module"
+    r"|modules|__dict__|__builtins__|__globals__|__subclasses__|__getattribute__|__loader__|__spec__)$")
+mods, malos = set(), set()
+for n in ast.walk(arbol):
+    if isinstance(n, ast.Import):
+        mods.update(a.name.split(".")[0] for a in n.names)
+    elif isinstance(n, ast.ImportFrom):
+        mods.add("." * n.level + (n.module or "").split(".")[0])
+        for a in n.names:
+            if a.name == "*":
+                malos.add("import:*")
+            elif ATRIBUTOS.match(a.name) or a.name in NOMBRES:
+                malos.add("import:" + (n.module or "") + "." + a.name)
+    elif isinstance(n, ast.Name) and n.id in NOMBRES:
+        malos.add("nombre:" + n.id)
+    elif isinstance(n, ast.Attribute) and ATRIBUTOS.match(n.attr):
+        malos.add("atributo:" + n.attr)
+malos.update("modulo:" + m for m in mods if m in MODULOS_PROHIBIDOS)
+print("AJENOS=" + ",".join(sorted(m for m in mods if m.startswith(".") or m not in sys.stdlib_module_names)))
+print("MODULOS=" + ",".join(sorted(mods)))
+print("PROHIBIDO=" + ",".join(sorted(malos)))
+`;
+
+export function analizar(fuente) {
+  const r = correrPython(ANALISIS, [], { entrada: fuente });
+  assert.equal(r.codigo, 0, `el analizador no pudo leer el código: ${r.error}`);
+  const campo = (k) => (new RegExp(`^${k}=(.*)$`, "m").exec(r.salida)?.[1] || "").trim().split(",").filter(Boolean);
+  return { ajenos: campo("AJENOS"), modulos: campo("MODULOS"), prohibido: campo("PROHIBIDO") };
+}
+
+// Corre `main(argv)` del generador dentro del mismo intérprete con `os.replace` vigilado: anota cada renombrado y, si
+// `fallaEn` es N, hace fallar el N-ésimo con un OSError. Devuelve además la lista de renombrados [origen, destino].
+const VIGILAR = `
+import json, os, runpy, sys
+generador, falla_en, argv = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+hechos, real = [], os.replace
+def vigilado(origen, destino, *a, **k):
+    hechos.append([os.fspath(origen), os.fspath(destino)])
+    if len(hechos) == falla_en:
+        raise OSError(13, "Permission denied")
+    return real(origen, destino, *a, **k)
+os.replace = vigilado
+modulo = runpy.run_path(generador, run_name="integrados_vigilado")
+codigo = modulo["main"](argv)
+sys.stdout.flush()
+sys.stderr.flush()
+print("RENOMBRADOS=" + json.dumps(hechos))
+sys.exit(codigo)
+`;
+
+export function correrVigilado(args, fallaEn = 0) {
+  const r = correrPython(VIGILAR, [GENERADOR, String(fallaEn), ...args]);
+  const m = /^RENOMBRADOS=(.*)$/m.exec(r.salida);
+  assert.ok(m, `el generador no llegó a terminar bajo vigilancia; stdout: ${r.salida}; stderr: ${r.error}`);
+  return { ...r, salida: r.salida.slice(0, m.index), renombrados: JSON.parse(m[1]) };
+}
+
+// Caracteres de control que no deben llegar a la terminal ni al log: C0 (sin el salto de línea), DEL y C1.
+export const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
+// Líneas de un flujo de texto, sin el fin de línea (LF, o CRLF cuando Python escribe en Windows) ni la última vacía.
+export const lineas = (texto) => texto.split(/\r?\n/).filter((l, i, t) => i < t.length - 1 || l !== "");
