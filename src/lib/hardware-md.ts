@@ -1,5 +1,6 @@
 import { Marked } from "marked";
 import createDOMPurify from "dompurify";
+import { aplicarTemaVisorKicad, esperarVisorKicad, guardarFondoKicad, leerFondoKicad, temaKicad, visorInternoKicad, type FondoKicad } from "./kicad-fondo.ts";
 import { bloqueDiagrama, parsearBloque, type Diagrama } from "./diagramas.ts";
 import { csvBom, formatoCantidad, formatoCosto, formatoUnitario, nombreCsvBom, parsearBom, parsearKicad, parsearPdf, tipoKicad, MAX_KICAD_VISOR, type Bom, type DatosKicad, type DatosPdf } from "./visores.ts";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -173,7 +174,7 @@ export function cargarKicanvas(doc: any): Promise<void> {
   return p;
 }
 
-type OpcionesKicad = { cargarScript(): Promise<void>; leer(url: string): Promise<string>; webgl2(): boolean };
+type OpcionesKicad = { cargarScript(): Promise<void>; leer(url: string): Promise<string>; webgl2(): boolean; esperaVisorMs?: number };
 // KiCanvas necesita WebGL2: se comprueba con un <canvas> desechable.
 export function soportaWebgl2(doc: any): boolean {
   try {
@@ -193,9 +194,55 @@ export async function leerArchivoKicad(doc: any, url: string): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
+type VisorKicad = { embed: any; esquema: boolean };
+const visoresKicad = new WeakMap<object, VisorKicad>();
+const fondoPagina = new WeakMap<object, FondoKicad>();
+const fondoActual = (doc: any): FondoKicad => fondoPagina.get(doc) ?? leerFondoKicad(doc.defaultView);
+
+function crearEmbed(doc: any, texto: string): any {
+  const embed = doc.createElement("kicanvas-embed");
+  embed.setAttribute("controls", "basic");
+  embed.setAttribute("controlslist", "nodownload nofullscreen noflipview");
+  const fuente = doc.createElement("kicanvas-source");
+  fuente.textContent = texto;
+  embed.appendChild(fuente);
+  return embed;
+}
+// Aplica el fondo en caliente a todos los visores montados (esquemáticos y PCB) y sincroniza los botones.
+function aplicarFondo(doc: any, fondo: FondoKicad): void {
+  for (const fig of doc.querySelectorAll("figure.hw-kicad")) {
+    const v = visoresKicad.get(fig);
+    if (!v) continue;
+    // Si el tema no se aplicó a este visor, su botón conserva el estado (no dice «pulsado» con el lienzo sin cambiar).
+    if (!aplicarTemaVisorKicad(visorInternoKicad(v.embed), temaKicad(fondo))) continue;
+    for (const b of fig.querySelectorAll(":scope > button.btn")) b.setAttribute("aria-pressed", String(fondo === "oscuro"));
+  }
+}
+
+function colocarBoton(doc: any, fig: any, fondo: FondoKicad): void {
+  if (fig.querySelector(":scope > button.btn")) return;
+  const boton = doc.createElement("button");
+  boton.setAttribute("type", "button");
+  boton.className = "btn";
+  boton.setAttribute("aria-pressed", String(fondo === "oscuro"));
+  boton.textContent = "Fondo oscuro";
+  boton.addEventListener("click", () => {
+    const nuevo: FondoKicad = boton.getAttribute("aria-pressed") === "true" ? "claro" : "oscuro";
+    fondoPagina.set(doc, nuevo);
+    guardarFondoKicad(doc.defaultView, nuevo);
+    aplicarFondo(doc, nuevo);
+  });
+  const enlaces = [...fig.children].filter((c: any) => c.tagName === "A");
+  const ultimo = enlaces[enlaces.length - 1];
+  if (ultimo) ultimo.after(boton);
+  else fig.insertBefore(boton, fig.querySelector("figcaption"));
+}
+
 async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, kicad: OpcionesKicad): Promise<void> {
   if (fig.querySelector("kicanvas-embed") || fig.querySelector("[role=status]") || fig.hasAttribute("data-kicad-montando")) return;
   fig.setAttribute("data-kicad-montando", "");
+  let embed: any = null;
+  let esquema = false;
   try {
     if (!kicad.webgl2()) throw new Error("Sin WebGL2");
     const texto = await kicad.leer(urlArchivo(proyecto, d.archivo));
@@ -203,15 +250,12 @@ async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, 
     await kicad.cargarScript();
     const region = doc.createElement("div");
     region.setAttribute("role", "region");
-    const nombre = tipoKicad(texto) === "pcb" ? "PCB de KiCad" : "Esquemático de KiCad";
+    esquema = tipoKicad(texto) !== "pcb";
+    const nombre = esquema ? "Esquemático de KiCad" : "PCB de KiCad";
     region.setAttribute("aria-label", d.titulo ? `${nombre}: ${d.titulo}` : nombre);
-    const embed = doc.createElement("kicanvas-embed");
-    embed.setAttribute("controls", "basic");
-    embed.setAttribute("controlslist", "nodownload nofullscreen noflipview");
-    const fuente = doc.createElement("kicanvas-source");
-    fuente.textContent = texto;
-    embed.appendChild(fuente);
+    embed = crearEmbed(doc, texto);
     region.appendChild(embed);
+    visoresKicad.set(fig, { embed, esquema });
     fig.insertBefore(region, fig.firstChild);
   } catch {
     const aviso = doc.createElement("p");
@@ -221,6 +265,15 @@ async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, 
   } finally {
     fig.removeAttribute("data-kicad-montando");
   }
+  if (!embed) return;
+  // En segundo plano: espera acotada al visor interno, aplica el tema y solo entonces ofrece el botón (esquemático).
+  const ms = kicad.esperaVisorMs ?? 20000;
+  void esperarVisorKicad(embed, doc.defaultView, ms).then((visor) => {
+    if (!visor || !embed.isConnected) return;
+    const fondo = fondoActual(doc);
+    if (!aplicarTemaVisorKicad(visor, temaKicad(fondo))) return;
+    if (esquema) colocarBoton(doc, fig, fondo);
+  });
 }
 
 // Añade a los visores ya pintados (y saneados) lo que no puede venir del Markdown: el <iframe> del PDF y el botón "Exportar CSV".
