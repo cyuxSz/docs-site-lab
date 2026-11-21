@@ -602,6 +602,107 @@ test("C7: con un visor que monta y otro que falla, solo el que monta tiene botó
   assert.equal(f.llamadas.urls.length, 2);
 });
 
+// ---------- C9. aria-pressed solo cambia si el tema se aplicó a ese visor ----------
+
+const lanzar = () => {
+  throw new Error("interno roto");
+};
+// Formas de que aplicarTemaVisorKicad devuelva false en un visor ya montado y con botón.
+const FALLOS = [
+  ["update_theme lanza", (el) => { el.update_theme = lanzar; }],
+  ["viewer.paint lanza", (el) => { el.viewer.paint = lanzar; }],
+  ["viewer.draw lanza", (el) => { el.viewer.draw = lanzar; }],
+  ["visor sin cargar", (el) => { el.loaded = false; }],
+  ["sin update_theme", (el) => { delete el.update_theme; }],
+];
+const pulsados = (win) => botones(win).map((b) => b.getAttribute("aria-pressed"));
+async function dosEsquematicos(win) {
+  await montar(win, `${bloque(`archivo: ${A}`)}\n${bloque(`archivo: ${B}`)}`);
+  await hasta(() => vivos(win).length === 2 && botones(win).length === 2, "dos visores con botón");
+}
+
+test("C9: si el tema no se pudo aplicar a un visor, su botón conserva aria-pressed y el del otro visor sí cambia", async () => {
+  const { guardarFondoKicad } = await fondo();
+  for (const [nombre, romper] of FALLOS) {
+    for (const inicial of ["claro", "oscuro"]) {
+      const caso = `${nombre}, desde ${inicial}`;
+      const win = ventana();
+      if (inicial === "oscuro") guardarFondoKicad(win, "oscuro");
+      await dosEsquematicos(win);
+      const antes = inicial === "oscuro" ? "true" : "false";
+      const despues = inicial === "oscuro" ? "false" : "true";
+      assert.deepEqual(pulsados(win), [antes, antes], caso);
+      const [roto, sano] = vivos(win);
+      romper(roto.el);
+      assert.doesNotThrow(() => botones(win)[1].click(), caso);
+      await hasta(() => sano.el.theme === (inicial === "oscuro" ? CLARO : OSCURO), `${caso}: el visor sano sí cambia`);
+      assert.equal(botones(win)[1].getAttribute("aria-pressed"), despues, `${caso}: el botón del visor que cambió refleja el fondo nuevo`);
+      assert.equal(botones(win)[0].getAttribute("aria-pressed"), antes, `${caso}: el botón del visor que no se repintó conserva su estado`);
+    }
+  }
+});
+
+test("C9: pulsar el botón del visor que falla no lo marca como pulsado, los demás cambian, y al reintentar con el visor ya sano queda sincronizado", async () => {
+  const win = ventana();
+  await dosEsquematicos(win);
+  const [roto, sano] = vivos(win);
+  const dibujar = roto.el.viewer.draw;
+  roto.el.viewer.draw = lanzar;
+  assert.doesNotThrow(() => botones(win)[0].click());
+  await hasta(() => sano.el.theme === OSCURO, "el otro visor sí cambia");
+  assert.deepEqual(pulsados(win), ["false", "true"], "solo cambia el botón del visor que se repintó");
+  // Reintento: el botón que quedó atrás vuelve a pedir el mismo fondo (oscuro), ahora con el visor sano.
+  roto.el.viewer.draw = dibujar;
+  botones(win)[0].click();
+  await hasta(temasSon(win, [OSCURO, OSCURO]), "los dos visores en witchhazel tras reintentar");
+  assert.deepEqual(pulsados(win), ["true", "true"], "tras el reintento los dos botones quedan sincronizados");
+  assert.equal(vivos(win).length, 2, "no se recrea ningún visor");
+});
+
+test("C9: con un PCB en la página, el esquemático que falla conserva su botón sin pulsar y el PCB cambia igual; un PCB que falla no crea botón ni aviso", async () => {
+  const texto = `${bloque(`archivo: ${A}`)}\n${bloque(`archivo: ${C}`)}`;
+  // El esquemático falla; la placa sí cambia.
+  const win = ventana();
+  await montar(win, texto, falsoKicad(porUrl));
+  await hasta(temasSon(win, [CLARO, CLARO]), "ambos en kicad");
+  await hasta(() => botones(win).length === 1, "un botón (el del esquemático)");
+  const [esquema, placa] = vivos(win);
+  assert.equal(placa.pcb, true);
+  esquema.el.viewer.paint = lanzar;
+  assert.doesNotThrow(() => botones(win)[0].click());
+  await hasta(() => placa.el.theme === OSCURO, "la placa sí cambia");
+  assert.deepEqual(pulsados(win), ["false"], "el botón del esquemático que no se repintó sigue sin pulsar");
+  // La placa falla; el esquemático sí cambia y su botón lo refleja. En la figura del PCB no aparece nada.
+  const win2 = ventana();
+  await montar(win2, texto, falsoKicad(porUrl));
+  await hasta(temasSon(win2, [CLARO, CLARO]), "ambos en kicad");
+  await hasta(() => botones(win2).length === 1, "un botón (el del esquemático)");
+  const [esquema2, placa2] = vivos(win2);
+  placa2.el.viewer.draw = lanzar;
+  assert.doesNotThrow(() => botones(win2)[0].click());
+  await hasta(() => esquema2.el.theme === OSCURO, "el esquemático sí cambia");
+  assert.deepEqual(pulsados(win2), ["true"]);
+  const figs = [...win2.document.querySelectorAll("figure.hw-kicad")];
+  assert.equal(figs[1].querySelectorAll("button").length, 0, "el PCB sigue sin botón");
+  assert.equal(win2.document.querySelector("figure.hw-kicad [role=status]"), null, "sin aviso de error");
+});
+
+test("C9: la preferencia no cambia de comportamiento; se guarda la elegida aunque un visor falle y los visores montados después la usan", async () => {
+  const { leerFondoKicad, CLAVE_FONDO_KICAD } = await fondo();
+  const win = ventana();
+  await dosEsquematicos(win);
+  vivos(win)[0].el.viewer.draw = lanzar;
+  botones(win)[0].click();
+  assert.equal(leerFondoKicad(win), "oscuro", "se guarda el fondo elegido, también si el visor pulsado falló");
+  assert.deepEqual(clavesPropias(win), [CLAVE_FONDO_KICAD]);
+  assert.equal(win.localStorage.getItem("kc:prefs"), null);
+  // La página se vuelve a pintar: los visores nuevos nacen con la preferencia guardada.
+  await montar(win, `${bloque(`archivo: ${A}`)}\n${bloque(`archivo: ${B}`)}`);
+  await hasta(temasSon(win, [OSCURO, OSCURO]), "los visores nuevos en witchhazel");
+  await hasta(() => botones(win).length === 2, "dos botones");
+  assert.deepEqual(pulsados(win), ["true", "true"]);
+});
+
 // ---------- C8. Estilos (archivo propio, sin tocar global.css) ----------
 
 test("C8 estilos: src/styles/kicad.css, cargado desde Base.astro, con foco visible para el botón y solo tokens (sin colores nuevos)", () => {
