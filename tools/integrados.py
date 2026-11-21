@@ -95,7 +95,7 @@ def techo10(v):
 
 # ── lectura de CSV ────────────────────────────────────────────────────────────────────────────────────────────────────
 def leer_csv(texto):
-    lector = csv.reader(io.StringIO(texto, newline=""))
+    lector = csv.reader(io.StringIO(texto, newline=""), strict=True)
     filas = []
     try:
         for campos in lector:
@@ -320,7 +320,8 @@ def modelo_drawio(nombre, pines):
     nuB, noB = ancho_col(g["abajo"], "numero", CH, PAD), ancho_col(g["abajo"], "nombre", CH, PAD)
     res_arriba = 2 + nuT + noT + PAD if nt else 0
     res_abajo = 2 + nuB + noB + PAD if nb else 0
-    y0 = res_arriba + 10
+    banda = 20 if nt or nb else 0  # franja propia para el nombre del integrado, bajo los rótulos de arriba
+    y0 = res_arriba + banda + 10
     filas = max(nl, nr) * FILA
     h = max(40, techo10(y0 + filas + res_abajo + 10))
     w = max(40, techo10(max(nuL + noL + nuR + noR + len(nombre) * CH + 16, max(nt, nb) * FILA + FILA)))
@@ -361,7 +362,8 @@ def modelo_drawio(nombre, pines):
             etiqueta(i, "m", p["nombre"], px - lm / 2, cm - 7, lm, "center", True)
 
     estilo = ("rounded=0;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#000000;fontColor=#000000;fontSize=11;fontStyle=1;"
-              f"verticalAlign=middle;align=center;points=[{','.join(puntos)}]")
+              f"{f'verticalAlign=top;spacingTop={n(res_arriba)}' if banda else 'verticalAlign=middle'};"
+              f"align=center;points=[{','.join(puntos)}]")
     xml = (
         '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>'
         f'<mxCell id="cuerpo" value="{esc(nombre)}" style="{estilo}" vertex="1" parent="1">'
@@ -395,7 +397,8 @@ def svg_integrado(nombre, pines):
     res_arriba = ancho_col(g["arriba"], "nombre", CW, 2 * PAD)
     res_abajo = ancho_col(g["abajo"], "nombre", CW, 2 * PAD)
     paso = max(28, (max(numeros_tb) if numeros_tb else 0) * CW + 12)
-    y0 = res_arriba + M
+    banda = 18 if nt or nb else 0  # franja propia para el título, bajo los rótulos de arriba
+    y0 = res_arriba + banda + M
     filas = max(nl, nr) * FILA
     h = max(60, y0 + filas + res_abajo + M)
     w = max(60, noL + noR + len(nombre) * CW + 3 * PAD, (max(nt, nb) + 1) * paso)
@@ -410,7 +413,7 @@ def svg_integrado(nombre, pines):
         f"<title>{esc(nombre)}</title>",
         f'<rect x="0" y="0" width="{W}" height="{H}" fill="#ffffff"/>',
         f'<rect x="{ox}" y="{oy}" width="{w}" height="{h}" fill="#fff8dc" stroke="#333333" stroke-width="2"/>',
-        texto(ox + w / 2, oy + (y0 + filas / 2 if filas else h / 2) + 4, nombre, "middle", ' font-weight="bold" font-size="14"'),
+        texto(ox + w / 2, oy + (res_arriba + 14 if banda else (y0 + filas / 2 if filas else h / 2) + 4), nombre, "middle", ' font-weight="bold" font-size="14"'),
     ]
     contador = {x: 0 for x in LADOS}
     for p in pines:
