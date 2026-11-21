@@ -291,9 +291,9 @@ test("CSP (C15): KiCanvas solo abre img-src a blob: (iconos de zoom); nada más 
 
 // ---------- 5. Editor ----------
 
-test("página de hardware: botón 'Insertar esquemático (KiCad)' con input de archivo (.kicad_sch, .kicad_pcb y respaldo .pdf/.svg)", () => {
+test("página de hardware: ítem 'Esquemático o PCB de KiCad' con input de archivo (.kicad_sch, .kicad_pcb y respaldo .pdf/.svg)", () => {
   const p = leer("src/pages/[project]/[disciplina].astro");
-  assert.match(p, /<button type="button" class="btn" data-hw-insertar-kicad[^>]*>Insertar esquemático \(KiCad\)<\/button>/);
+  assert.match(p, /<button type="button" class="btn" data-hw-insertar-kicad[^>]*>Esquemático o PCB de KiCad<\/button>/);
   const input = p.match(/<input type="file"[^>]*data-hw-archivo-kicad[^>]*>/)?.[0] ?? "";
   assert.ok(input, "input data-hw-archivo-kicad");
   assert.match(input, /accept="\.kicad_sch,\.kicad_pcb,\.pdf,\.svg"/);

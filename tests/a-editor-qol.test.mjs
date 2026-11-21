@@ -84,7 +84,7 @@ function montarMenu({ ocultar = [], deshabilitar = [] } = {}) {
           <button type="button" class="btn" data-hw-insertar-diagrama role="menuitem" tabindex="-1" aria-haspopup="dialog">Diagrama</button>
           <button type="button" class="btn" data-hw-insertar-pdf role="menuitem" tabindex="-1">PDF</button>
           <button type="button" class="btn" data-hw-insertar-bom role="menuitem" tabindex="-1">BOM (CSV)</button>
-          <button type="button" class="btn" data-hw-insertar-kicad role="menuitem" tabindex="-1">Insertar esquemático (KiCad)</button>
+          <button type="button" class="btn" data-hw-insertar-kicad role="menuitem" tabindex="-1">Esquemático o PCB de KiCad</button>
         </div>
       </div>
     </div>
@@ -170,7 +170,7 @@ test("C2b página: el menú tiene las 5 acciones en orden, como menuitem, y cons
     ["data-hw-insertar-pdf", "PDF"],
     ["data-hw-insertar-bom", "BOM (CSV)"],
     // Texto y atributos iniciales fijados por tests/d1b-kicanvas.test.mjs (lote b-kicanvas-claro en paralelo).
-    ["data-hw-insertar-kicad", "Insertar esquemático (KiCad)"],
+    ["data-hw-insertar-kicad", "Esquemático o PCB de KiCad"],
   ];
   assert.equal(items.length, 5, "5 acciones");
   esperado.forEach(([attr, texto], i) => {
