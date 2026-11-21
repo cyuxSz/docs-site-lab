@@ -213,7 +213,8 @@ function aplicarFondo(doc: any, fondo: FondoKicad): void {
   for (const fig of doc.querySelectorAll("figure.hw-kicad")) {
     const v = visoresKicad.get(fig);
     if (!v) continue;
-    aplicarTemaVisorKicad(visorInternoKicad(v.embed), temaKicad(fondo));
+    // Si el tema no se aplicó a este visor, su botón conserva el estado (no dice «pulsado» con el lienzo sin cambiar).
+    if (!aplicarTemaVisorKicad(visorInternoKicad(v.embed), temaKicad(fondo))) continue;
     for (const b of fig.querySelectorAll(":scope > button.btn")) b.setAttribute("aria-pressed", String(fondo === "oscuro"));
   }
 }
