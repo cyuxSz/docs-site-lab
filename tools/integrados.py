@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import stat
 import sys
 import unicodedata
 
@@ -124,21 +125,26 @@ def registros(texto, separador, solo_primero=False):
 def elegir_separador(texto):
     """Decide entre coma y punto y coma mirando solo la cabecera (primer registro no vacío)."""
     lecturas = []  # (separador, línea, celdas) de las lecturas que pudieron leer la cabecera
+    error_formato = None  # primer error de formato (el de la coma si falló; si no, el de punto y coma)
     for sep in (",", ";"):
         try:
             filas = registros(texto, sep, True)
-        except Error:
+        except Error as e:
+            if error_formato is None:
+                error_formato = e
             continue
         if filas:
             lecturas.append((sep, filas[0][0], [c.strip().lower() for c in filas[0][1]]))
-    if not lecturas:
-        return ","
     validas = [sep for sep, _, cab in lecturas if all(c in cab for c in COLUMNAS_OBLIGATORIAS)]
     if len(validas) == 2:
         raise Error("el separador es ambiguo: la cabecera es válida con coma y con punto y coma; "
                     "deja solo uno de los dos en la cabecera", lecturas[0][1])
     if validas:
         return validas[0]
+    if error_formato is not None:
+        raise error_formato
+    if not lecturas:
+        return ","
     mejor = max(lecturas, key=lambda t: sum(c in t[2] for c in COLUMNAS_OBLIGATORIAS))  # en empate, la de coma
     faltan = [c for c in COLUMNAS_OBLIGATORIAS if c not in mejor[2]]
     raise Error(f"faltan columnas obligatorias: {', '.join(faltan)} (la cabecera debe llevar "
@@ -583,6 +589,8 @@ def escribir(salida, archivos):
         raise Error(f"no se pudo crear la carpeta de salida ({motivo(e)})", archivo=salida) from None
     temporales = {}  # nombre de salida -> ruta del temporal que aún no se colocó
     reemplazados = 0
+    umask = os.umask(0)  # lectura sin carrera: se fija 0 y se restaura enseguida (el generador es de un solo hilo)
+    os.umask(umask)
     try:
         for i, (nombre_salida, contenido) in enumerate(archivos.items()):
             datos = contenido.encode("utf-8")
@@ -594,6 +602,12 @@ def escribir(salida, archivos):
                 pass  # no existía (o no se puede leer): no cuenta como reemplazo
             try:
                 temporales[nombre_salida] = crear_temporal(salida, i, datos)
+                destino = os.path.join(salida, nombre_salida)
+                try:
+                    modo = stat.S_IMODE(os.stat(destino).st_mode)  # ya existía: conserva su modo
+                except FileNotFoundError:
+                    modo = 0o666 & ~umask  # nueva: como una creación normal
+                os.chmod(temporales[nombre_salida], modo)  # antes del os.replace
             except OSError as e:
                 raise Error(f"no se pudo escribir {nombre_salida} ({motivo(e)})", archivo=salida) from None
         for nombre_salida in list(temporales):
@@ -618,7 +632,7 @@ def crear_temporal(salida, indice, datos):
     while True:
         ruta = os.path.join(salida, f".integrados-{os.getpid()}-{indice}-{intento}.tmp")
         try:
-            fd = os.open(ruta, banderas, 0o666)
+            fd = os.open(ruta, banderas, 0o600)
             break
         except FileExistsError:
             intento += 1
