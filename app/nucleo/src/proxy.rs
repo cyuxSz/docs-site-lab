@@ -17,6 +17,7 @@ use http::header::{
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode};
 
 use crate::destino::{decodificar_una_vez, solo_ruta, Destino};
+use crate::login::Login;
 use crate::pantalla::pantalla_sin_sesion;
 use crate::token::{FuenteDeToken, Token};
 use crate::{CSP_AISLADO, CSP_MARCOS, ORIGENES_APP, TOPE_CUERPO};
@@ -160,6 +161,12 @@ impl Drop for Hueco<'_> {
     }
 }
 
+/// Quien abre una URL en el navegador del sistema. Lo implementa la cáscara.
+pub trait Navegador: Send + Sync {
+    /// `false` si no se pudo abrir.
+    fn abrir(&self, url: &str) -> bool;
+}
+
 /// El proxy. Se comparte entre hilos con `Arc<Proxy>`.
 pub struct Proxy {
     destino: Destino,
@@ -181,6 +188,16 @@ impl Proxy {
             .build();
         let huecos = Huecos::nuevo(limites.simultaneas, limites.en_espera);
         Proxy { destino, fuente, limites, agente, huecos, sesion_perdida: AtomicBool::new(false) }
+    }
+
+    /// Proxy de la app: el destino y el token salen del `Login`, y atiende `RUTA_INICIAR`.
+    /// Esqueleto del lote `app-login`.
+    pub fn con_login(
+        _login: Arc<Login>,
+        _navegador: Arc<dyn Navegador>,
+        _limites: Limites,
+    ) -> Proxy {
+        todo!("lote app-login: Proxy::con_login")
     }
 
     /// Atiende una petición del webview. Nunca entra en pánico ni devuelve el token.

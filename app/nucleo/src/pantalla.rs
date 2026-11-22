@@ -3,6 +3,7 @@
 use http::header::{CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS};
 use http::{HeaderValue, Response};
 
+use crate::login::EstadoLogin;
 use crate::{CSP_PANTALLA, ORIGENES_APP};
 
 /// Mismo aspecto que las páginas de login del portal (`page()` de `lib/login-core.mjs`).
@@ -30,6 +31,11 @@ pub fn pantalla_sin_sesion() -> Response<Vec<u8>> {
     cabeceras.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     cabeceras.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     respuesta
+}
+
+/// Pantalla de login según el estado. Esqueleto del lote `app-login`.
+pub fn pantalla_de_login(_estado: EstadoLogin) -> Response<Vec<u8>> {
+    todo!("lote app-login: pantalla_de_login")
 }
 
 /// `true` si la URL pertenece a uno de `ORIGENES_APP`. Es la regla de `on_navigation`.
