@@ -39,3 +39,21 @@ pub fn navegacion_permitida(url: &str) -> bool {
         None => false,
     })
 }
+
+/// Qué hace la cáscara cuando el contenido pide una ventana nueva. Nunca se abre ninguna.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VentanaNueva {
+    /// La URL es del propio origen: la ventana principal navega a ella.
+    NavegarPrincipal,
+    /// Cualquier otra URL: no pasa nada.
+    Negar,
+}
+
+/// Decide una petición de ventana nueva con la misma regla que `on_navigation`.
+pub fn decidir_ventana_nueva(url: &str) -> VentanaNueva {
+    if navegacion_permitida(url) {
+        VentanaNueva::NavegarPrincipal
+    } else {
+        VentanaNueva::Negar
+    }
+}

@@ -9,10 +9,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use nucleo::{
-    config_de_arranque, navegacion_permitida, Limites, Proxy, TokenFijo, ESQUEMA, VAR_DESTINO_DEV,
-    VAR_TOKEN_DEV,
+    config_de_arranque, decidir_ventana_nueva, navegacion_permitida, Limites, Proxy, TokenFijo,
+    VentanaNueva, ESQUEMA, VAR_DESTINO_DEV, VAR_TOKEN_DEV,
 };
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 fn main() -> ExitCode {
     // Las variables de desarrollo solo se leen en builds de depuración, y aun así
@@ -48,13 +48,23 @@ fn main() -> ExitCode {
         })
         .setup(|app| {
             let inicio = format!("{ESQUEMA}://localhost/").parse()?;
+            let manejador = app.handle().clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::CustomProtocol(inicio))
                 .title("VantTec Docs")
                 .inner_size(1280.0, 860.0)
                 .use_https_scheme(true)
                 .zoom_hotkeys_enabled(true)
                 .on_navigation(|url| navegacion_permitida(url.as_str()))
-                .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
+                // Ninguna ventana nueva se abre. Si la pedida es del propio origen, la ventana
+                // principal navega a ella; esa navegación pasa por `on_navigation` como todas.
+                .on_new_window(move |url, _features| {
+                    if decidir_ventana_nueva(url.as_str()) == VentanaNueva::NavegarPrincipal {
+                        if let Some(principal) = manejador.get_webview_window("main") {
+                            let _ = principal.navigate(url);
+                        }
+                    }
+                    tauri::webview::NewWindowResponse::Deny
+                })
                 .build()?;
             Ok(())
         })

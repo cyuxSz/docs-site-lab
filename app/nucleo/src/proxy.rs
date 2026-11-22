@@ -11,15 +11,15 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use http::header::{
-    HeaderName, ACCEPT, ALLOW, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION,
-    ORIGIN, X_CONTENT_TYPE_OPTIONS,
+    HeaderName, ACCEPT, ALLOW, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_SECURITY_POLICY,
+    CONTENT_TYPE, LOCATION, ORIGIN, X_CONTENT_TYPE_OPTIONS,
 };
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode};
 
 use crate::destino::{decodificar_una_vez, solo_ruta, Destino};
 use crate::pantalla::pantalla_sin_sesion;
 use crate::token::{FuenteDeToken, Token};
-use crate::{ORIGENES_APP, TOPE_CUERPO};
+use crate::{CSP_AISLADO, CSP_MARCOS, ORIGENES_APP, TOPE_CUERPO};
 
 const METODOS: [&str; 6] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 const METODOS_ALLOW: &str = "GET, HEAD, POST, PUT, PATCH, DELETE";
@@ -27,6 +27,9 @@ const METODOS_ALLOW: &str = "GET, HEAD, POST, PUT, PATCH, DELETE";
 const SEC_FETCH_SITE: &str = "sec-fetch-site";
 const SEC_FETCH_MODE: &str = "sec-fetch-mode";
 const SEC_FETCH_DEST: &str = "sec-fetch-dest";
+
+/// Nombre, en minúsculas, de la cabecera en la que se busca `sandbox`.
+const CSP: &str = "content-security-policy";
 
 const MSG_ORIGEN: &str = "Origen no permitido";
 const MSG_METODO: &str = "Método no permitido";
@@ -183,10 +186,23 @@ impl Proxy {
     /// Atiende una petición del webview. Nunca entra en pánico ni devuelve el token.
     pub fn atender(&self, peticion: Request<Vec<u8>>) -> Response<Vec<u8>> {
         let es_head = peticion.method() == Method::HEAD;
-        let mut respuesta = catch_unwind(AssertUnwindSafe(|| self.atender_peticion(peticion)))
-            .unwrap_or_else(|_| error_local(StatusCode::BAD_GATEWAY, MSG_RESPUESTA));
+        // Solo `entregar` lo pone a `true`, y solo cuando devuelve la respuesta del servidor.
+        let mut aislado = false;
+        let atendida =
+            catch_unwind(AssertUnwindSafe(|| self.atender_peticion(peticion, &mut aislado)));
+        let mut respuesta = atendida.unwrap_or_else(|_| {
+            aislado = false;
+            error_local(StatusCode::BAD_GATEWAY, MSG_RESPUESTA)
+        });
         if es_head {
             respuesta.body_mut().clear();
+        }
+        // Lo último, sea cual sea la rama: las CSP propias van detrás de las que ya lleve la
+        // respuesta. Se añaden, no sustituyen: varias CSP se intersectan, así que solo restringen.
+        let cabeceras = respuesta.headers_mut();
+        cabeceras.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_MARCOS));
+        if aislado {
+            cabeceras.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_AISLADO));
         }
         respuesta
     }
@@ -196,8 +212,13 @@ impl Proxy {
         self.sesion_perdida.load(Ordering::SeqCst)
     }
 
-    /// Las comprobaciones, en el orden de la spec. Solo la última toca la red.
-    fn atender_peticion(&self, peticion: Request<Vec<u8>>) -> Response<Vec<u8>> {
+    /// Las comprobaciones, en el orden de la spec. Solo la última toca la red. `aislado` queda a
+    /// `true` si la respuesta es la del servidor y este mandó una CSP con `sandbox`.
+    fn atender_peticion(
+        &self,
+        peticion: Request<Vec<u8>>,
+        aislado: &mut bool,
+    ) -> Response<Vec<u8>> {
         let (partes, cuerpo) = peticion.into_parts();
 
         // Lo primero, y sin mirar nada más: a otro origen se le contesta siempre lo mismo.
@@ -241,7 +262,7 @@ impl Proxy {
             return sin_sesion(es_navegacion);
         }
 
-        self.reenviar(metodo, &url, &partes.headers, &cuerpo, &token)
+        self.reenviar(metodo, &url, &partes.headers, &cuerpo, &token, aislado)
     }
 
     fn reenviar(
@@ -251,6 +272,7 @@ impl Proxy {
         cabeceras: &HeaderMap,
         cuerpo: &[u8],
         token: &Token,
+        aislado: &mut bool,
     ) -> Response<Vec<u8>> {
         let mut peticion = self.agente.request(metodo, url);
         let nombradas = nombradas_por_connection(cabeceras);
@@ -280,10 +302,15 @@ impl Proxy {
             Err(ureq::Error::Status(_, respuesta)) => respuesta,
             Err(ureq::Error::Transport(_)) => return error_local(StatusCode::BAD_GATEWAY, MSG_RED),
         };
-        self.entregar(metodo == "HEAD", respuesta)
+        self.entregar(metodo == "HEAD", respuesta, aislado)
     }
 
-    fn entregar(&self, es_head: bool, respuesta: ureq::Response) -> Response<Vec<u8>> {
+    fn entregar(
+        &self,
+        es_head: bool,
+        respuesta: ureq::Response,
+        aislado: &mut bool,
+    ) -> Response<Vec<u8>> {
         let invalida = || error_local(StatusCode::BAD_GATEWAY, MSG_RESPUESTA);
 
         let estado = match StatusCode::from_u16(respuesta.status()) {
@@ -292,6 +319,15 @@ impl Proxy {
         };
 
         let mut nombres = respuesta.headers_names();
+        // Se mira lo que mandó el servidor, antes de cualquier filtro. El cliente oculta los
+        // valores que no son ASCII visible: una CSP así no se puede leer ni entregar, y cuenta
+        // como si trajera `sandbox`.
+        let csp_recibidas = nombres.iter().filter(|n| n.as_str() == CSP).count();
+        let csp_legibles = respuesta.all(CSP);
+        let con_sandbox = csp_legibles.len() < csp_recibidas
+            || csp_legibles
+                .iter()
+                .any(|valor| HeaderValue::from_str(valor).is_err() || trae_sandbox(valor));
         let mut vistos = Vec::new();
         nombres.retain(|n| !vistos.contains(n) && { vistos.push(n.clone()); true });
         let recibidas: Vec<(String, Vec<String>)> = nombres
@@ -385,6 +421,7 @@ impl Proxy {
         if token_rechazado {
             self.sesion_perdida.store(true, Ordering::SeqCst);
         }
+        *aislado = con_sandbox;
         salida
     }
 
@@ -484,6 +521,17 @@ fn nombradas_por_connection(cabeceras: &HeaderMap) -> Vec<String> {
 fn desafia_con_bearer(valor: &str) -> bool {
     valor.split(',').any(|parte| {
         parte.split_whitespace().next().is_some_and(|esquema| esquema.eq_ignore_ascii_case("bearer"))
+    })
+}
+
+/// `true` si alguna política de una `Content-Security-Policy` tiene la directiva `sandbox`. Las
+/// políticas van separadas por comas y las directivas por `;`; el nombre es el primer token.
+fn trae_sandbox(csp: &str) -> bool {
+    csp.split([',', ';']).any(|directiva| {
+        directiva
+            .split([' ', '\t'])
+            .find(|token| !token.is_empty())
+            .is_some_and(|nombre| nombre.eq_ignore_ascii_case("sandbox"))
     })
 }
 

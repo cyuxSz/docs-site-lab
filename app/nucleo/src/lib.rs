@@ -9,7 +9,7 @@ mod proxy;
 mod token;
 
 pub use destino::{config_de_arranque, Arranque, Destino, DestinoInvalido};
-pub use pantalla::{navegacion_permitida, pantalla_sin_sesion};
+pub use pantalla::{decidir_ventana_nueva, navegacion_permitida, pantalla_sin_sesion, VentanaNueva};
 pub use proxy::{Limites, Proxy};
 pub use token::{FuenteDeToken, Token, TokenFijo};
 
@@ -31,3 +31,10 @@ pub const VAR_TOKEN_DEV: &str = "VANTTEC_DOCS_TOKEN_DEV";
 
 /// CSP de las pantallas que sirve la cáscara.
 pub const CSP_PANTALLA: &str = "default-src 'none'; style-src 'unsafe-inline'";
+
+/// CSP que el proxy añade a toda respuesta: ningún marco de otro origen.
+pub const CSP_MARCOS: &str = "frame-src 'self'";
+
+/// CSP que el proxy añade, además, a un documento que el servidor aísla con `sandbox`: nada de
+/// la red, solo lo que va en línea.
+pub const CSP_AISLADO: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:";

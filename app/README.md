@@ -10,6 +10,12 @@ pide pasa por un proxy en Rust que añade el token de dispositivo. El token no s
 
 Esta versión todavía no inicia sesión: sin token, la app muestra «No has iniciado sesión».
 
+El editor de diagrams.net no funciona dentro de la app: el proxy añade a toda respuesta la
+cabecera `Content-Security-Policy: frame-src 'self'`, que impide los marcos de otro origen, así
+que «Insertar → Diagrama» y «Editar diagrama» no abren el editor. Los diagramas ya guardados se
+siguen viendo, y Excalidraw y el visor de PDF funcionan. Un enlace con `target="_blank"` o un
+`window.open` hacia el propio portal navega la ventana principal; hacia otro sitio no hace nada.
+
 ## Requisitos
 
 Rust (cargo) y Node. En Windows, además, WebView2 (viene con Windows 11).
