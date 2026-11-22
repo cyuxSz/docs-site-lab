@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Prueba B: manejador de protocolo</title>
+<style>body{font:14px/1.4 system-ui;margin:16px}pre{white-space:pre-wrap}</style>
+<h1>Prueba B: manejador de protocolo</h1>
+<pre id="out">ejecutando…</pre>
+<script>
+(async () => {
+  const r = {
+    origen: location.origin,
+    href: location.href,
+    contextoSeguro: isSecureContext,
+    ua: navigator.userAgent,
+    pruebas: {},
+  };
+  const hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+  const fnv1a = (u8) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 0x01000193); }
+    return h >>> 0;
+  };
+  const sha = async (u8) => (crypto.subtle ? hex(await crypto.subtle.digest('SHA-256', u8)) : null);
+  async function p(nombre, f) {
+    const t = performance.now();
+    let res;
+    try { res = { ...(await f()) }; } catch (e) { res = { ok: false, error: String(e) }; }
+    res.ms = Math.round(performance.now() - t);
+    r.pruebas[nombre] = res;
+    document.getElementById('out').textContent = JSON.stringify(r, null, 2);
+  }
+
+  await p('get', async () => {
+    const x = await fetch('/api/eco?a=1&b=dos', { headers: { 'X-Prueba': 'valor-ñ' } });
+    const j = await x.json();
+    return { ok: x.status === 200 && j.metodo === 'GET' && j.consulta === 'a=1&b=dos' && j.cabeceras['x-prueba'] === 'valor-ñ',
+      estado: x.status, visto: j, cabeceraRespuesta: x.headers.get('x-desde-rust') };
+  });
+
+  for (const metodo of ['POST', 'PUT', 'DELETE']) {
+    await p('json-' + metodo.toLowerCase(), async () => {
+      const cuerpo = JSON.stringify({ md: '# Título\ncon ñ y 🙂', version: 3, lista: [1, 2, 3] });
+      const u8 = new TextEncoder().encode(cuerpo);
+      const x = await fetch('/api/eco', {
+        method: metodo, body: cuerpo,
+        headers: { 'Content-Type': 'application/json', 'X-Prueba': 'abc', 'Authorization': 'Bearer desde-js' },
+      });
+      const j = await x.json();
+      return { ok: j.metodo === metodo && j.texto === cuerpo && j.bytes === u8.length && j.cabeceras['content-type'] === 'application/json',
+        estado: x.status, visto: j };
+    });
+  }
+
+  for (const [mb, metodo] of [[1, 'POST'], [50, 'POST'], [50, 'PUT']]) {
+    await p(`binario-${mb}mb-${metodo.toLowerCase()}`, async () => {
+      const u8 = new Uint8Array(mb * 1024 * 1024);
+      for (let i = 0; i < u8.length; i += 65536) crypto.getRandomValues(u8.subarray(i, i + 65536));
+      const esperado = { sha256: await sha(u8), fnv1a: fnv1a(u8), bytes: u8.length };
+      const t = performance.now();
+      const x = await fetch('/api/eco', { method: metodo, body: u8, headers: { 'Content-Type': 'application/octet-stream' } });
+      const j = await x.json();
+      return { ok: j.bytes === esperado.bytes && j.fnv1a === esperado.fnv1a && (esperado.sha256 === null || j.sha256 === esperado.sha256),
+        estado: x.status, esperado, visto: j, msFetch: Math.round(performance.now() - t) };
+    });
+  }
+
+  await p('blob-y-formdata', async () => {
+    const fd = new FormData();
+    fd.append('archivo', new Blob([new Uint8Array([0, 1, 2, 255])], { type: 'application/octet-stream' }), 'a.bin');
+    fd.append('campo', 'valor');
+    const x = await fetch('/api/eco', { method: 'POST', body: fd });
+    const j = await x.json();
+    return { ok: j.bytes > 0 && /^multipart\/form-data; boundary=/.test(j.cabeceras['content-type'] || ''), bytes: j.bytes, tipo: j.cabeceras['content-type'] };
+  });
+
+  for (const codigo of [401, 409]) {
+    await p('estado-' + codigo, async () => {
+      const x = await fetch('/api/estado/' + codigo, { method: 'PUT', body: '{}', headers: { 'Content-Type': 'application/json' } });
+      return { ok: x.status === codigo, estado: x.status, cuerpo: await x.json() };
+    });
+  }
+
+  await p('streaming-respuesta', async () => {
+    const t = performance.now();
+    const x = await fetch('/api/lento');
+    const msCabeceras = Math.round(performance.now() - t);
+    const lector = x.body.getReader();
+    const llegadas = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await lector.read();
+      if (done) break;
+      total += value.length;
+      llegadas.push([Math.round(performance.now() - t), value.length]);
+    }
+    // Hay streaming real si las cabeceras llegan antes de que Rust termine (~1500 ms).
+    return { ok: true, streamingReal: msCabeceras < 1200, msCabeceras, total, trozos: llegadas.length, llegadas: llegadas.slice(0, 12) };
+  });
+
+  await p('proxy-get', async () => {
+    const x = await fetch('/api/proxy');
+    const j = await x.json();
+    return { ok: x.status === 200 && j.cabeceras && j.cabeceras.authorization === 'Bearer token-de-prueba-solo-en-rust',
+      estado: x.status, reenviadoA: x.headers.get('x-reenviado-a'), vistoPorServidorLocal: j };
+  });
+
+  await p('xhr-post', () => new Promise((ok) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', '/api/eco');
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.onload = () => { const j = JSON.parse(x.responseText); ok({ ok: j.texto === '{"x":1}', estado: x.status }); };
+    x.onerror = () => ok({ ok: false, error: 'xhr error' });
+    x.send('{"x":1}');
+  }));
+
+  await p('service-worker', async () => {
+    if (!('serviceWorker' in navigator)) return { ok: true, disponible: false };
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      const res = { ok: true, disponible: true, registrado: true, scope: reg.scope };
+      await reg.unregister();
+      return res;
+    } catch (e) { return { ok: true, disponible: true, registrado: false, error: String(e) }; }
+  });
+
+  r.todoOk = Object.values(r.pruebas).every((x) => x.ok);
+  document.getElementById('out').textContent = JSON.stringify(r, null, 2);
+  await fetch('/api/informe', { method: 'POST', body: JSON.stringify(r, null, 2), headers: { 'Content-Type': 'application/json' } });
+  document.title = r.todoOk ? 'B: TODO OK' : 'B: HAY FALLOS';
+})();
+</script>
+</html>
