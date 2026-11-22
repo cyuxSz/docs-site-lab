@@ -619,6 +619,7 @@ def escribir(salida, archivos):
     finally:
         for ruta in temporales.values():
             try:
+                os.chmod(ruta, 0o600)  # el temporal pudo heredar el solo lectura: sin esto no se borra en Windows
                 os.remove(ruta)
             except OSError:
                 pass
