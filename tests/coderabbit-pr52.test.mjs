@@ -33,8 +33,11 @@ test("comentarios.ts: abrirDesdeHash cancela el destino pendiente antes de salir
   const iAsig = f.indexOf("idHash = h.id;");
   assert.ok(iAsig > 0, "asigna idHash = h.id");
   assert.ok(iAsig < f.indexOf("if (!h.abrir) return;"), "antes de la salida anticipada");
-  assert.match(f, /if \(h\.id && cargado\)[^]*idHash = null;[^]*destino\.focus\(\)/, "enfoca al momento si ya cargó");
+  // Lote «sueltos-teclado»: el foco lo pone enfocarComentario() (src/lib/comentarios.ts), no una copia en el script.
+  const rama = f.slice(f.indexOf("if (h.id && cargado)"));
+  assert.match(rama, /enfocarComentario\([^)]*h\.id\)/, "enfoca al momento si ya cargó");
+  assert.match(rama, /idHash = null;/, "y da el destino por atendido");
   // pintar(): idHash null no hace nada; con id pendiente enfoca tras cargar.
   const p = js.slice(js.indexOf("function pintar()"), js.indexOf("function pintarHilo"));
-  assert.match(p, /if \(idHash\) \{[^]*comentario-\$\{idHash\}[^]*destino\.focus\(\)/);
+  assert.match(p, /if \(idHash\) \{[^]*enfocarComentario\([^)]*idHash\)/);
 });
