@@ -125,6 +125,7 @@ function iniciar(root: HTMLElement) {
     lista.replaceChildren(...hilos.map((h) => pintarHilo(h)));
     etiqueta.textContent = etiquetaComentarios(contarAbiertos(comentarios));
     estado.textContent = hilos.length ? "" : "Aún no hay comentarios. Sé el primero.";
+    estado.removeAttribute("data-cargando");
     if (idHash) {
       const enfocado = enfocarComentario(document, idHash);
       idHash = null;
