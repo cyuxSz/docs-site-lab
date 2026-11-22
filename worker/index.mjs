@@ -103,7 +103,7 @@ export function crearWorker({ restringidos, proyectos = PROYECTOS } = {}) {
         propias.add(out);
         return out;
       };
-      const res = await manejarLogin(request, env, { continuar, restringidos });
+      const res = await manejarLogin(request, env, { continuar, restringidos, proyectos });
       // Las páginas propias del login conservan sus cabeceras; solo se añaden las globales que falten.
       return propias.has(res) ? res : conCabeceras(res, GLOBALES, true);
     },
