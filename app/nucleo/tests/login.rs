@@ -127,6 +127,91 @@ fn c2_un_enlace_con_la_forma_del_servidor_se_lee() {
     }
 }
 
+/// Medido en Windows 11: cuando el enlace se abre por el registro (`cmd /c start`, `rundll32
+/// url.dll,FileProtocolHandler`, `Start-Process`), la segunda instancia lo recibe con una `/`
+/// tras `auth`. Es la vía normal del login, así que esa forma, y solo esa, también se lee.
+#[test]
+fn c2_un_enlace_con_barra_tras_auth_se_lee_igual() {
+    let con_barra = |codigo: &str, state: &str| format!("vanttec-docs://auth/?code={codigo}&state={state}");
+
+    let leido = leer_enlace(&con_barra(CODIGO, STATE_AJENO)).expect("el enlace que entrega Windows se lee");
+    assert_eq!(leido.codigo(), CODIGO);
+    assert_eq!(leido.state(), STATE_AJENO);
+    // Las dos formas dan lo mismo: la barra no entra ni en el código ni en el state.
+    assert!(Some(leido) == leer_enlace(&enlace(CODIGO, STATE_AJENO)), "las dos formas se leen igual");
+
+    for largo in [22, 128] {
+        let state = "s".repeat(largo);
+        let leido = leer_enlace(&con_barra(CODIGO, &state)).expect("state en el rango del servidor");
+        assert_eq!(leido.codigo(), CODIGO);
+        assert_eq!(leido.state(), state);
+    }
+}
+
+/// La barra no relaja nada más: con ella, el resto del enlace se exige igual de exacto.
+#[test]
+fn c2_la_barra_tras_auth_no_admite_ninguna_otra_variante() {
+    let c = CODIGO;
+    let s = STATE_AJENO;
+    let malos: Vec<String> = vec![
+        "vanttec-docs://auth/".into(),
+        "vanttec-docs://auth/?".into(),
+        format!("vanttec-docs://auth/?code={c}"),
+        format!("vanttec-docs://auth/?state={s}&code={c}"),
+        format!("vanttec-docs://auth/?code={c}&state={s}&x=1"),
+        format!("vanttec-docs://auth/?x=1&code={c}&state={s}"),
+        format!("vanttec-docs://auth/?code={c}&code={c}&state={s}"),
+        format!("vanttec-docs://auth/?code={c}&state={s}&state={s}"),
+        format!("vanttec-docs://auth/?code={c}&state={s}&"),
+        format!("vanttec-docs://auth/?code={c}&state={s}#x"),
+        format!("vanttec-docs://auth/?code={c}&state={s}/"),
+        format!("vanttec-docs://auth/?code={c}&state={s} "),
+        format!("vanttec-docs://auth/?code={c}&state={s}\n"),
+        format!("vanttec-docs://auth/?code={}&state={s}", &c[..42]),
+        format!("vanttec-docs://auth/?code={c}A&state={s}"),
+        format!("vanttec-docs://auth/?code={c}&state={}", "s".repeat(21)),
+        format!("vanttec-docs://auth/?code={c}&state={}", "s".repeat(129)),
+        format!("vanttec-docs://auth/?Code={c}&state={s}"),
+        // Una sola barra, y justo antes de `?`.
+        format!("vanttec-docs://auth//?code={c}&state={s}"),
+        format!("vanttec-docs://auth///?code={c}&state={s}"),
+        format!("vanttec-docs://auth/x?code={c}&state={s}"),
+        format!("vanttec-docs://auth/x/?code={c}&state={s}"),
+        format!("vanttec-docs://auth/./?code={c}&state={s}"),
+        format!("vanttec-docs://auth/../auth/?code={c}&state={s}"),
+        format!("vanttec-docs://auth/ ?code={c}&state={s}"),
+        format!("vanttec-docs://auth/#?code={c}&state={s}"),
+        format!("vanttec-docs://auth/??code={c}&state={s}"),
+        format!("vanttec-docs://auth?/code={c}&state={s}"),
+        format!("vanttec-docs://auth/code={c}&state={s}"),
+        format!("vanttec-docs://auth\\?code={c}&state={s}"),
+        format!("vanttec-docs://auth%2F?code={c}&state={s}"),
+        format!("vanttec-docs://auth%2f?code={c}&state={s}"),
+        format!("vanttec-docs://auth/%3Fcode={c}&state={s}"),
+        // Sin medida, ninguna otra normalización: ni caja, ni puerto, ni usuario, ni otro host.
+        format!("VANTTEC-DOCS://auth/?code={c}&state={s}"),
+        format!("Vanttec-Docs://auth/?code={c}&state={s}"),
+        format!("vanttec-docs://AUTH/?code={c}&state={s}"),
+        format!("vanttec-docs://Auth/?code={c}&state={s}"),
+        format!("vanttec-docs://auth:443/?code={c}&state={s}"),
+        format!("vanttec-docs://u@auth/?code={c}&state={s}"),
+        format!("vanttec-docs://auth./?code={c}&state={s}"),
+        format!("vanttec-docs://otra/?code={c}&state={s}"),
+        format!("vanttec-docs://authx/?code={c}&state={s}"),
+        format!("vanttec-docs:/auth/?code={c}&state={s}"),
+        format!("vanttec-docs:auth/?code={c}&state={s}"),
+        format!("vanttec-docs:///auth/?code={c}&state={s}"),
+        format!("vanttec-docsx://auth/?code={c}&state={s}"),
+        format!("portal://auth/?code={c}&state={s}"),
+        format!("https://auth/?code={c}&state={s}"),
+        format!(" vanttec-docs://auth/?code={c}&state={s}"),
+        format!("\"vanttec-docs://auth/?code={c}&state={s}\""),
+    ];
+    for malo in &malos {
+        assert!(leer_enlace(malo).is_none(), "no debe leerse {malo:?}");
+    }
+}
+
 #[test]
 fn c2_un_enlace_con_otra_forma_no_se_lee() {
     let c = CODIGO;
@@ -166,7 +251,8 @@ fn c2_un_enlace_con_otra_forma_no_se_lee() {
         format!("vanttec-docs://AUTH?code={c}&state={s}"),
         format!("vanttec-docs:auth?code={c}&state={s}"),
         format!("vanttec-docs:///auth?code={c}&state={s}"),
-        format!("vanttec-docs://auth/?code={c}&state={s}"),
+        // `auth/?` sí se lee (es como lo entrega Windows); `auth//?` y `auth/x?` no.
+        format!("vanttec-docs://auth//?code={c}&state={s}"),
         format!("vanttec-docs://auth/x?code={c}&state={s}"),
         format!("vanttec-docs://auth:443?code={c}&state={s}"),
         format!("vanttec-docs://u@auth?code={c}&state={s}"),
