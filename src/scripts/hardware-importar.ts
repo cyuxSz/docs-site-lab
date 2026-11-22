@@ -200,6 +200,7 @@ export function conectarImportar({ proyecto, disciplina, senal, slugs, hayCambio
   function pararCuenta() {
     clearInterval(relojCuenta);
     cuenta.textContent = "";
+    linea.classList.remove("sr-only");
   }
 
   // La línea viva dice la espera una sola vez; la cuenta atrás, que cambia cada segundo, va aparte y el lector de
@@ -210,9 +211,10 @@ export function conectarImportar({ proyecto, disciplina, senal, slugs, hayCambio
     if (linea.textContent !== texto) linea.textContent = texto;
     pararCuenta();
     if (evento.tipo !== "espera") return;
+    linea.classList.add("sr-only");
     const fin = Date.now() + evento.segundos * 1000;
     const pintar = () => {
-      cuenta.textContent = `Quedan ${Math.max(0, Math.ceil((fin - Date.now()) / 1000))} s`;
+      cuenta.textContent = `Esperando al límite de escrituras: ${Math.max(0, Math.ceil((fin - Date.now()) / 1000))} s`;
     };
     pintar();
     relojCuenta = setInterval(pintar, 1000);

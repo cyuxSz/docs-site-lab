@@ -779,7 +779,7 @@ tr[hidden] { display: none; }
 .hw-mover-btn:hover { border-color: var(--accent); color: var(--text); }
 .hw-mover-btn[aria-disabled="true"] { opacity: .4; cursor: default; }
 .hw-mover-btn:focus-visible, .hw-nueva .btn:focus-visible, .hw-barra .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.hw-nueva { margin: 16px 0 0; }
+.hw-nueva { margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .hw-editor { display: grid; gap: 12px; min-width: 0; }
 .hw-modo { display: flex; justify-content: flex-end; }
 .hw-modo .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
