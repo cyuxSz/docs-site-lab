@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use comun::login::*;
 use comun::{puerto_cerrado, token, Respuesta, Servidor, TOKEN};
 use nucleo::{
-    desafio_s256, leer_enlace, Aviso, Destino, EstadoLogin, FuenteDeToken, Inicio, Login, Recibido,
+    desafio_s256, leer_enlace, Aviso, Destino, EstadoLogin, Fin, FuenteDeToken, Inicio, Login, Recibido,
     PAUSA_ENTRE_INICIOS, VIDA_INTENTO,
 };
 
@@ -267,13 +267,14 @@ fn c4_sin_red_el_canje_falla_con_sin_conexion() {
 fn c4_un_rechazo_tardio_no_borra_un_token_nuevo() {
     let servidor = Servidor::fijo(canje_ok(TOKEN_NUEVO));
     let t0 = Instant::now();
-    // Arranca con un token (el de desarrollo) que el servidor rechaza.
+    // Arranca con un token (el de desarrollo) que el servidor rechaza. app-sesion: el estado
+    // tras un rechazo ya no es `SinSesion`, sino `Terminada(Caducada)`, para que la pantalla lo diga.
     let login = Login::nuevo(servidor.destino(), Some(EQUIPO), Some(token()));
     login.rechazar(&token_nuevo());
     assert_eq!(login.token(), Some(token()), "rechazar otro token no toca el actual");
     login.rechazar(&token());
     assert!(login.token().is_none());
-    assert_eq!(login.estado(t0), EstadoLogin::SinSesion);
+    assert_eq!(login.estado(t0), EstadoLogin::Terminada(Fin::Caducada));
 
     // Sesión nueva; el rechazo del token viejo llega después.
     let bueno = enlace(CODIGO, &iniciar(&login, t0).state);
@@ -284,7 +285,7 @@ fn c4_un_rechazo_tardio_no_borra_un_token_nuevo() {
 
     login.rechazar(&token_nuevo());
     assert!(login.token().is_none());
-    assert_eq!(login.estado(t0), EstadoLogin::SinSesion);
+    assert_eq!(login.estado(t0), EstadoLogin::Terminada(Fin::Caducada));
 }
 
 // ---------- Criterio 8: los secretos ----------

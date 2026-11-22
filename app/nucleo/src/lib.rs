@@ -4,15 +4,17 @@
 //! No depende de la ventana: se prueba con `cargo test` contra un servidor falso.
 
 mod destino;
+mod llavero;
 mod login;
 mod pantalla;
 mod proxy;
 mod token;
 
 pub use destino::{config_de_arranque, Arranque, Destino, DestinoInvalido};
+pub use llavero::{nombre_de_llavero, FalloDeLlavero, Llavero, SinLlavero};
 pub use login::{
-    desafio_s256, leer_enlace, nombre_de_dispositivo, Aviso, EnlaceDeLogin, EstadoLogin, Inicio, Login,
-    Recibido,
+    desafio_s256, leer_enlace, nombre_de_dispositivo, Aviso, Cierre, EnlaceDeLogin, EstadoLogin, Fin,
+    Inicio, Login, Recibido,
 };
 pub use pantalla::{
     decidir_ventana_nueva, navegacion_permitida, pantalla_de_login, pantalla_sin_sesion, VentanaNueva,
@@ -66,3 +68,13 @@ pub const VIDA_INTENTO: std::time::Duration = std::time::Duration::from_secs(600
 
 /// Tiempo mínimo entre dos aperturas del navegador.
 pub const PAUSA_ENTRE_INICIOS: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Ruta del enlace «Salir» del portal. El proxy de la app no la reenvía: cierra la sesión.
+pub const RUTA_SALIR: &str = "/auth/logout";
+
+/// Nombre de la credencial en el almacén del sistema, en release y en debug.
+pub const LLAVERO_SERVICIO: &str = "VantTec Docs";
+pub const LLAVERO_SERVICIO_DEV: &str = "VantTec Docs (desarrollo)";
+
+/// Nombre de usuario de esa credencial. Es una etiqueta fija, no un dato del usuario.
+pub const LLAVERO_CUENTA: &str = "token-de-dispositivo";

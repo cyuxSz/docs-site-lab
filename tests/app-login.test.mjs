@@ -4,6 +4,9 @@
 // cómo se abre el navegador, cómo llega el enlace y dónde se registra el esquema (9), que los tipos con secretos
 // no deriven Debug (8) y las dependencias nuevas con versión exacta (10).
 // Son comprobaciones de texto: demuestran que las llamadas están escritas, no que funcionan.
+// El lote app-sesion (tests/app-sesion.test.mjs) relajó tres comprobaciones de este archivo: la app puede depender
+// también de windows-sys, el login se monta con Login::nuevo o con Login::con_llavero, y la constante
+// CRED_PERSIST_LOCAL_MACHINE no cuenta como clave del registro. Están marcadas con «app-sesion».
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -76,8 +79,9 @@ test("c10 · el núcleo añade ring, base64 y serde_json con versión exacta, y 
 test("c10 · la app añade single-instance, open y windows-registry con versión exacta, sin deep-link ni opener", () => {
   const cargo = toml(leer(CARGO_APP));
   const deps = cargo.dependencies ?? {};
+  // app-sesion: se admite además windows-sys, para el llavero (su versión y sus features, en app-sesion.test.mjs).
   assert.deepEqual(
-    Object.keys(deps).sort(),
+    Object.keys(deps).filter((nombre) => nombre !== "windows-sys").sort(),
     ["nucleo", "open", "tauri", "tauri-plugin-single-instance", "windows-registry"],
     "dependencias directas de la app (todas en [dependencies])",
   );
@@ -122,8 +126,9 @@ test("c9 · un solo plugin (single-instance), sin capacidades ni comandos", () =
 
 test("c9 · main.rs monta el login del núcleo y no construye el proxy por otra vía", () => {
   const rs = cascara();
-  assert.equal(veces(rs, /Login::nuevo\s*\(/g), 1, "un solo Login");
-  assert.match(rs, /Login::nuevo\s*\(\s*arranque\.destino\s*,[^;]*arranque\.token\s*,?\s*\)/, "Login::nuevo(arranque.destino, <nombre del equipo>, arranque.token)");
+  // app-sesion: el login se monta con Login::con_llavero, que añade el llavero como último argumento.
+  assert.equal(veces(rs, /Login::(nuevo|con_llavero)\s*\(/g), 1, "un solo Login");
+  assert.match(rs, /Login::(nuevo|con_llavero)\s*\(\s*arranque\.destino\s*,[^;]*arranque\.token\b/, "Login::nuevo(arranque.destino, <nombre del equipo>, arranque.token)");
   assert.match(rs, /env::var\s*\(\s*(nucleo::)?VAR_NOMBRE_EQUIPO\s*\)/, "el nombre del equipo sale de la variable VAR_NOMBRE_EQUIPO");
   assert.doesNotMatch(rs, /nombre_de_dispositivo/, "el nombre lo limpia Login::nuevo, no la cáscara");
   assert.equal(veces(rs, /Proxy::con_login\s*\(/g), 1, "el proxy se crea con Proxy::con_login");
@@ -163,7 +168,8 @@ test("c9 · el enlace llega por single-instance, se canjea en otro hilo y la ven
 test("c9 · el esquema del enlace se registra solo en debug y desde nucleo::ESQUEMA_ENLACE", () => {
   const rs = cascara();
   assert.match(rs, /windows_registry::CURRENT_USER|use\s+windows_registry::\{?[^;]*CURRENT_USER/, "el registro va en HKEY_CURRENT_USER");
-  assert.doesNotMatch(rs, /LOCAL_MACHINE|CLASSES_ROOT/, "nunca en claves de toda la máquina");
+  // app-sesion: la constante CRED_PERSIST_LOCAL_MACHINE del llavero no es una clave del registro.
+  assert.doesNotMatch(rs, /\bLOCAL_MACHINE\b|CLASSES_ROOT/, "nunca en claves de toda la máquina");
   assert.match(rs, /ESQUEMA_ENLACE/, "el nombre del esquema es nucleo::ESQUEMA_ENLACE");
   assert.match(rs, /Software\\{1,2}Classes\\{1,2}/, "bajo Software\\Classes\\<esquema>");
   assert.match(rs, /URL Protocol/, "con el valor «URL Protocol»");

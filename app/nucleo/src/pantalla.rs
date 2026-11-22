@@ -51,6 +51,7 @@ pub fn pantalla_de_login(estado: EstadoLogin) -> Response<Vec<u8>> {
         EstadoLogin::Fallo(aviso) => {
             (format!("<p role=\"alert\">{}</p>", aviso.texto()), BOTON_INICIAR)
         }
+        EstadoLogin::Terminada(_) => todo!("lote app-sesion: aviso del fin de la sesión"),
     };
     let html = format!(
         "{CABEZA}{mensaje}<form method=\"post\" action=\"{RUTA_INICIAR}\">\

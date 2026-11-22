@@ -5,7 +5,7 @@
 use std::fmt;
 use std::io::Read;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -13,6 +13,7 @@ use base64::Engine;
 use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::destino::Destino;
+use crate::llavero::Llavero;
 use crate::token::{FuenteDeToken, Token};
 use crate::{ESQUEMA_ENLACE, NOMBRE_POR_DEFECTO, PAUSA_ENTRE_INICIOS, PLATAFORMA, VIDA_INTENTO};
 
@@ -161,6 +162,37 @@ pub enum EstadoLogin {
     EnCurso,
     Fallo(Aviso),
     ConSesion,
+    /// La sesión terminó: se cerró o el servidor rechazó el token.
+    Terminada(Fin),
+}
+
+/// Por qué terminó la sesión. Cada uno tiene un texto fijo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fin {
+    /// El usuario pulsó «Salir» y el servidor confirmó que el token ya no vale.
+    Cerrada,
+    /// El usuario pulsó «Salir», pero el servidor no confirmó la revocación.
+    CerradaSinServidor,
+    /// El servidor rechazó el token: caducó o se revocó desde otro sitio.
+    Caducada,
+}
+
+impl Fin {
+    /// El texto que ve el usuario. Fijo: nunca lleva nada de la respuesta del servidor.
+    pub fn texto(&self) -> &'static str {
+        todo!("lote app-sesion: textos del fin de la sesión")
+    }
+}
+
+/// Qué pasó al cerrar la sesión.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cierre {
+    /// No había sesión: no se hizo nada, ni petición ni cambio de estado.
+    SinSesion,
+    /// El token se borró aquí y el servidor confirmó que ya no vale.
+    Revocada,
+    /// El token se borró aquí, pero el servidor no confirmó la revocación.
+    SoloLocal,
 }
 
 /// Respuesta a «Iniciar sesión».
@@ -249,8 +281,26 @@ impl Login {
         }
     }
 
+    /// Como `nuevo`, con un llavero. Sin token `inicial`, la sesión se lee del llavero. Tras un
+    /// canje el token se guarda en él, y se borra al cerrar la sesión o si el servidor lo rechaza.
+    pub fn con_llavero(
+        destino: Destino,
+        nombre_equipo: Option<&str>,
+        inicial: Option<Token>,
+        llavero: Arc<dyn Llavero>,
+    ) -> Login {
+        let _ = (destino, nombre_equipo, inicial, llavero);
+        todo!("lote app-sesion: login con llavero")
+    }
+
     pub fn destino(&self) -> &Destino {
         &self.destino
+    }
+
+    /// Cierra la sesión: borra el token de la memoria y del llavero y pide al servidor que lo
+    /// revoque. Bloquea mientras dura la petición.
+    pub fn cerrar_sesion(&self) -> Cierre {
+        todo!("lote app-sesion: cerrar sesión")
     }
 
     /// El estado no queda a medias aunque otro hilo haya fallado con el cerrojo tomado.
