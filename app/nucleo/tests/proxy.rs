@@ -675,6 +675,306 @@ fn c4_el_proxy_se_comparte_entre_hilos() {
     es_send_y_sync::<Proxy>();
 }
 
+// ---------- Criterio 9: origen de la petición ----------
+
+/// Petición con las cabeceras que pone el navegador (`Origin`, `Sec-Fetch-*`…).
+fn con_cabeceras(metodo: &str, ruta: &str, cabeceras: &[(&str, &str)]) -> http::Request<Vec<u8>> {
+    let mut peticion = peticion(metodo, ruta);
+    for (nombre, valor) in cabeceras {
+        peticion = peticion.header(*nombre, *valor);
+    }
+    let cuerpo = if metodo == "GET" || metodo == "HEAD" { Vec::new() } else { b"a=1".to_vec() };
+    peticion.body(cuerpo).unwrap()
+}
+
+/// Un rechazo por origen: 403 JSON local, sin nada que abra la respuesta a otro origen.
+/// En un HEAD el cuerpo va vacío: se reconoce por el caso, que empieza por el método.
+fn es_rechazo_por_origen(respuesta: &http::Response<Vec<u8>>, caso: &str) {
+    assert_eq!(respuesta.status().as_u16(), 403, "{caso}");
+    if caso.starts_with("HEAD ") {
+        assert!(respuesta.body().is_empty(), "{caso}: un HEAD no lleva cuerpo");
+        let tipo = cabecera(respuesta, "content-type").unwrap_or_default();
+        assert!(tipo.starts_with("application/json"), "{caso}: content-type {tipo:?}");
+    } else {
+        es_error_local(respuesta, 403);
+    }
+    for abierta in ["access-control-allow-origin", "access-control-allow-credentials", "location"] {
+        assert!(cabecera(respuesta, abierta).is_none(), "{caso}: el 403 no lleva {abierta}");
+    }
+}
+
+/// Fuente que cuenta cuántas veces se le pide el token.
+struct FuenteContada(std::sync::atomic::AtomicUsize);
+
+impl FuenteDeToken for FuenteContada {
+    fn token(&self) -> Option<Token> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Some(token())
+    }
+}
+
+#[test]
+fn c9_un_origin_que_no_es_el_de_la_app_es_403_local_sin_red() {
+    let servidor = Servidor::ok();
+    let proxy = proxy(&servidor);
+    for origen in [
+        "https://embed.diagrams.net",
+        "null",
+        "",
+        "https://ejemplo.test",
+        "http://portal.localhost",
+        "https://portal.localhost:8443",
+        "https://portal.localhost/",
+        "https://portal.localhost.ejemplo.test",
+        "https://xportal.localhost",
+        "https://PORTAL.LOCALHOST",
+        "portal://localhost.ejemplo.test",
+        "portal://otro",
+        "https://portal.localhost, https://embed.diagrams.net",
+    ] {
+        for (metodo, ruta) in
+            [("GET", "/api/comentarios/?proyecto=uuv"), ("POST", "/api/comentarios/"), ("HEAD", "/uuv/")]
+        {
+            let caso = format!("{metodo} {ruta} con Origin {origen:?}");
+            let peticion =
+                con_cabeceras(metodo, ruta, &[("Origin", origen), ("Content-Type", "text/plain")]);
+            es_rechazo_por_origen(&pedir(&proxy, peticion), &caso);
+        }
+    }
+    // Un `Sec-Fetch-Site` favorable no salva un `Origin` ajeno.
+    let peticion = con_cabeceras(
+        "POST",
+        "/api/comentarios/",
+        &[("Origin", "null"), ("Sec-Fetch-Site", "same-origin"), ("Content-Type", "text/plain")],
+    );
+    es_rechazo_por_origen(&pedir(&proxy, peticion), "Origin null con Sec-Fetch-Site same-origin");
+    // Dos cabeceras `Origin`: basta una ajena.
+    let peticion = con_cabeceras(
+        "POST",
+        "/api/comentarios/",
+        &[("Origin", "https://portal.localhost"), ("Origin", "https://embed.diagrams.net")],
+    );
+    es_rechazo_por_origen(&pedir(&proxy, peticion), "Origin repetido");
+
+    assert_eq!(servidor.conexiones(), 0, "una petición de otro origen no abre ninguna conexión");
+}
+
+#[test]
+fn c9_sec_fetch_site_de_otro_sitio_es_403_local_sin_red() {
+    let servidor = Servidor::ok();
+    let proxy = proxy(&servidor);
+    // (método, Sec-Fetch-Site, Sec-Fetch-Mode, Sec-Fetch-Dest)
+    for (metodo, sitio, modo, destino) in [
+        ("GET", "cross-site", "no-cors", "image"),
+        ("GET", "cross-site", "no-cors", "script"),
+        ("GET", "cross-site", "no-cors", "style"),
+        ("GET", "cross-site", "cors", "empty"),
+        ("GET", "same-site", "no-cors", "image"),
+        ("GET", "same-site", "cors", "empty"),
+        ("POST", "cross-site", "no-cors", "empty"),
+        ("POST", "same-site", "no-cors", "empty"),
+        ("HEAD", "cross-site", "no-cors", "empty"),
+        // Un iframe ajeno que se navega a sí mismo hacia el portal.
+        ("GET", "cross-site", "navigate", "iframe"),
+        ("GET", "cross-site", "navigate", "frame"),
+        ("GET", "cross-site", "navigate", "embed"),
+        ("GET", "cross-site", "navigate", "object"),
+        ("GET", "cross-site", "nested-navigate", "document"),
+        // Un formulario enviado desde otro sitio al marco principal.
+        ("POST", "cross-site", "navigate", "document"),
+        ("POST", "same-site", "navigate", "document"),
+        // La excepción de navegación exige GET y el destino `document`.
+        ("GET", "cross-site", "navigate", "empty"),
+        ("HEAD", "cross-site", "navigate", "document"),
+        // Sin distinguir mayúsculas, y un valor desconocido o vacío se rechaza.
+        ("GET", "Cross-Site", "no-cors", "image"),
+        ("GET", "otro-valor", "no-cors", "image"),
+        ("GET", "", "no-cors", "image"),
+    ] {
+        let caso = format!("{metodo} con Sec-Fetch-Site {sitio:?}, modo {modo}, destino {destino}");
+        let peticion = con_cabeceras(
+            metodo,
+            "/api/comentarios/?proyecto=uuv",
+            &[
+                ("Sec-Fetch-Site", sitio),
+                ("Sec-Fetch-Mode", modo),
+                ("Sec-Fetch-Dest", destino),
+                ("Accept", "text/html,*/*"),
+                ("Content-Type", "text/plain"),
+            ],
+        );
+        es_rechazo_por_origen(&pedir(&proxy, peticion), &caso);
+    }
+    // Ni el `Origin` de la app ni un `Referer` de la app salvan un `Sec-Fetch-Site` de otro sitio.
+    let peticion = con_cabeceras(
+        "POST",
+        "/api/comentarios/",
+        &[
+            ("Origin", "https://portal.localhost"),
+            ("Referer", "https://portal.localhost/uuv/"),
+            ("Sec-Fetch-Site", "cross-site"),
+            ("Sec-Fetch-Mode", "cors"),
+            ("Sec-Fetch-Dest", "empty"),
+        ],
+    );
+    es_rechazo_por_origen(&pedir(&proxy, peticion), "Origin propio con Sec-Fetch-Site cross-site");
+    // Una navegación de primer nivel desde otro sitio que además trae `Origin` no entra en la
+    // excepción.
+    let peticion = con_cabeceras(
+        "GET",
+        "/uuv/",
+        &[
+            ("Origin", "https://portal.localhost"),
+            ("Sec-Fetch-Site", "cross-site"),
+            ("Sec-Fetch-Mode", "navigate"),
+            ("Sec-Fetch-Dest", "document"),
+        ],
+    );
+    es_rechazo_por_origen(&pedir(&proxy, peticion), "navegación de otro sitio con Origin");
+    // `Sec-Fetch-Site` repetido: basta un valor de otro sitio.
+    let peticion = con_cabeceras(
+        "GET",
+        "/api/x",
+        &[("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Site", "cross-site")],
+    );
+    es_rechazo_por_origen(&pedir(&proxy, peticion), "Sec-Fetch-Site repetido");
+
+    assert_eq!(servidor.conexiones(), 0, "una petición de otro sitio no abre ninguna conexión");
+}
+
+#[test]
+fn c9_el_origen_se_comprueba_antes_que_el_metodo_la_ruta_auth_el_token_y_el_cuerpo() {
+    let servidor = Servidor::ok();
+    let ajeno: [(&str, &str); 2] =
+        [("Origin", "https://embed.diagrams.net"), ("Sec-Fetch-Site", "cross-site")];
+
+    // Con token: la fuente ni se consulta, y el 403 gana al 405, al 400, al 404 y al 413.
+    let fuente = Arc::new(FuenteContada(std::sync::atomic::AtomicUsize::new(0)));
+    let proxy = Proxy::nuevo(servidor.destino(), fuente.clone(), limites());
+    for (metodo, ruta) in [
+        ("OPTIONS", "/api/comentarios/"),
+        ("TRACE", "/api/comentarios/"),
+        ("GET", "//ejemplo.test/x"),
+        ("GET", "/a/../b"),
+        ("GET", "/auth/login"),
+        ("POST", "/auth/app/canje"),
+        ("GET", "/auth/me"),
+        ("GET", "/api/comentarios/"),
+    ] {
+        let caso = format!("{metodo} {ruta} desde otro origen");
+        es_rechazo_por_origen(&pedir(&proxy, con_cabeceras(metodo, ruta, &ajeno)), &caso);
+    }
+    let grande = peticion("PUT", "/api/archivos/")
+        .header("Origin", "https://embed.diagrams.net")
+        .body(vec![7u8; 2 * 1024 * 1024])
+        .unwrap();
+    es_rechazo_por_origen(&pedir(&proxy, grande), "cuerpo por encima del tope desde otro origen");
+    assert_eq!(
+        fuente.0.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "una petición de otro origen no llega a consultar el token"
+    );
+
+    // Sin token: ni la pantalla «sin sesión» ni el 401, que dirían a otro origen si hay sesión.
+    let proxy = Proxy::nuevo(servidor.destino(), sin_token(), limites());
+    let navegacion = con_cabeceras(
+        "GET",
+        "/uuv/",
+        &[
+            ("Accept", "text/html"),
+            ("Sec-Fetch-Site", "cross-site"),
+            ("Sec-Fetch-Mode", "navigate"),
+            ("Sec-Fetch-Dest", "iframe"),
+        ],
+    );
+    es_rechazo_por_origen(&pedir(&proxy, navegacion), "navegación de un iframe ajeno sin token");
+    es_rechazo_por_origen(&pedir(&proxy, con_cabeceras("GET", "/api/x", &ajeno)), "fetch ajeno sin token");
+
+    assert_eq!(servidor.conexiones(), 0);
+}
+
+/// Guarda: lo que hace el propio portal en el webview sigue pasando.
+#[test]
+fn c9_las_peticiones_del_propio_portal_siguen_pasando() {
+    let servidor = Servidor::ok();
+    let proxy = proxy(&servidor);
+    let html = "text/html,application/xhtml+xml,*/*;q=0.8";
+    let propio = "https://portal.localhost";
+    let sitio = "Sec-Fetch-Site";
+    let modo = "Sec-Fetch-Mode";
+    let dest = "Sec-Fetch-Dest";
+    let casos: Vec<(&str, &str, Vec<(&str, &str)>)> = vec![
+        // Sin ninguna de las dos cabeceras.
+        ("GET", "/sin-cabeceras", vec![]),
+        ("POST", "/sin-cabeceras-post", vec![("Content-Type", "application/json")]),
+        // Navegación de primer nivel: arranque, recarga, barra de direcciones.
+        ("GET", "/directa", vec![("Accept", html), (sitio, "none"), (modo, "navigate"), (dest, "document")]),
+        // Enlace dentro del portal, y el iframe del visor de PDF.
+        ("GET", "/enlace", vec![("Accept", html), (sitio, "same-origin"), (modo, "navigate"), (dest, "document")]),
+        ("GET", "/visor-pdf", vec![("Accept", html), (sitio, "same-origin"), (modo, "navigate"), (dest, "iframe")]),
+        // fetch del portal: GET sin Origin, escrituras con el Origin de la app.
+        ("GET", "/fetch-get", vec![(sitio, "same-origin"), (modo, "cors"), (dest, "empty")]),
+        ("POST", "/fetch-post", vec![("Origin", propio), (sitio, "same-origin"), (modo, "cors"), (dest, "empty")]),
+        ("DELETE", "/fetch-delete", vec![("Origin", propio), (sitio, "same-origin")]),
+        ("PUT", "/origin-sin-sec-fetch", vec![("Origin", propio)]),
+        ("POST", "/origin-del-esquema-propio", vec![("Origin", "portal://localhost")]),
+        // Subrecursos: imagen y CSS sin Origin; fuente y módulo con el Origin de la app.
+        ("GET", "/imagen", vec![(sitio, "same-origin"), (modo, "no-cors"), (dest, "image")]),
+        ("GET", "/estilos", vec![(sitio, "same-origin"), (modo, "no-cors"), (dest, "style")]),
+        ("GET", "/fuente", vec![("Origin", propio), (sitio, "same-origin"), (modo, "cors"), (dest, "font")]),
+        ("GET", "/modulo", vec![("Origin", propio), (sitio, "same-origin"), (modo, "cors"), (dest, "script")]),
+        // Excepción: navegación GET del marco principal iniciada desde un documento de origen
+        // opaco del propio portal (los diagramas de /:proyecto/arch/ llevan CSP `sandbox`).
+        ("GET", "/desde-arch", vec![("Accept", html), (sitio, "cross-site"), (modo, "navigate"), (dest, "document")]),
+        ("GET", "/desde-arch-2", vec![("Accept", html), (sitio, "same-site"), (modo, "navigate"), (dest, "document")]),
+    ];
+    for (metodo, ruta, cabeceras) in &casos {
+        let mut con_referer = cabeceras.clone();
+        con_referer.push(("Referer", "https://portal.localhost/uuv/"));
+        let respuesta = pedir(&proxy, con_cabeceras(metodo, ruta, &con_referer));
+        assert_eq!(respuesta.status().as_u16(), 200, "{metodo} {ruta}: {}", texto(&respuesta));
+    }
+    let recibidas = servidor.recibidas();
+    assert_eq!(
+        recibidas.iter().map(|r| r.destino.as_str()).collect::<Vec<_>>(),
+        casos.iter().map(|(_, ruta, _)| *ruta).collect::<Vec<_>>()
+    );
+    // Después del filtro, `Origin` y `Referer` se quitan como siempre.
+    for recibida in recibidas {
+        assert_eq!(recibida.todas("authorization"), [format!("Bearer {TOKEN}")]);
+        assert!(!recibida.tiene("origin") && !recibida.tiene("referer"), "{}", recibida.destino);
+    }
+}
+
+/// Guarda: sin token, la navegación propia sigue viendo la pantalla y el fetch propio un 401.
+#[test]
+fn c9_sin_token_lo_propio_sigue_viendo_la_pantalla_o_el_401() {
+    let servidor = Servidor::ok();
+    let proxy = Proxy::nuevo(servidor.destino(), sin_token(), limites());
+    for sitio in ["none", "same-origin", "cross-site"] {
+        let navegacion = con_cabeceras(
+            "GET",
+            "/uuv/",
+            &[
+                ("Accept", "text/html"),
+                ("Sec-Fetch-Site", sitio),
+                ("Sec-Fetch-Mode", "navigate"),
+                ("Sec-Fetch-Dest", "document"),
+            ],
+        );
+        let respuesta = pedir(&proxy, navegacion);
+        assert_eq!(respuesta.status().as_u16(), 200, "navegación con Sec-Fetch-Site {sitio}");
+        assert_eq!(respuesta.body(), pantalla_sin_sesion().body());
+    }
+    let propio = con_cabeceras(
+        "POST",
+        "/api/comentarios/",
+        &[("Origin", "https://portal.localhost"), ("Sec-Fetch-Site", "same-origin")],
+    );
+    es_error_local(&pedir(&proxy, propio), 401);
+    assert_eq!(servidor.conexiones(), 0);
+}
+
 // ---------- Criterio 5: el secreto ----------
 
 #[test]

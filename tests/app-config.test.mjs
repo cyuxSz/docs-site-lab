@@ -146,6 +146,17 @@ test("c6 · main.rs crea la ventana `main` sobre el protocolo propio, con zoom y
   assert.doesNotMatch(rs, /WebviewBuilder::new|add_child/, "sin ventanas ni webviews extra");
 });
 
+// Guarda estática: demuestra que la llamada está escrita, no que WebView2 la respete. Que
+// `window.open` y `target=_blank` no abren nada se comprueba con la ventana abierta.
+test("c6 · main.rs deniega toda ventana nueva con on_new_window", () => {
+  const rs = sinComentarios(leer(MAIN));
+  assert.equal((rs.match(/\.on_new_window\s*\(/g) ?? []).length, 1, "falta on_new_window en la ventana main");
+  assert.match(rs, /NewWindowResponse::Deny\b/, "on_new_window responde NewWindowResponse::Deny");
+  const todo = fuentesRust("app/src-tauri/src").map((p) => sinComentarios(leer(p))).join("\n");
+  assert.doesNotMatch(todo, /NewWindowResponse::(Allow|Create)\b/, "ninguna ventana nueva se permite ni se crea");
+  assert.doesNotMatch(todo, /NewWindowResponse::(\*|\{)/, "las variantes se escriben completas, para poder leerlas aquí");
+});
+
 test("c6 · frontendDist es mínimo: existe, está dentro de app/ y no lleva JavaScript", () => {
   const conf = json(CONF);
   const dist = conf.build?.frontendDist;

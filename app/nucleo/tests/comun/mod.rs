@@ -289,6 +289,8 @@ pub fn limites() -> Limites {
         timeout_conexion: Duration::from_secs(5),
         timeout_total: Duration::from_secs(10),
         simultaneas: 4,
+        // El tope de peticiones en espera (`en_espera`) queda en su valor por defecto.
+        ..Limites::default()
     }
 }
 
