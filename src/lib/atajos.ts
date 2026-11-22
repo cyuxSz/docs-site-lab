@@ -49,7 +49,7 @@ export function atajo(pendiente: number | null, k: Tecla): { accion: Accion | nu
 export function escribiendoEn(e: { target?: unknown; composedPath?: () => unknown[] }): boolean {
   const origen = (typeof e.composedPath === "function" ? e.composedPath()[0] : undefined) ?? e.target;
   const el = origen as { closest?: (s: string) => unknown } | null | undefined;
-  return typeof el?.closest === "function" && Boolean(el.closest('input, textarea, select, [contenteditable], [role="textbox"], [role="searchbox"], [role="combobox"]'));
+  return typeof el?.closest === "function" && Boolean(el.closest('input, textarea, select, [contenteditable]:not([contenteditable="false" i]), [role="textbox"], [role="searchbox"], [role="combobox"]'));
 }
 
 export function destino(accion: Accion | null, rutas: { wiki?: string; grafo?: string; novedades?: string }): string | null {
