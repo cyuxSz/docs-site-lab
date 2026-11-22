@@ -215,6 +215,86 @@ test("inspeccionarGlb: comprimido → Draco, Meshopt o KTX2/Basis en extensionsU
   assert.deepEqual(inspeccionarGlb(ambos), { ok: false, motivo: "externo" });
 });
 
+// GLTFLoader recorre todos los chunks y se queda con el ÚLTIMO JSON: la inspección tiene que ver lo mismo que él.
+// GLB armado chunk a chunk: cada uno es { tipo, datos (objeto → JSON, o bytes), largo? (longitud declarada falsa) }.
+const JSON_CHUNK = 0x4e4f534a;
+const BIN_CHUNK = 0x004e4942;
+const INOCUO = { asset: { version: "2.0" } };
+function glbChunks(chunks, { sobra = 0 } = {}) {
+  const partes = chunks.map(({ tipo, datos, largo }) => {
+    const esJson = !(datos instanceof Uint8Array);
+    let cuerpo = esJson ? new TextEncoder().encode(JSON.stringify(datos)) : datos;
+    const relleno = (4 - (cuerpo.length % 4)) % 4;
+    if (relleno) cuerpo = Uint8Array.from([...cuerpo, ...new Array(relleno).fill(esJson ? 0x20 : 0)]);
+    return { tipo, cuerpo, largo: largo ?? cuerpo.length };
+  });
+  const total = 12 + partes.reduce((n, p) => n + 8 + p.cuerpo.length, 0) + sobra;
+  const bytes = new Uint8Array(total);
+  const v = new DataView(bytes.buffer);
+  v.setUint32(0, 0x46546c67, true);
+  v.setUint32(4, 2, true);
+  v.setUint32(8, total, true);
+  let o = 12;
+  for (const p of partes) {
+    v.setUint32(o, p.largo, true);
+    v.setUint32(o + 4, p.tipo, true);
+    bytes.set(p.cuerpo, o + 8);
+    o += 8 + p.cuerpo.length;
+  }
+  return bytes.buffer;
+}
+
+test("inspeccionarGlb: formato → dos chunks JSON, el primero inocuo y el segundo con images[0].uri (GLTFLoader usaría el último)", async () => {
+  const inspeccionarGlb = fn(await vis(), "inspeccionarGlb");
+  const externo = { asset: { version: "2.0" }, images: [{ uri: "https://evil.example/t.png" }] };
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: JSON_CHUNK, datos: externo }])), { ok: false, motivo: "formato" }, "JSON + JSON");
+  const conBin = glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: BIN_CHUNK, datos: new Uint8Array(8) }, { tipo: JSON_CHUNK, datos: externo }]);
+  assert.deepEqual(inspeccionarGlb(conBin), { ok: false, motivo: "formato" }, "JSON + BIN + JSON");
+  // Dos JSON inocuos tampoco: se admite un único chunk JSON.
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: JSON_CHUNK, datos: INOCUO }])), { ok: false, motivo: "formato" }, "JSON inocuo repetido");
+});
+
+test("inspeccionarGlb: formato → segundo chunk JSON con KHR_draco_mesh_compression", async () => {
+  const inspeccionarGlb = fn(await vis(), "inspeccionarGlb");
+  for (const clave of ["extensionsUsed", "extensionsRequired"]) {
+    const draco = { asset: { version: "2.0" }, [clave]: ["KHR_draco_mesh_compression"] };
+    assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: JSON_CHUNK, datos: draco }])), { ok: false, motivo: "formato" }, clave);
+  }
+});
+
+test("inspeccionarGlb: formato → chunk BIN antes del chunk JSON", async () => {
+  const inspeccionarGlb = fn(await vis(), "inspeccionarGlb");
+  const externo = { asset: { version: "2.0" }, images: [{ uri: "https://evil.example/t.png" }] };
+  for (const [nombre, json] of Object.entries({ inocuo: INOCUO, externo })) {
+    assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: BIN_CHUNK, datos: new Uint8Array(8) }, { tipo: JSON_CHUNK, datos: json }])), { ok: false, motivo: "formato" }, `BIN + JSON ${nombre}`);
+    assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: 0x12345678, datos: new Uint8Array(8) }, { tipo: JSON_CHUNK, datos: json }])), { ok: false, motivo: "formato" }, `desconocido + JSON ${nombre}`);
+  }
+});
+
+test("inspeccionarGlb: formato → un chunk posterior declara una longitud que se sale del archivo, o sobran bytes sin chunk", async () => {
+  const inspeccionarGlb = fn(await vis(), "inspeccionarGlb");
+  const casos = {
+    "BIN que declara más de lo que queda": glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: BIN_CHUNK, datos: new Uint8Array(8), largo: 12 }]),
+    "BIN que declara 4 GB": glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: BIN_CHUNK, datos: new Uint8Array(8), largo: 0xfffffffc }]),
+    "desconocido que se sale": glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: 0x12345678, datos: new Uint8Array(4), largo: 400 }]),
+    "4 bytes sueltos al final (no cabe una cabecera de chunk)": glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }], { sobra: 4 }),
+    "4 bytes sueltos tras el BIN": glbChunks([{ tipo: JSON_CHUNK, datos: INOCUO }, { tipo: BIN_CHUNK, datos: new Uint8Array(8) }], { sobra: 4 }),
+  };
+  for (const [nombre, bytes] of Object.entries(casos)) assert.deepEqual(inspeccionarGlb(bytes), { ok: false, motivo: "formato" }, nombre);
+});
+
+test("inspeccionarGlb: un GLB normal JSON + BIN (y chunks desconocidos después) sigue siendo { ok: true }", async () => {
+  const inspeccionarGlb = fn(await vis(), "inspeccionarGlb");
+  const json = { asset: { version: "2.0" }, buffers: [{ byteLength: 8 }], bufferViews: [{ buffer: 0, byteLength: 8 }], images: [{ bufferView: 0, mimeType: "image/png" }] };
+  const bin = { tipo: BIN_CHUNK, datos: new Uint8Array(8) };
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: json }])), { ok: true }, "solo JSON");
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: json }, bin])), { ok: true }, "JSON + BIN");
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: json }, bin, { tipo: 0x12345678, datos: new Uint8Array(4) }])), { ok: true }, "JSON + BIN + desconocido");
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: json }, { tipo: BIN_CHUNK, datos: new Uint8Array(0) }])), { ok: true }, "BIN vacío");
+  // El contenido del único JSON se sigue inspeccionando igual.
+  assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: { asset: { version: "2.0" }, images: [{ uri: "t.png" }] } }, bin])), { ok: false, motivo: "externo" }, "uri en el único JSON");
+});
+
 // ---------- 4. Render (hardware-md.ts) ----------
 
 test("render: ```modelo → figure.hw-modelo con «Descargar modelo 3D» y figcaption; sin canvas, script ni iframe en el HTML", async () => {
