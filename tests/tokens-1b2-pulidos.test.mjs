@@ -33,7 +33,7 @@ test("tope: la página 429 explica el motivo real (intentos pendientes), no mand
   assert.equal(crudos.length, 1);
   assert.ok(crudos[0].includes("VantTec Docs"), "«VantTec» y «Docs» van unidas por un espacio duro");
   assert.ok(!crudos[0].includes("VantTec Docs"), "no queda «VantTec Docs» con espacio normal");
-  const parrafos = [...doc.querySelectorAll("main p")].map((p) => p.textContent.replace(/ /g, " ").replace(/s+/g, " ").trim());
+  const parrafos = [...doc.querySelectorAll("main p")].map((p) => p.textContent.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim());
   assert.deepEqual(parrafos, ["Hay demasiados intentos pendientes. Espera un minuto y vuelve a intentarlo desde VantTec Docs."]);
   assert.ok(!/sesión/i.test(texto(doc.body)), "el motivo no es la sesión: el texto no habla de iniciar sesión");
   assert.equal(doc.querySelectorAll("a, form, button").length, 0, "sigue sin enlaces ni controles");
