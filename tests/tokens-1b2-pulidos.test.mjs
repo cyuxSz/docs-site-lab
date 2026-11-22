@@ -28,7 +28,12 @@ test("tope: la página 429 explica el motivo real (intentos pendientes), no mand
   assert.equal(res.status, 429);
   const doc = new JSDOM(await res.text()).window.document;
   assert.equal(texto(doc.querySelector("h1")), "Demasiados intentos");
-  const parrafos = [...doc.querySelectorAll("main p")].map(texto);
+  // «VantTec Docs» con espacio duro (U+00A0): a 375 px, si no caben juntas, bajan las dos y «Docs.» no queda huérfana.
+  const crudos = [...doc.querySelectorAll("main p")].map((p) => p.textContent);
+  assert.equal(crudos.length, 1);
+  assert.ok(crudos[0].includes("VantTec Docs"), "«VantTec» y «Docs» van unidas por un espacio duro");
+  assert.ok(!crudos[0].includes("VantTec Docs"), "no queda «VantTec Docs» con espacio normal");
+  const parrafos = [...doc.querySelectorAll("main p")].map((p) => p.textContent.replace(/ /g, " ").replace(/s+/g, " ").trim());
   assert.deepEqual(parrafos, ["Hay demasiados intentos pendientes. Espera un minuto y vuelve a intentarlo desde VantTec Docs."]);
   assert.ok(!/sesión/i.test(texto(doc.body)), "el motivo no es la sesión: el texto no habla de iniciar sesión");
   assert.equal(doc.querySelectorAll("a, form, button").length, 0, "sigue sin enlaces ni controles");
