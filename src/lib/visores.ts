@@ -109,6 +109,11 @@ export interface DatosModelo {
 export const MAX_MODELO_VISOR = 20 * 1024 * 1024;
 // Tope del chunk JSON de un GLB: por encima no se decodifica ni se parsea.
 export const MAX_JSON_GLB = 4 * 1024 * 1024;
+// Topes de complejidad: por encima el modelo no se muestra (queda el enlace de descarga). Los triángulos son la suma de todo
+// lo que se dibuja; las texturas, el lado mayor de cada imagen y la suma de píxeles de las imágenes distintas.
+export const MAX_TRIANGULOS_MODELO = 500_000;
+export const MAX_LADO_TEXTURA_MODELO = 4096;
+export const MAX_PIXELES_TEXTURAS_MODELO = 4 * 4096 * 4096;
 
 export const parsearModelo = (cuerpo: string): DatosModelo | null => parsearPdf(cuerpo);
 
@@ -143,7 +148,7 @@ export function tipoModelo(bytes: ArrayBuffer): "glb" | "stl" | null {
 }
 
 const COMPRESION_GLB = new Set(["KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_meshopt_compression", "KHR_texture_basisu"]);
-export type InspeccionGlb = { ok: true } | { ok: false; motivo: "formato" | "externo" | "comprimido" };
+export type InspeccionGlb = { ok: true } | { ok: false; motivo: "formato" | "externo" | "comprimido" | "complejo" };
 
 // Un GLB es contenido no confiable: se revisa antes de dárselo a GLTFLoader. Debe ser glTF 2 autocontenido (ninguna uri en
 // buffers ni images: una relativa haría un GET con cookies al portal) y sin compresión que necesite decodificadores aparte.
@@ -182,6 +187,15 @@ export function inspeccionarGlb(bytes: ArrayBuffer): InspeccionGlb {
   for (const clave of ["extensionsUsed", "extensionsRequired"]) {
     if ((json[clave] ?? []).some((e: unknown) => COMPRESION_GLB.has(e as string))) return { ok: false, motivo: "comprimido" };
   }
+  // Tamaño declarado, lo último: GLTFLoader reserva `count` elementos por accessor (sin bufferView, un arreglo a ceros), así
+  // que un JSON de pocos bytes puede pedir gigas antes de que se pueda medir nada.
+  if (json.accessors !== undefined && !Array.isArray(json.accessors)) return formato;
+  let complejo = false;
+  for (const a of json.accessors ?? []) {
+    if (!a || typeof a !== "object" || Array.isArray(a) || !Number.isInteger(a.count) || a.count < 0) return formato;
+    if (a.count > 3 * MAX_TRIANGULOS_MODELO) complejo = true;
+  }
+  if (complejo) return { ok: false, motivo: "complejo" };
   return { ok: true };
 }
 

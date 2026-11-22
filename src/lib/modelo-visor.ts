@@ -1,16 +1,17 @@
 // Visor 3D del bloque ```modelo (STL o GLB ya subido como adjunto). three.js llega vendorizado y se carga solo cuando hace
 // falta (public/vendor/three/three-visor.js; ver tools/vendor-three/README.md). Todo se inyecta para probarlo sin WebGL.
 // Orden del montaje: plaza del tope -> WebGL -> descarga -> tamaño -> tipo por contenido -> inspección del GLB -> paquete ->
-// modelo -> lienzo. Con cualquier fallo anterior al paquete, el paquete no se pide.
+// modelo -> medida de triángulos y texturas -> lienzo. Con cualquier fallo anterior al paquete, el paquete no se pide.
 // El dibujo es bajo demanda (al cargar, al mover la vista, al redimensionar y tras cada tecla): no hay bucle de cuadros ni
 // giro propio, así que no hay movimiento que reducir.
-import { inspeccionarGlb, tipoModelo, MAX_MODELO_VISOR, type DatosModelo } from "./visores.ts";
+import { inspeccionarGlb, tipoModelo, MAX_LADO_TEXTURA_MODELO, MAX_MODELO_VISOR, MAX_PIXELES_TEXTURAS_MODELO, MAX_TRIANGULOS_MODELO, type DatosModelo } from "./visores.ts";
 
 export const AVISO_MODELO_GENERAL = "No se pudo mostrar el modelo 3D. Descarga el archivo para abrirlo en tu programa de CAD.";
 export const AVISO_MODELO_SIN_WEBGL = "Este navegador no puede mostrar modelos 3D. Descarga el archivo.";
 export const AVISO_MODELO_COMPRIMIDO = "Este GLB usa compresión (Draco, Meshopt o KTX2) que el visor no admite. Descarga el archivo o expórtalo sin compresión.";
 export const AVISO_MODELO_EXTERNO = "Este GLB depende de archivos externos y no se muestra aquí. Expórtalo como un solo archivo.";
 export const AVISO_MODELO_GRANDE = "El modelo pesa más de 20 MB y no se muestra aquí. Descarga el archivo.";
+export const AVISO_MODELO_COMPLEJO = "El modelo es demasiado complejo para mostrarlo aquí. Descarga el archivo o expórtalo con menos detalle.";
 export const AVISO_MODELO_DEMASIADOS = "Hay demasiados modelos 3D abiertos en esta página. Descarga el archivo.";
 export const TEXTO_CARGANDO_MODELO = "Cargando modelo 3D…";
 export const TECLAS_MODELO = "Flechas para girar, más y menos para acercar, Mayús con flechas para desplazar, cero para restablecer.";
@@ -127,14 +128,48 @@ function registroDe(doc: any): Registro {
   return reg;
 }
 
+const materialesDe = (o: any): any[] => (Array.isArray(o.material) ? o.material : o.material ? [o.material] : []);
+const texturasDe = (material: any): any[] => Object.values(material ?? {}).filter((valor: any) => valor?.isTexture);
+
 function soltarObjeto(objeto: any): void {
   objeto?.traverse?.((o: any) => {
     o.geometry?.dispose?.();
-    for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
-      for (const valor of Object.values(m ?? {})) if ((valor as any)?.isTexture) (valor as any).dispose?.();
+    for (const m of materialesDe(o)) {
+      for (const textura of texturasDe(m)) textura.dispose?.();
       m?.dispose?.();
     }
   });
+}
+
+// ¿El modelo cargado pasa de los topes de triángulos o de texturas? Se mide sobre lo que devolvió el loader, antes de crear el
+// renderer. Triángulos: los que dibuja cada objeto (por índices si los hay; por instancia si es instanciado), aunque varios
+// compartan geometría. Texturas: lado mayor de cada imagen y suma de píxeles de las imágenes distintas. Una medida que no es
+// un número (NaN) cuenta como exceso.
+function excedeTopes(objeto: any): boolean {
+  let triangulos = 0;
+  let pixeles = 0;
+  let ladoMayor = 0;
+  const imagenes = new Set<any>();
+  objeto?.traverse?.((o: any) => {
+    const g = o.geometry;
+    if (g) {
+      const n = Number(g.index ? g.index.count : (g.attributes?.position?.count ?? 0));
+      triangulos += Math.floor(n / 3) * (o.isInstancedMesh ? Number(o.count) : 1);
+    }
+    for (const m of materialesDe(o)) {
+      for (const textura of texturasDe(m)) {
+        const imagen = textura.image;
+        if (!imagen || imagenes.has(imagen)) continue;
+        const ancho = Number(imagen.width);
+        const alto = Number(imagen.height);
+        if (!(ancho > 0 && alto > 0)) continue;
+        imagenes.add(imagen);
+        ladoMayor = Math.max(ladoMayor, ancho, alto);
+        pixeles += ancho * alto;
+      }
+    }
+  });
+  return !(triangulos <= MAX_TRIANGULOS_MODELO && ladoMayor <= MAX_LADO_TEXTURA_MODELO && pixeles <= MAX_PIXELES_TEXTURAS_MODELO);
 }
 
 // Suelta todo lo que retiene un visor. Cada paso va protegido: un fallo al soltar una parte no deja viva la siguiente.
@@ -228,6 +263,8 @@ function crearVisor(THREE: any, doc: any, fig: any, d: DatosModelo, reg: Registr
   region.setAttribute("aria-label", d.titulo ? `Modelo 3D: ${d.titulo}` : "Modelo 3D");
   const lienzo = doc.createElement("canvas");
   lienzo.setAttribute("tabindex", "0");
+  // application: el lienzo maneja él mismo flechas, +, - y 0, y así el lector de pantalla le deja pasar las teclas.
+  lienzo.setAttribute("role", "application");
   lienzo.setAttribute("aria-label", `Vista 3D interactiva. ${TECLAS_MODELO}`);
   const ayuda = doc.createElement("p");
   ayuda.className = "hw-modelo-ayuda";
@@ -370,8 +407,13 @@ function crearVisor(THREE: any, doc: any, fig: any, d: DatosModelo, reg: Registr
   }
   oir(lienzo, "webglcontextlost", () => {
     if (v.liberado) return;
+    // El aviso retira la región y el botón: si el foco estaba ahí se lleva al enlace de descarga (si no, caería en <body>).
+    // Se consulta antes de retirarlos. Un foco en otro sitio no se toca.
+    const activo = doc.activeElement;
+    const teniaFoco = activo != null && (region.contains(activo) || activo === boton);
     liberar(reg, v);
     ponerAviso(doc, fig, AVISO_MODELO_GENERAL);
+    if (teniaFoco) fig.querySelector(":scope > a")?.focus();
   });
 
   const boton = doc.createElement("button");
@@ -421,7 +463,10 @@ async function montarAhora(doc: any, fig: any, d: DatosModelo, url: string, o: O
     if (!tipo) throw new Error("No es un modelo");
     if (tipo === "glb") {
       const r = inspeccionarGlb(bytes);
-      if (!r.ok) throw conAviso(r.motivo === "externo" ? AVISO_MODELO_EXTERNO : r.motivo === "comprimido" ? AVISO_MODELO_COMPRIMIDO : AVISO_MODELO_GENERAL);
+      if (!r.ok) {
+        const avisos = { formato: AVISO_MODELO_GENERAL, externo: AVISO_MODELO_EXTERNO, comprimido: AVISO_MODELO_COMPRIMIDO, complejo: AVISO_MODELO_COMPLEJO };
+        throw conAviso(avisos[r.motivo]);
+      }
     }
     const THREE = await o.cargarThree();
     if (!sigue()) return;
@@ -431,6 +476,8 @@ async function montarAhora(doc: any, fig: any, d: DatosModelo, url: string, o: O
       return;
     }
     v.objeto = objeto;
+    // Antes de crear el lienzo y el renderer: si se pasa de los topes, el catch libera lo cargado y no hay contexto WebGL.
+    if (excedeTopes(objeto)) throw conAviso(AVISO_MODELO_COMPLEJO);
     crearVisor(THREE, doc, fig, d, reg, v, tipo === "stl");
   } catch (err: any) {
     liberar(reg, v);
