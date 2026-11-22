@@ -39,7 +39,7 @@ Todo pasa por el login del Worker (`lib/login-core.mjs`); los contenidos nunca s
 2. Guarda `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SESSION_SECRET`, `ALLOWED_ORG` y `ALLOWED_USERS` como **Secrets** del Worker (`npx wrangler secret put <NOMBRE> --name docs`), no como Variables: `wrangler deploy` borra las Variables que no están en `wrangler.jsonc`.
 3. **Abrir el acceso a la org:** `npx wrangler secret put ALLOWED_ORG --name docs` (valor: la org, p. ej. `vanttec`). Si la org restringe apps de terceros, solo se ven los miembros con membresía pública; el aviso de «Sin acceso» explica cómo cambiarla, o la org aprueba la OAuth App.
 4. **Cerrar el acceso a la org:** `npx wrangler secret delete ALLOWED_ORG --name docs`. Quedan solo los logins de `ALLOWED_USERS`.
-   Las sesiones ya iniciadas siguen valiendo hasta que caduca su cookie firmada (7 días), porque `isAllowed` solo se comprueba en el login. Para cortarlas ya, rota `SESSION_SECRET` con un valor aleatorio nuevo: `npx wrangler secret put SESSION_SECRET --name docs`. Esto cierra **todas** las sesiones; los de `ALLOWED_USERS` vuelven a entrar con login.
+   Las sesiones ya iniciadas siguen valiendo hasta que caduca su cookie firmada (7 días), porque `isAllowed` solo se comprueba en el login. Para cortarlas ya, rota `SESSION_SECRET` con un valor aleatorio nuevo: `npx wrangler secret put SESSION_SECRET --name docs`. Esto cierra todas las sesiones de navegador (las cookies); los de `ALLOWED_USERS` vuelven a entrar con login. No afecta a los tokens de dispositivo: ver «Tokens de dispositivo».
 
 `ALLOWED_USERS` son logins de GitHub separados por coma (sin distinguir mayúsculas). Hoy solo está `ALLOWED_USERS`; `ALLOWED_ORG` se añade cuando la org apruebe la OAuth App.
 
@@ -89,6 +89,7 @@ La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `dat
   ```
 
 - Los códigos caducados de `codigos_app` se purgan al crear un código nuevo (como mucho 50 por creación).
+- Rotar `SESSION_SECRET` tampoco invalida los tokens: solo cierra las sesiones de navegador.
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
 
