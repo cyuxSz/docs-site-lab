@@ -76,6 +76,16 @@ La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `dat
 - `POST /auth/app/canje` con JSON `{ code, verifier }` es la única ruta pública: cambia un código de un solo uso (60 s, ligado a un challenge PKCE S256) por `{ token, expira, login }`. Límite de 10 peticiones por minuto por IP (`CF-Connecting-IP`). Todavía no hay ruta que emita códigos; llega con el consentimiento en el navegador.
 - El token (`vtd_…`) va en `Authorization: Bearer <token>`, dura 30 días sin renovación y se consulta en D1 en cada petición, así que borrar su fila lo revoca al momento. Con Bearer los errores son JSON (401, nunca una redirección al login), las escrituras no exigen `Origin` y no hay CORS.
 - Una petición lleva una sola credencial: con la cookie `docs_session` y un Bearer a la vez responde 400.
+- `GET /auth/app/dispositivos` (solo Bearer) devuelve `{ login, dispositivos: [{ id, nombre, plataforma, creado, ultimoUso, expira, actual }] }` con los dispositivos del login del token. `POST /auth/app/revocar` (solo Bearer) borra el token de la propia petición y responde `{ "ok": true }`; no lee cuerpo ni query, así que un token no puede revocar otro dispositivo. Sin Bearer las dos responden 401 JSON `Token requerido`.
+- `/auth/dispositivos` (solo con la cookie de sesión) es la página donde cada persona ve sus dispositivos y los revoca. La pinta el Worker, sin JavaScript: cada fila es un formulario que envía `POST /auth/dispositivos/revocar` con el `id` público y un token anti-CSRF ligado a la sesión (HMAC de la cookie con `SESSION_SECRET`); exige `Origin` propio y responde 303 de vuelta a la página.
+- Las rutas de navegador (`/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/signed-out`, `/auth/dispositivos` y `/auth/dispositivos/revocar`) responden 400 JSON `Ruta solo para navegador` a una petición con un Bearer válido. `/auth/logout` no revoca un token: para eso está `POST /auth/app/revocar`.
+- Cuando alguien intenta entrar y GitHub confirma que ya no tiene acceso, `/auth/callback` borra todos sus tokens antes de responder el 403. Si GitHub falla (5xx o límite de tasa) no se borra nada. Quien pierde el acceso y no vuelve a intentar entrar conserva su token hasta que caduque; para revocarlo a mano (login en minúsculas):
+
+  ```bash
+  npx wrangler d1 execute docs-site --remote --command "DELETE FROM tokens WHERE lower(login) = 'login-en-minusculas'"
+  ```
+
+- Los códigos caducados de `codigos_app` se purgan al crear un código nuevo (como mucho 50 por creación).
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
 
