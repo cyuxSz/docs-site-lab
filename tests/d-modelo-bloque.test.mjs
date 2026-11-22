@@ -295,6 +295,45 @@ test("inspeccionarGlb: un GLB normal JSON + BIN (y chunks desconocidos después)
   assert.deepEqual(inspeccionarGlb(glbChunks([{ tipo: JSON_CHUNK, datos: { asset: { version: "2.0" }, images: [{ uri: "t.png" }] } }, bin])), { ok: false, motivo: "externo" }, "uri en el único JSON");
 });
 
+// Ampliación: tope de tamaño declarado. GLTFLoader reserva `count` elementos por accessor (sin bufferView, un arreglo a ceros
+// del tamaño que diga el JSON), así que un JSON pequeño puede pedir gigas. Se mira antes de dárselo al loader.
+test("inspeccionarGlb: complejo → algún accessor declara más de 3 × MAX_TRIANGULOS_MODELO elementos; el tope justo pasa; externo y comprimido ganan", async () => {
+  const m = await vis();
+  const inspeccionarGlb = fn(m, "inspeccionarGlb");
+  assert.equal(m.MAX_TRIANGULOS_MODELO, 500_000);
+  const tope = 3 * m.MAX_TRIANGULOS_MODELO;
+  const con = (accessors, extra = {}) => glb({ asset: { version: "2.0" }, accessors, ...extra });
+  const acc = (count, extra = {}) => ({ componentType: 5126, type: "VEC3", count, ...extra });
+  assert.deepEqual(inspeccionarGlb(con([acc(tope + 1)])), { ok: false, motivo: "complejo" }, "sin bufferView: el loader reservaría un arreglo a ceros");
+  assert.deepEqual(inspeccionarGlb(con([acc(3), acc(24), acc(4_000_000_000)])), { ok: false, motivo: "complejo" }, "basta uno, en cualquier posición");
+  assert.deepEqual(inspeccionarGlb(con([acc(tope + 1, { bufferView: 0 })])), { ok: false, motivo: "complejo" }, "con bufferView también");
+  assert.deepEqual(inspeccionarGlb(con([acc(tope + 1, { sparse: { count: 1 } })])), { ok: false, motivo: "complejo" }, "disperso también");
+  // Lo que cabe sigue pasando.
+  assert.deepEqual(inspeccionarGlb(con([])), { ok: true }, "sin accessors");
+  assert.deepEqual(inspeccionarGlb(con([acc(0), acc(3), acc(tope)])), { ok: true }, "el tope justo pasa");
+  assert.deepEqual(inspeccionarGlb(con([acc(tope, { bufferView: 0, byteOffset: 0, normalized: false, min: [0, 0, 0], max: [1, 1, 1], name: "posiciones" })])), { ok: true });
+  // Los avisos más concretos ganan.
+  assert.deepEqual(inspeccionarGlb(con([acc(tope + 1)], { images: [{ uri: "t.png" }] })), { ok: false, motivo: "externo" });
+  assert.deepEqual(inspeccionarGlb(con([acc(tope + 1)], { extensionsUsed: ["KHR_draco_mesh_compression"] })), { ok: false, motivo: "comprimido" });
+});
+
+test("inspeccionarGlb: formato → accessors que no es un arreglo, entrada que no es un objeto o count que no es un entero ≥ 0", async () => {
+  const inspeccionarGlb = fn(await vis(), "inspeccionarGlb");
+  const formato = { ok: false, motivo: "formato" };
+  const con = (accessors) => glb({ asset: { version: "2.0" }, accessors });
+  // GLTFLoader indexa json.accessors[i] y multiplica count sin validar: un objeto con clave "0" o un count de texto le valen.
+  for (const accessors of [{ 0: { componentType: 5126, type: "VEC3", count: 9_000_000 } }, "x", 7, null]) {
+    assert.deepEqual(inspeccionarGlb(con(accessors)), formato, `accessors = ${JSON.stringify(accessors)}`);
+  }
+  for (const entrada of [null, 7, "x", []]) assert.deepEqual(inspeccionarGlb(con([entrada])), formato, `entrada ${JSON.stringify(entrada)}`);
+  for (const count of [undefined, null, "9000000", "3", -1, 1.5, true, [3], {}]) {
+    assert.deepEqual(inspeccionarGlb(con([{ componentType: 5126, type: "VEC3", count }])), formato, `count = ${JSON.stringify(count)}`);
+  }
+  // 1e999 es Infinity al parsear: no es un entero.
+  const infinito = glb(undefined, { textoJson: '{"asset":{"version":"2.0"},"accessors":[{"componentType":5126,"type":"VEC3","count":1e999}]}' });
+  assert.deepEqual(inspeccionarGlb(infinito), formato, "count = 1e999");
+});
+
 // ---------- 4. Render (hardware-md.ts) ----------
 
 test("render: ```modelo → figure.hw-modelo con «Descargar modelo 3D» y figcaption; sin canvas, script ni iframe en el HTML", async () => {

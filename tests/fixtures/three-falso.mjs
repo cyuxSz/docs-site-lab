@@ -2,7 +2,11 @@
 // Expone exactamente los nombres que exporta public/vendor/three/three-visor.js. La matemática (Vector3, Spherical, Box3) es
 // real y cubre los métodos habituales; si la implementación necesita otro método de three, se añade aquí sin tocar aserciones.
 //
-//   const { THREE, registro } = crearThreeFalso(win, { caja, cajaVacia, errorStl, errorGltf });
+//   const { THREE, registro } = crearThreeFalso(win, { caja, cajaVacia, errorStl, errorGltf, triangulos, indices, mallas, instancias, texturas });
+//   Tamaño del modelo (para los topes): triangulos = n → geometría sin índice con 3·n vértices; indices = n → geometry.index.count;
+//   mallas = k → el GLB trae k mallas que comparten geometría y material; instancias = k → la malla del GLB es una InstancedMesh
+//   (isInstancedMesh, count = k); texturas = [imagen, …] → una textura por entrada con esa `image` ({ width, height }); el mismo
+//   objeto repetido es una imagen compartida por varias texturas. Sin `texturas`, el GLB lleva una textura sin imagen.
 //   registro.renderers[i]  -> { parametros, domElement, pixelRatio, tamanos, renders, liberado, contextoPerdido }
 //   registro.controles[i]  -> { object, domElement, target, enableZoom, enableDamping, autoRotate, upAlCrear, actualizaciones, liberado, emitir(tipo) }
 //   registro.gltf[i]       -> { manager, llamadas: [{ datos, ruta }], parsers: [{ textureLoader }], plugins, prohibidos }
@@ -336,9 +340,12 @@ export function crearThreeFalso(win, opciones = {}) {
 
   const cajaDeModelo = () => new Box3().setFromObject();
   function crearGeometria() {
+    const vertices = opciones.triangulos != null ? opciones.triangulos * 3 : 36;
     const g = liberable(registro.geometrias, {
       isBufferGeometry: true,
-      attributes: opciones.cajaVacia ? {} : { position: { count: 36 }, normal: { count: 36 } },
+      attributes: opciones.cajaVacia ? {} : { position: { count: vertices }, normal: { count: vertices } },
+      // Como el real: null si la geometría no está indexada.
+      index: opciones.indices != null ? { count: opciones.indices } : null,
       boundingBox: null,
       boundingSphere: null,
       computeVertexNormals() {},
@@ -518,13 +525,26 @@ export function crearThreeFalso(win, opciones = {}) {
       throw new Error("El visor no debe usar STLLoader.load: descarga el portal y se llama a parse()");
     }
   }
-  // Escena de un GLB: un grupo con una malla cuyo material lleva una textura (map).
+  // Escena de un GLB: un grupo con una malla cuyo material lleva una textura (map). Con `texturas`, una textura por imagen
+  // (map, normalMap…); con `mallas`, varias mallas con la misma geometría y material; con `instancias`, cada malla es instanciada.
+  const RANURAS = ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap", "alphaMap", "bumpMap"];
   function escenaGltf() {
     const grupo = new Objeto3D();
     grupo.isGroup = true;
-    const mapa = liberable(registro.mapas, { isTexture: true });
-    const material = new MeshStandardMaterial({ map: mapa });
-    grupo.add(new Mesh(crearGeometria(), material));
+    const mapas = opciones.texturas
+      ? opciones.texturas.map((image) => liberable(registro.mapas, { isTexture: true, image }))
+      : [liberable(registro.mapas, { isTexture: true })];
+    if (mapas.length > RANURAS.length) throw new Error("El doble admite hasta 8 texturas por material");
+    const material = new MeshStandardMaterial(Object.fromEntries(mapas.map((m, i) => [RANURAS[i], m])));
+    const geometria = crearGeometria();
+    for (let i = 0; i < (opciones.mallas ?? 1); i++) {
+      const malla = new Mesh(geometria, material);
+      if (opciones.instancias != null) {
+        malla.isInstancedMesh = true;
+        malla.count = opciones.instancias;
+      }
+      grupo.add(malla);
+    }
     return grupo;
   }
   class GLTFLoader {

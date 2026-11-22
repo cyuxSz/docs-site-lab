@@ -965,3 +965,176 @@ test("soportaWebgl(doc): true si un <canvas> nuevo da contexto webgl2 o webgl; f
   assert.equal(soportaWebgl(docCon(() => null)), false);
   assert.equal(soportaWebgl(docCon(() => { throw new Error("bloqueado"); })), false);
 });
+
+// ---------- 9. Ampliación: rol del lienzo, foco al perder el contexto y topes de triángulos y texturas ----------
+
+const COMPLEJO = "El modelo es demasiado complejo para mostrarlo aquí. Descarga el archivo o expórtalo con menos detalle.";
+const TOPE_TRIANGULOS = 500_000;
+const TOPE_LADO = 4096;
+const imagen = (width, height = width) => ({ width, height });
+
+test("lienzo: role=application (recibe foco y maneja flechas, +, - y 0), con el mismo aria-label; la región sigue siendo role=region", async () => {
+  for (const [nombre, archivo] of [["STL", stlBinario(2)], ["GLB", glb()]]) {
+    const { win, fig } = await montar(bloque(`archivo: ${A}\ntitulo: Carcasa`), { archivo });
+    const lienzo = lienzoDe(fig);
+    assert.equal(lienzo.getAttribute("role"), "application", `${nombre}: el lector de pantalla deja pasar las teclas al lienzo`);
+    assert.equal(lienzo.getAttribute("aria-label"), ARIA_LIENZO, `${nombre}: el nombre accesible no cambia`);
+    assert.equal(lienzo.getAttribute("tabindex"), "0", nombre);
+    assert.equal(lienzo.hasAttribute("aria-roledescription"), false, `${nombre}: sin descripción de rol inventada`);
+    assert.equal(lienzo.parentElement.getAttribute("role"), "region", nombre);
+    assert.equal(fig.querySelectorAll("[role=application]").length, 1, `${nombre}: solo el lienzo es application`);
+    win.close();
+  }
+});
+
+test("pérdida de contexto WebGL: si el foco estaba en el lienzo o en «Restablecer vista» pasa al enlace de descarga; si estaba fuera del visor no se mueve", async () => {
+  const texto = bloque(`archivo: ${A}`);
+  const perder = (win, lienzo) => lienzo.dispatchEvent(new win.Event("webglcontextlost", { cancelable: true }));
+  // Foco en lo que el aviso retira (el lienzo o el botón): sin esto caería en <body>.
+  for (const [nombre, elegir] of [["lienzo", (fig) => lienzoDe(fig)], ["botón «Restablecer vista»", (fig) => fig.querySelector(":scope > button.btn")]]) {
+    const { win, fig, doc } = await montar(texto);
+    const lienzo = lienzoDe(fig);
+    const enfocado = elegir(fig);
+    enfocado.focus();
+    assert.equal(doc.activeElement, enfocado, `${nombre}: premisa, el foco está en el visor`);
+    perder(win, lienzo);
+    assert.equal(aviso(fig)?.textContent, GENERAL, nombre);
+    const enlace = fig.querySelector(":scope > a");
+    assert.equal(enlace.textContent, "Descargar modelo 3D");
+    assert.equal(doc.activeElement, enlace, `${nombre}: el foco pasa al enlace «Descargar modelo 3D», no a <body>`);
+    win.close();
+  }
+  // Foco fuera del visor: no se roba.
+  {
+    const { win, fig, doc } = await montar(texto);
+    const fuera = doc.createElement("button");
+    doc.body.append(fuera);
+    fuera.focus();
+    perder(win, lienzoDe(fig));
+    assert.equal(aviso(fig)?.textContent, GENERAL);
+    assert.equal(doc.activeElement, fuera, "el foco estaba en otro control de la página: se queda ahí");
+    win.close();
+  }
+  // Sin foco en ningún control: tampoco.
+  {
+    const { win, fig, doc } = await montar(texto);
+    assert.equal(doc.activeElement, doc.body, "premisa: nada enfocado");
+    perder(win, lienzoDe(fig));
+    assert.equal(doc.activeElement, doc.body, "no se enfoca nada por su cuenta");
+    win.close();
+  }
+  // Dos visores: el foco está en el lienzo del primero y pierde el contexto el segundo.
+  {
+    const { win, doc } = await montar(`${texto}\n${bloque(`archivo: ${B}`)}`);
+    const [uno, dos] = [...doc.querySelectorAll("figure.hw-modelo")];
+    const lienzoUno = lienzoDe(uno);
+    lienzoUno.focus();
+    perder(win, lienzoDe(dos));
+    assert.equal(aviso(dos)?.textContent, GENERAL);
+    assert.equal(doc.activeElement, lienzoUno, "el foco sigue en el lienzo del otro visor");
+    assert.equal(aviso(uno), null, "el otro visor sigue vivo");
+    win.close();
+  }
+});
+
+test("topes exportados: MAX_TRIANGULOS_MODELO, MAX_LADO_TEXTURA_MODELO, MAX_PIXELES_TEXTURAS_MODELO y el aviso AVISO_MODELO_COMPLEJO", async () => {
+  const v = await vis();
+  const m = await mv();
+  assert.equal(v.MAX_TRIANGULOS_MODELO, 500_000);
+  assert.equal(v.MAX_LADO_TEXTURA_MODELO, 4096);
+  assert.equal(v.MAX_PIXELES_TEXTURAS_MODELO, 4 * 4096 * 4096);
+  assert.equal(m.AVISO_MODELO_COMPLEJO, COMPLEJO);
+  assert.doesNotMatch(COMPLEJO, /[—–]/, "sin rayas largas");
+  assert.doesNotMatch(COMPLEJO, /tri[aá]ngulo|textura|p[ií]xel|v[eé]rtice|WebGL|GPU|pol[ií]gono/i, "sin jerga");
+  assert.ok(COMPLEJO.length <= 110, "corto");
+  // El tope no rechaza ningún STL que ya cabía en 20 MB: el binario más grande admitido tiene menos triángulos.
+  assert.ok(Math.floor((v.MAX_MODELO_VISOR - 84) / 50) < v.MAX_TRIANGULOS_MODELO);
+});
+
+// Fallo por tamaño medido tras cargar: aviso, sin contexto WebGL, y lo cargado (geometría, material, texturas) se suelta.
+function esperaComplejo(fig, f, nombre) {
+  esperaFallo(fig, f, COMPLEJO, nombre);
+  assert.equal(f.llamadas.three, 1, `${nombre}: se mide lo que cargó el loader`);
+  assert.equal(f.registro.controles.length, 0, `${nombre}: sin OrbitControls`);
+  assert.ok(f.registro.geometrias.length >= 1 && f.registro.geometrias.every((g) => g.liberado >= 1), `${nombre}: geometry.dispose()`);
+  assert.ok(f.registro.materiales.every((x) => x.liberado >= 1), `${nombre}: material.dispose()`);
+  assert.ok(f.registro.mapas.every((t) => t.liberado >= 1), `${nombre}: texture.dispose()`);
+}
+
+test("tope de triángulos: más de 500 000 (por vértices, por índices, sumando mallas o por instancias) → aviso sin crear el lienzo; 500 000 justos se muestran", async () => {
+  const texto = bloque(`archivo: ${A}`);
+  const pasan = [
+    ["STL sin índice", { three: { triangulos: TOPE_TRIANGULOS + 1 } }],
+    ["GLB sin índice", { archivo: glb(), three: { triangulos: TOPE_TRIANGULOS + 1 } }],
+    ["GLB indexado (pocos vértices, muchos índices)", { archivo: glb(), three: { indices: 3 * (TOPE_TRIANGULOS + 1) } }],
+    ["GLB con dos mallas que comparten geometría", { archivo: glb(), three: { triangulos: TOPE_TRIANGULOS / 2 + 1, mallas: 2 } }],
+    ["GLB con malla instanciada", { archivo: glb(), three: { triangulos: 200_000, instancias: 3 } }],
+  ];
+  for (const [nombre, op] of pasan) {
+    const { win, f, fig } = await montar(texto, op);
+    esperaComplejo(fig, f, nombre);
+    win.close();
+  }
+  const caben = [
+    ["STL de 500 000 triángulos", { three: { triangulos: TOPE_TRIANGULOS } }],
+    ["GLB de 500 000 triángulos por índices", { archivo: glb(), three: { indices: 3 * TOPE_TRIANGULOS } }],
+    ["GLB indexado: cuentan los índices, no los vértices", { archivo: glb(), three: { triangulos: 600_000, indices: 3 } }],
+    ["GLB con dos mallas de 250 000", { archivo: glb(), three: { triangulos: TOPE_TRIANGULOS / 2, mallas: 2 } }],
+    ["GLB con 5 instancias de 100 000", { archivo: glb(), three: { triangulos: 100_000, instancias: 5 } }],
+    // El STL binario más grande que cabe en 20 MB (419 428 triángulos) sigue viéndose.
+    ["STL binario de 20 MB", { archivo: stlBinario(419_428), three: { triangulos: 419_428 } }],
+  ];
+  for (const [nombre, op] of caben) {
+    const { win, f, fig } = await montar(texto, op);
+    assert.equal(aviso(fig), null, `${nombre}: sin aviso`);
+    assert.ok(lienzoDe(fig), nombre);
+    assert.equal(f.registro.renderers.length, 1, nombre);
+    win.close();
+  }
+});
+
+test("tope de texturas: un lado de más de 4096 px, o más de 4 × 4096² px sumando las imágenes distintas → aviso sin crear el lienzo", async () => {
+  const texto = bloque(`archivo: ${A}`);
+  const cinco = () => Array.from({ length: 5 }, () => imagen(TOPE_LADO));
+  const pasan = [
+    ["ancho de 4097 px", [imagen(TOPE_LADO + 1, 16)]],
+    ["alto de 4097 px", [imagen(16, TOPE_LADO + 1)]],
+    ["8192 × 8192", [imagen(8192)]],
+    ["una grande entre varias pequeñas", [imagen(256), imagen(512), imagen(TOPE_LADO + 1, 4)]],
+    ["cinco imágenes distintas de 4096 × 4096", cinco()],
+  ];
+  for (const [nombre, texturas] of pasan) {
+    const { win, f, fig } = await montar(texto, { archivo: glb(), three: { texturas } });
+    esperaComplejo(fig, f, nombre);
+    win.close();
+  }
+  const compartida = imagen(TOPE_LADO);
+  const caben = [
+    ["una de 4096 × 4096", [imagen(TOPE_LADO)]],
+    ["cuatro de 4096 × 4096", cinco().slice(0, 4)],
+    ["la misma imagen de 4096 × 4096 en cinco texturas (cuenta una vez)", [compartida, compartida, compartida, compartida, compartida]],
+    ["textura sin imagen medible", [undefined, {}, imagen(64)]],
+  ];
+  for (const [nombre, texturas] of caben) {
+    const { win, f, fig } = await montar(texto, { archivo: glb(), three: { texturas } });
+    assert.equal(aviso(fig), null, `${nombre}: sin aviso`);
+    assert.ok(lienzoDe(fig), nombre);
+    assert.equal(f.registro.renderers.length, 1, nombre);
+    win.close();
+  }
+});
+
+test("GLB que declara un accessor de más de 1 500 000 elementos: aviso «complejo» sin pedir el paquete ni llegar a GLTFLoader", async () => {
+  const texto = bloque(`archivo: ${A}`);
+  const conAccessor = (count) => glb({ asset: { version: "2.0" }, accessors: [{ componentType: 5126, type: "VEC3", count: 3 }, { componentType: 5126, type: "VEC3", count }] });
+  const { win, f, fig } = await montar(texto, { archivo: conAccessor(3 * TOPE_TRIANGULOS + 1) });
+  esperaFallo(fig, f, COMPLEJO, "accessor enorme");
+  assert.equal(f.llamadas.three, 0, "se rechaza antes de pedir el paquete: el loader reservaría la memoria que declara");
+  assert.equal(f.registro.gltf.length, 0, "GLTFLoader no se instancia");
+  win.close();
+  // En el tope justo pasa la inspección y se muestra.
+  const justo = await montar(texto, { archivo: conAccessor(3 * TOPE_TRIANGULOS) });
+  assert.equal(aviso(justo.fig), null);
+  assert.ok(lienzoDe(justo.fig));
+  justo.win.close();
+});
