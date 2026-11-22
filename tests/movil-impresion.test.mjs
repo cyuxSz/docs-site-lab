@@ -2,6 +2,8 @@
 // desaparece si el cajón queda vacío. P2: el aviso de la vista de lector se pega justo bajo la cabecera (variable
 // --cabecera-fondo medida en el layout). P3: el editor de hardware crea su propio contexto de apilamiento y queda bajo
 // la cabecera. P4: sin JS el panel «⋯» tampoco se imprime. P5: los grupos abiertos de la barra lateral se separan.
+// Seguimientos: S3 (las barras laterales siguen la altura real de la cabecera) va aquí porque usa el motor de cascada;
+// S1 y S2 (atajo «]», foco al cerrar y nombre en la ayuda) van en tests/movil-impresion-seguimientos.test.mjs.
 // El CSS se resuelve de verdad (media, especificidad, !important y orden) sobre un DOM de jsdom; no se busca solo texto.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -312,12 +314,83 @@ test("P2: :root declara --cabecera-fondo: 67px y el aviso usa calc(var(--cabecer
   assert.equal(valor(r, d.querySelector(".topbar"), "top", ESCRITORIO), "12px", "la cabecera sigue en top: 12px");
 });
 
-test("P2: los demás top: 92px (.sidenav, .meta, .barra-caja) no se tocan", () => {
+// ---------- S3 (seguimiento). Las barras laterales siguen la altura real de la cabecera ----------
+// Aquí estaba «P2: los demás top: 92px (.sidenav, .meta, .barra-caja) no se tocan». La ampliación de la spec (criterios
+// 16 y 17) pide justo lo contrario, así que ese test se sustituye por estos: con la cabecera de siempre (67 px) todo
+// sigue resolviendo a 92 px, y con otra altura la barra la acompaña.
+// Resuelve un largo CSS (px, vh, calc y var(--cabecera-fondo)) a px enteros para una cabecera y un alto de ventana dados.
+function enPx(v, { fondo, alto = 800 }) {
+  assert.ok(v, "la propiedad no tiene valor");
+  let s = v.replace(/var\(\s*--cabecera-fondo\s*(?:,[^()]*)?\)/g, `${fondo}px`);
+  assert.doesNotMatch(s, /var\(/, `solo se espera var(--cabecera-fondo) en: ${v}`);
+  s = s.replace(/calc/g, "").replace(/([\d.]+)px/g, "$1").replace(/([\d.]+)[dsl]?vh/g, (_, n) => `(${n}*${alto}/100)`);
+  assert.match(s, /^[\d\s.+\-*/()]+$/, `largo que el test no sabe resolver: ${v}`);
+  return Math.round(Function(`"use strict"; return (${s});`)());
+}
+const HUECO_BARRA = 25; // 92 - 67: lo que hoy separa la barra del borde inferior de la cabecera
+const MARGEN_ALTO = 41; // 108 - 67: lo que hoy se descuenta de 100vh además de la cabecera
+const paginaLibre = () => dom('<div class="doc"><nav class="sidenav"></nav><main></main><aside class="meta"></aside></div>');
+const paginaBarras = () => dom('<div class="doc doc-wiki"><div class="barra-caja barra-caja-izq"><nav class="sidenav"></nav></div><main></main><div class="barra-caja barra-caja-der"><aside class="meta"></aside></div></div>');
+const pegadas = () => [
+  [".sidenav", paginaLibre().querySelector(".sidenav")],
+  [".meta", paginaLibre().querySelector(".meta")],
+  [".doc-wiki > .barra-caja", paginaBarras().querySelector(".barra-caja-izq")],
+];
+
+test("enPx (ayuda del test): resuelve px, vh, calc y var(--cabecera-fondo)", () => {
+  assert.equal(enPx("92px", { fondo: 67 }), 92);
+  assert.equal(enPx("calc(var(--cabecera-fondo) + 8px)", { fondo: 67 }), 75);
+  assert.equal(enPx("calc(100vh - 108px)", { fondo: 67, alto: 800 }), 692);
+  assert.equal(enPx("calc(100vh - (var(--cabecera-fondo, 67px) + 41px))", { fondo: 80, alto: 1000 }), 879);
+});
+
+test("S3: las barras laterales (.sidenav, .meta, .barra-caja) se pegan bajo la cabecera real, no a 92px fijos", () => {
   const r = global();
-  const d = dom('<div class="doc-wiki"><div class="barra-caja"><nav class="sidenav"></nav></div><aside class="meta"></aside></div>');
-  assert.equal(valor(r, d.querySelector(".sidenav"), "top", { ancho: 1366, medio: "screen" }), "92px");
-  assert.equal(valor(r, d.querySelector(".meta"), "top", ESCRITORIO), "92px");
-  assert.equal(valor(r, d.querySelector(".barra-caja"), "top", ESCRITORIO), "92px");
+  for (const [nombre, el] of pegadas()) {
+    assert.equal(valor(r, el, "position", ESCRITORIO), "sticky", `${nombre} sigue pegada en escritorio`);
+    const top = valor(r, el, "top", ESCRITORIO);
+    assert.match(top ?? "", /var\(\s*--cabecera-fondo\b/, `${nombre}: top sale de --cabecera-fondo (hoy: ${top})`);
+    assert.equal(enPx(top, { fondo: 67 }), 92, `${nombre}: con la cabecera de siempre (67 px) queda en 92 px, sin cambio visible`);
+    for (const fondo of [62, 80, 123]) {
+      assert.equal(enPx(top, { fondo }), fondo + HUECO_BARRA, `${nombre}: con el borde de la cabecera en ${fondo} px, la barra la acompaña`);
+    }
+  }
+});
+
+test("S3: el alto máximo de las barras descuenta la cabecera real (no 108px fijos), para que no se salgan por abajo", () => {
+  const r = global();
+  for (const [nombre, el] of pegadas().filter(([n]) => n !== ".meta")) {
+    const max = valor(r, el, "max-height", ESCRITORIO);
+    assert.match(max ?? "", /var\(\s*--cabecera-fondo\b/, `${nombre}: max-height sale de --cabecera-fondo (hoy: ${max})`);
+    assert.equal(enPx(max, { fondo: 67, alto: 800 }), 800 - 108, `${nombre}: con la cabecera de siempre, igual que hoy (100vh - 108px)`);
+    for (const [fondo, alto] of [[62, 667], [80, 800], [123, 900]]) {
+      assert.equal(enPx(max, { fondo, alto }), alto - fondo - MARGEN_ALTO, `${nombre}: cabecera ${fondo} px en ventana de ${alto} px`);
+    }
+  }
+});
+
+test("S3: no queda ningún 92px ni 108px fijo en global.css; el aviso de lector sigue en --cabecera-fondo + 8px", () => {
+  const css = read(GLOBAL);
+  assert.doesNotMatch(css, /\b92px\b/, "92px era cabecera (67) + hueco (25): ahora se calcula");
+  assert.doesNotMatch(css, /\b108px\b/, "108px era cabecera (67) + 41: ahora se calcula");
+  const r = global();
+  const aviso = dom('<div class="hw-aviso-lector"></div>', "data-vista-lector").querySelector(".hw-aviso-lector");
+  assert.equal(enPx(valor(r, aviso, "top", ESCRITORIO), { fondo: 80 }), 88);
+  assert.equal(valor(r, dom("").documentElement, "--cabecera-fondo", ESCRITORIO), "67px", "el respaldo de :root no cambia");
+});
+
+test("S3: lo que no es barra pegada no cambia: cajones móviles a toda altura y barras dentro de .barra-caja sin pegado propio", () => {
+  const r = global();
+  const d = paginaBarras();
+  for (const sel of [".sidenav", ".meta"]) {
+    const el = d.querySelector(sel);
+    assert.equal(valor(r, el, "position", MOVIL), "fixed", `${sel}: cajón en móvil`);
+    assert.equal(valor(r, el, "top", MOVIL), "0", `${sel}: el cajón sigue ocupando toda la altura`);
+    assert.equal(valor(r, el, "position", ESCRITORIO), "static", `${sel}: en escritorio la pegada es la caja`);
+    assert.equal(valor(r, el, "max-height", ESCRITORIO), "none");
+  }
+  assert.equal(valor(r, d.querySelector(".sidenav"), "max-height", MOVIL), "none");
+  assert.equal(valor(r, dom('<header class="topbar"></header>').querySelector(".topbar"), "top", ESCRITORIO), "12px", "la cabecera no se mueve");
 });
 
 test("P2: el <script> del layout mide .topbar con fondoCabecera, escribe --cabecera-fondo en <html> y lo sigue con ResizeObserver", () => {
