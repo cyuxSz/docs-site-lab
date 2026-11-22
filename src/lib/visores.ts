@@ -1,4 +1,4 @@
-// Visores de hardware (D1a): lógica pura de los bloques ```pdf y ```bom, sin dependencias (la usan el navegador, el renderizador y los tests).
+// Visores de hardware (D1a): lógica pura de los bloques ```pdf, ```kicad, ```modelo y ```bom, sin dependencias (la usan el navegador, el renderizador y los tests).
 //   ```pdf                            ```bom
 //   archivo: <uuid>                   referencia,descripcion,cantidad,costo_unitario[,proveedor][,enlace]
 //   titulo: Manual (opcional)         R1,Resistencia 10k,10,0.0032
@@ -97,6 +97,84 @@ export function archivosKicad(
   if (respaldo.length > 1) return { ok: false, error: "Como respaldo elige como máximo un PDF o SVG" };
   if (kicad.length + respaldo.length !== archivos.length) return { ok: false, error: "Solo se admiten un .kicad_sch o .kicad_pcb y, opcionalmente, un PDF o SVG de respaldo" };
   return respaldo.length ? { ok: true, kicad: kicad[0], respaldo: respaldo[0] } : { ok: true, kicad: kicad[0] };
+}
+
+// ---------- Modelo 3D ----------
+// Bloque ```modelo: mismas claves que ```pdf (archivo, titulo). El archivo es un STL o un GLB ya subido como adjunto.
+export interface DatosModelo {
+  archivo: string;
+  titulo: string;
+}
+
+export const MAX_MODELO_VISOR = 20 * 1024 * 1024;
+// Tope del chunk JSON de un GLB: por encima no se decodifica ni se parsea.
+export const MAX_JSON_GLB = 4 * 1024 * 1024;
+
+export const parsearModelo = (cuerpo: string): DatosModelo | null => parsearPdf(cuerpo);
+
+export function bloqueModelo(d: { archivo: string; titulo?: string }): string {
+  const archivo = String(d?.archivo ?? "").toLowerCase();
+  if (!UUID.test(archivo)) throw new Error("Identificador de modelo no válido");
+  const titulo = limpiarTitulo(d.titulo ?? "");
+  return `\`\`\`modelo\narchivo: ${archivo}\n${titulo ? `titulo: ${titulo}\n` : ""}\`\`\`\n`;
+}
+
+// Validación previa a la subida desde el menú «Insertar»: un solo .stl o .glb que el visor pueda cargar.
+export function archivoModelo(lista: ArchivoLista[]): { ok: true; archivo: ArchivoLista } | { ok: false; error: string } {
+  const archivos = Array.from(lista ?? []);
+  if (archivos.length !== 1 || !/\.(stl|glb)$/i.test(String(archivos[0]?.name ?? ""))) return { ok: false, error: "Elige exactamente un archivo .stl o .glb" };
+  const archivo = archivos[0];
+  if (!Number.isFinite(archivo.size) || archivo.size > MAX_MODELO_VISOR) return { ok: false, error: 'El visor muestra modelos de hasta 20 MB. Súbelo con "Adjuntar archivo".' };
+  return { ok: true, archivo };
+}
+
+const MAGIA_GLB = 0x46546c67; // "glTF"
+const CHUNK_JSON = 0x4e4f534a; // "JSON"
+
+// Tipo por contenido, no por extensión: magia glTF, STL binario (84 + 50·n bytes exactos) o STL ASCII (empieza por «solid»).
+export function tipoModelo(bytes: ArrayBuffer): "glb" | "stl" | null {
+  const largo = bytes?.byteLength ?? 0;
+  if (largo < 5) return null;
+  const v = new DataView(bytes);
+  if (v.getUint32(0, true) === MAGIA_GLB) return "glb";
+  if (largo >= 84 && 84 + 50 * v.getUint32(80, true) === largo) return "stl";
+  const inicio = new TextDecoder().decode(new Uint8Array(bytes, 0, Math.min(largo, 512))).replace(/^[﻿\s]+/, "");
+  return /^solid(?:\s|$)/.test(inicio) ? "stl" : null;
+}
+
+const COMPRESION_GLB = new Set(["KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_meshopt_compression", "KHR_texture_basisu"]);
+export type InspeccionGlb = { ok: true } | { ok: false; motivo: "formato" | "externo" | "comprimido" };
+
+// Un GLB es contenido no confiable: se revisa antes de dárselo a GLTFLoader. Debe ser glTF 2 autocontenido (ninguna uri en
+// buffers ni images: una relativa haría un GET con cookies al portal) y sin compresión que necesite decodificadores aparte.
+export function inspeccionarGlb(bytes: ArrayBuffer): InspeccionGlb {
+  const formato: InspeccionGlb = { ok: false, motivo: "formato" };
+  const largo = bytes?.byteLength ?? 0;
+  if (largo < 20) return formato;
+  const v = new DataView(bytes);
+  if (v.getUint32(0, true) !== MAGIA_GLB || v.getUint32(4, true) !== 2 || v.getUint32(8, true) !== largo) return formato;
+  const largoJson = v.getUint32(12, true);
+  if (v.getUint32(16, true) !== CHUNK_JSON || largoJson > MAX_JSON_GLB || 20 + largoJson > largo) return formato;
+  let json: any;
+  try {
+    json = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes, 20, largoJson)));
+  } catch {
+    return formato;
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) return formato;
+  for (const clave of ["buffers", "images", "extensionsUsed", "extensionsRequired"]) {
+    if (json[clave] !== undefined && !Array.isArray(json[clave])) return formato;
+  }
+  for (const clave of ["buffers", "images"]) {
+    for (const x of json[clave] ?? []) {
+      if (!x || typeof x !== "object") return formato;
+      if ("uri" in x) return { ok: false, motivo: "externo" };
+    }
+  }
+  for (const clave of ["extensionsUsed", "extensionsRequired"]) {
+    if ((json[clave] ?? []).some((e: unknown) => COMPRESION_GLB.has(e as string))) return { ok: false, motivo: "comprimido" };
+  }
+  return { ok: true };
 }
 
 // ---------- BOM ----------

@@ -100,6 +100,7 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
               <input type="file" class="hw-archivo" data-hw-archivo-pdf accept=".pdf,application/pdf" tabindex="-1" aria-hidden="true" />
               <input type="file" class="hw-archivo" data-hw-archivo-bom accept=".csv,text/csv" tabindex="-1" aria-hidden="true" />
               <input type="file" class="hw-archivo" data-hw-archivo-kicad accept=".kicad_sch,.kicad_pcb,.pdf,.svg" multiple tabindex="-1" aria-hidden="true" />
+              <input type="file" class="hw-archivo" data-hw-archivo-modelo accept=".stl,.glb,model/stl,model/gltf-binary" tabindex="-1" aria-hidden="true" />
               <div class="hw-insertar">
                 <button type="button" class="btn" data-hw-menu-insertar aria-haspopup="menu" aria-expanded="false" aria-controls="hw-insertar-menu">Insertar</button>
                 <div class="hw-insertar-menu" id="hw-insertar-menu" role="menu" aria-label="Insertar" hidden>
@@ -108,6 +109,7 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
                   <button type="button" class="btn" data-hw-insertar-pdf role="menuitem" tabindex="-1">PDF</button>
                   <button type="button" class="btn" data-hw-insertar-bom role="menuitem" tabindex="-1">BOM (CSV)</button>
                   <button type="button" class="btn" data-hw-insertar-kicad role="menuitem" tabindex="-1">Esquemático o PCB de KiCad</button>
+                  <button type="button" class="btn" data-hw-insertar-modelo role="menuitem" tabindex="-1">Modelo 3D (STL o GLB)</button>
                 </div>
               </div>
               <progress class="hw-progreso" data-hw-progreso max="100" value="0" aria-label="Progreso de la subida" hidden></progress>
