@@ -48,8 +48,14 @@ html .hw-visual .milkdown {
   }
 }
 
-/* Menú «/» de Crepe acotado: alto máximo con scroll solo en la lista de grupos (la fila de pestañas queda fija) y por encima de la
-   cabecera fija (.topbar, z-index 20). El display:flex exige repetir el ocultado de Crepe. */
+/* El editor entero crea su propio contexto de apilamiento: todos los z-index de dentro (menú «/», acciones, menú Insertar) valen solo
+   entre ellos y el editor queda bajo la cabecera fija (.topbar, z-index 20). */
+.hw-editor {
+  isolation: isolate;
+}
+
+/* Menú «/» de Crepe acotado: alto máximo con scroll solo en la lista de grupos (la fila de pestañas queda fija).
+   El display:flex exige repetir el ocultado de Crepe. */
 .hw-visual .milkdown .milkdown-slash-menu {
   max-height: min(320px, 45vh);
   display: flex;

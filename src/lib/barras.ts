@@ -49,7 +49,7 @@ export function anuncioLectura(antes: EstadoBarras, despues: EstadoBarras): stri
 
 // Etiqueta (aria-label y title) del botón de ese lado: lo que haría al pulsarlo.
 export function etiquetaBarra(e: EstadoBarras, lado: Lado, movil: boolean): string {
-  return `${visible(e, lado, movil) ? "Ocultar" : "Mostrar"} ${lado === "izq" ? "navegación" : "índice"}`;
+  return `${visible(e, lado, movil) ? "Ocultar" : "Mostrar"} ${lado === "izq" ? "navegación" : movil ? "datos de la página" : "índice"}`;
 }
 
 // Valor de aria-expanded del botón de ese lado.
