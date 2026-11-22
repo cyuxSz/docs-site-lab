@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   T0,
   SECRET,
+  ORIGIN,
   PAGINA,
   REVOCAR,
   FORM,
@@ -18,6 +19,7 @@ import {
   pagina,
   paginaCon,
   enviarRevocar,
+  origenDeNavegador,
   conConsola,
 } from "./fixtures/tokens-1b.mjs";
 
@@ -141,7 +143,9 @@ test("página: cabeceras contra clickjacking y caché, CSP sin scripts y con for
     assert.equal(res.headers.get("x-frame-options"), "DENY");
     assert.match(res.headers.get("cache-control") ?? "", /no-store/);
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");
-    assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+    // Antes se fijaba aquí `no-referrer`. Con esa política el navegador envía `Origin: null` en el POST del formulario
+    // (Fetch, «append a request Origin header») y la revocación da siempre 403: ver la sección «Referrer-Policy».
+    assert.equal(res.headers.get("referrer-policy"), "same-origin");
     assert.equal(res.headers.get("set-cookie"), null);
     const csp = res.headers.get("content-security-policy") ?? "";
     const directivas = Object.fromEntries(csp.split(";").map((d) => d.trim().split(/\s+/)).filter((d) => d[0]).map(([k, ...v]) => [k, v.join(" ")]));
@@ -218,6 +222,126 @@ test("página: solo GET; sin binding DB o con D1 caído → 503 sin detalles", a
     }
   });
   assert.ok(!salida.includes(SECRET));
+});
+
+// ---------- Criterios 5 y 6: Referrer-Policy de la página y Origin del formulario ----------
+// Defecto visto en Edge: con `Referrer-Policy: no-referrer` el navegador envía `Origin: null` en el POST del formulario
+// aunque sea del mismo origen, y la revocación exige el Origin propio. Los demás tests no lo veían porque ponen el
+// Origin a mano; aquí el Origin se deduce de la Referrer-Policy con la que se sirvió la página (origenDeNavegador).
+
+test("referrer: GET /auth/dispositivos se sirve con Referrer-Policy same-origin (con filas, vacía y con barra final)", async () => {
+  const { env } = await escenario();
+  const casos = [
+    ["con dispositivos", PAGINA, sesion("ana")],
+    ["estado vacío", PAGINA, sesion("carla")],
+    ["con barra final", `${PAGINA}/`, sesion("ana")],
+  ];
+  for (const [que, path, cookie] of casos) {
+    const res = await pedir(path, { env, cookie });
+    assert.equal(res.status, 200, que);
+    // Un solo valor: con una lista («no-referrer, same-origin») el navegador se queda con el último que reconoce.
+    assert.equal(res.headers.get("referrer-policy"), "same-origin", que);
+    // El resto de cabeceras de page() no cambia.
+    assert.equal(res.headers.get("x-frame-options"), "DENY", que);
+    assert.match(res.headers.get("cache-control") ?? "", /no-store/, que);
+    assert.match(res.headers.get("content-security-policy") ?? "", /form-action 'self'/, que);
+    // Y la política va solo en la cabecera: sin <meta name="referrer"> ni atributos referrerpolicy que la cambien.
+    const html = await res.text();
+    assert.ok(!/name=["']?referrer|referrerpolicy/i.test(html), que);
+  }
+});
+
+test("referrer: el Origin que un navegador deduce de la página servida es el del Worker, y con él «Revocar» responde 303", async () => {
+  // Guardas del ayudante (algoritmo de Fetch): no-referrer oscurece el origen; same-origin solo lo da al mismo origen.
+  assert.equal(origenDeNavegador("no-referrer", ORIGIN, `${ORIGIN}${REVOCAR}`), "null");
+  assert.equal(origenDeNavegador("same-origin", ORIGIN, `${ORIGIN}${REVOCAR}`), ORIGIN);
+  assert.equal(origenDeNavegador("same-origin", ORIGIN, "https://evil.example/x"), "null");
+
+  const { env, a2 } = await escenario();
+  const cookie = sesion("ana");
+  const { res, filas } = await paginaCon(env, cookie, 2);
+  const destino = new URL(filas[0].form.getAttribute("action"), `${ORIGIN}${PAGINA}`).href;
+  const origin = origenDeNavegador(res.headers.get("referrer-policy"), ORIGIN, destino);
+  assert.equal(origin, ORIGIN, "con la Referrer-Policy de la página, el navegador debe enviar el Origin real y no «null»");
+
+  const post = await enviarRevocar(env, { cookie, campos: { id: filas[0].id, csrf: filas[0].csrf }, headers: { "content-type": FORM["content-type"], origin } });
+  assert.equal(post.status, 303);
+  assert.equal(post.headers.get("location"), PAGINA);
+  assert.equal(await vivo(env, a2.token), false);
+  assert.equal((await pagina(env, cookie)).filas.length, 1);
+});
+
+test("referrer: las páginas sin formulario conservan no-referrer (resto de page(), errores de la revocación y redirecciones)", async () => {
+  const { env } = await escenario();
+  const cookie = sesion("ana");
+  const { filas } = await paginaCon(env, cookie, 2);
+  const campos = { id: filas[0].id, csrf: filas[0].csrf };
+  const ct = FORM["content-type"];
+  const roto = {
+    prepare() {
+      throw new Error("D1_ERROR");
+    },
+    batch() {
+      throw new Error("D1_ERROR");
+    },
+  };
+
+  // [qué, estado esperado, respuesta]. Las de HTML se comprueban además sin <form>: por eso no necesitan same-origin.
+  const casos = [
+    ["sesión cerrada", 200, await pedir("/auth/signed-out", { env })],
+    ["proyecto privado", 403, await pedir("/restringido-demo/", { env, cookie: sesion("otro") })],
+    ["login sin configurar", 503, await pedir(PAGINA, { env: { ...env, SESSION_SECRET: "corto" }, cookie })],
+    ["callback sin estado", 400, await pedir("/auth/callback?state=x&code=y", { env })],
+    ["página: 405", 405, await pedir(PAGINA, { env, method: "POST", cookie, headers: FORM, body: "x=1" })],
+    ["página: 503 sin DB", 503, await pedir(PAGINA, { env: { ...env, DB: undefined }, cookie })],
+    ["página: 503 con D1 caído", 503, await pedir(PAGINA, { env: { ...env, DB: roto }, cookie })],
+    ["revocar: 405", 405, await enviarRevocar(env, { cookie, campos, method: "GET" })],
+    ["revocar: 403 sin Origin", 403, await enviarRevocar(env, { cookie, campos, headers: { "content-type": ct } })],
+    ["revocar: 403 con Origin null", 403, await enviarRevocar(env, { cookie, campos, headers: { "content-type": ct, origin: "null" } })],
+    ["revocar: 403 con Origin ajeno", 403, await enviarRevocar(env, { cookie, campos, headers: { "content-type": ct, origin: "https://evil.example" } })],
+    ["revocar: 415", 415, await enviarRevocar(env, { cookie, campos, headers: { ...FORM, "content-type": "text/plain" } })],
+    ["revocar: 413", 413, await enviarRevocar(env, { cookie, campos: { ...campos, relleno: "x".repeat(2000) } })],
+    ["revocar: 403 por csrf", 403, await enviarRevocar(env, { cookie, campos: { ...campos, csrf: "A".repeat(43) } })],
+    ["revocar: 400 por id", 400, await enviarRevocar(env, { cookie, campos: { ...campos, id: "x" } })],
+    ["revocar: 503 sin DB", 503, await enviarRevocar({ ...env, DB: undefined }, { cookie, campos })],
+    ["página: 302 sin sesión", 302, await pedir(PAGINA, { env })],
+    ["revocar: 302 sin sesión", 302, await enviarRevocar(env, { campos })],
+    ["revocar: 303 con éxito", 303, await enviarRevocar(env, { cookie, campos })],
+  ];
+  for (const [que, estado, res] of casos) {
+    assert.equal(res.status, estado, que);
+    assert.equal(res.headers.get("referrer-policy"), "no-referrer", que);
+    if (/^text\/html/.test(res.headers.get("content-type") ?? "")) {
+      const html = await res.text();
+      assert.ok(!/<form\b/i.test(html), `${que}: una página sin same-origin no puede llevar formularios`);
+      assert.equal(res.headers.get("x-frame-options"), "DENY", que);
+    }
+  }
+});
+
+test("referrer: guarda — un POST con Origin: null sigue dando 403 y no revoca, aunque sesión, csrf e id sean válidos", async () => {
+  const { env, a1, a2 } = await escenario();
+  const cookie = sesion("ana");
+  const { filas } = await paginaCon(env, cookie, 2);
+  for (const path of [REVOCAR, `${REVOCAR}/`]) {
+    for (const origin of ["null", "NULL", " null", "null, null"]) {
+      const res = await pedir(path, {
+        env,
+        method: "POST",
+        cookie,
+        headers: { "content-type": FORM["content-type"], origin },
+        body: new URLSearchParams({ id: filas[0].id, csrf: filas[0].csrf }).toString(),
+      });
+      assert.equal(res.status, 403, `${path} con Origin ${JSON.stringify(origin)}`);
+      assert.equal(res.headers.get("location"), null);
+      assert.equal(res.headers.get("set-cookie"), null);
+      assert.match(res.headers.get("content-type") ?? "", /^text\/html/);
+    }
+  }
+  assert.equal(filasTokens(env).length, 3, "Origin: null no revoca nada");
+  assert.equal(await vivo(env, a1.token), true);
+  assert.equal(await vivo(env, a2.token), true);
+  assert.equal((await pagina(env, cookie)).filas.length, 2);
 });
 
 // ---------- Criterio 6: revocar desde la página ----------

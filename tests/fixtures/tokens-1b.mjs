@@ -46,6 +46,24 @@ export function enviarRevocar(env, { cookie, campos = {}, headers = FORM, method
   return pedir(REVOCAR, { env, method, cookie, headers, body, ...extra });
 }
 
+// Valor de la cabecera `Origin` que un navegador pone en el POST de un formulario (navegación, modo distinto de
+// "cors", método distinto de GET/HEAD), según la Referrer-Policy del documento que lo envía. Es el paso «append a
+// request `Origin` header» de Fetch (https://fetch.spec.whatwg.org/#append-a-request-origin-header):
+//   no-referrer → `null`; same-origin → `null` salvo destino del mismo origen; no-referrer-when-downgrade, strict-origin
+//   y strict-origin-when-cross-origin → `null` solo al bajar de https a http; el resto → el origen serializado.
+// Sin cabecera se usa la política por omisión (strict-origin-when-cross-origin). Con varios valores vale el último.
+export function origenDeNavegador(referrerPolicy, origenPagina, urlDestino) {
+  const politica = (referrerPolicy ?? "").split(",").map((p) => p.trim().toLowerCase()).filter(Boolean).at(-1) ?? "strict-origin-when-cross-origin";
+  const pagina = new URL(origenPagina);
+  const destino = new URL(urlDestino);
+  if (politica === "no-referrer") return "null";
+  if (politica === "same-origin") return destino.origin === pagina.origin ? pagina.origin : "null";
+  if (["no-referrer-when-downgrade", "strict-origin", "strict-origin-when-cross-origin"].includes(politica)) {
+    return pagina.protocol === "https:" && destino.protocol !== "https:" ? "null" : pagina.origin;
+  }
+  return pagina.origin;
+}
+
 // Simula GitHub para /auth/callback. `miembro` y `publico` son los estados HTTP de las dos comprobaciones de acceso.
 export function mockGitHub({ login, miembro = 404, publico = 404 }) {
   const vistas = [];
