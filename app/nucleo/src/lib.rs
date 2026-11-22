@@ -36,8 +36,8 @@ pub const TOPE_CUERPO: usize = 64 * 1024 * 1024;
 pub const VAR_DESTINO_DEV: &str = "VANTTEC_DOCS_DESTINO_DEV";
 pub const VAR_TOKEN_DEV: &str = "VANTTEC_DOCS_TOKEN_DEV";
 
-/// CSP de las pantallas que sirve la cáscara.
-pub const CSP_PANTALLA: &str = "default-src 'none'; style-src 'unsafe-inline'";
+/// CSP de las pantallas que sirve la cáscara. `form-action` es para el botón «Iniciar sesión».
+pub const CSP_PANTALLA: &str = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'";
 
 /// CSP que el proxy añade a toda respuesta: ningún marco de otro origen.
 pub const CSP_MARCOS: &str = "frame-src 'self'";

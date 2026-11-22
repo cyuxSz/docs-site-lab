@@ -6,7 +6,6 @@
 
 use std::io::Read;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -17,10 +16,10 @@ use http::header::{
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode};
 
 use crate::destino::{decodificar_una_vez, solo_ruta, Destino};
-use crate::login::Login;
-use crate::pantalla::pantalla_sin_sesion;
+use crate::login::{Inicio, Login};
+use crate::pantalla::{pantalla_de_login, pantalla_sin_sesion};
 use crate::token::{FuenteDeToken, Token};
-use crate::{CSP_AISLADO, CSP_MARCOS, ORIGENES_APP, TOPE_CUERPO};
+use crate::{CSP_AISLADO, CSP_MARCOS, ORIGENES_APP, RUTA_INICIAR, TOPE_CUERPO};
 
 const METODOS: [&str; 6] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 const METODOS_ALLOW: &str = "GET, HEAD, POST, PUT, PATCH, DELETE";
@@ -35,6 +34,7 @@ const CSP: &str = "content-security-policy";
 const MSG_ORIGEN: &str = "Origen no permitido";
 const MSG_METODO: &str = "Método no permitido";
 const MSG_RUTA: &str = "Ruta no válida";
+const MSG_LOCAL: &str = "No encontrado";
 const MSG_AUTH: &str = "No disponible en la app";
 const MSG_SIN_SESION: &str = "Sin sesión";
 const MSG_CUERPO: &str = "Cuerpo demasiado grande";
@@ -167,18 +167,47 @@ pub trait Navegador: Send + Sync {
     fn abrir(&self, url: &str) -> bool;
 }
 
+/// Lo que tiene el proxy de la app y no el de token fijo: el login y quien abre el navegador.
+struct Inicios {
+    login: Arc<Login>,
+    navegador: Arc<dyn Navegador>,
+}
+
 /// El proxy. Se comparte entre hilos con `Arc<Proxy>`.
 pub struct Proxy {
     destino: Destino,
     fuente: Arc<dyn FuenteDeToken>,
+    /// `None` en un proxy sin login: no tiene botón.
+    inicios: Option<Inicios>,
     limites: Limites,
     agente: ureq::Agent,
     huecos: Huecos,
-    sesion_perdida: AtomicBool,
+    /// El último token que el servidor rechazó. No vuelve a salir.
+    rechazado: Mutex<Option<Token>>,
 }
 
 impl Proxy {
     pub fn nuevo(destino: Destino, fuente: Arc<dyn FuenteDeToken>, limites: Limites) -> Proxy {
+        Proxy::montar(destino, fuente, None, limites)
+    }
+
+    /// Proxy de la app: el destino y el token salen del `Login`, y atiende `RUTA_INICIAR`.
+    pub fn con_login(
+        login: Arc<Login>,
+        navegador: Arc<dyn Navegador>,
+        limites: Limites,
+    ) -> Proxy {
+        let destino = login.destino().clone();
+        let fuente: Arc<dyn FuenteDeToken> = login.clone();
+        Proxy::montar(destino, fuente, Some(Inicios { login, navegador }), limites)
+    }
+
+    fn montar(
+        destino: Destino,
+        fuente: Arc<dyn FuenteDeToken>,
+        inicios: Option<Inicios>,
+        limites: Limites,
+    ) -> Proxy {
         // Sin redirecciones (las sigue el webview) y sin proxies HTTP del entorno.
         let agente = ureq::AgentBuilder::new()
             .redirects(0)
@@ -187,17 +216,7 @@ impl Proxy {
             .max_idle_connections_per_host(limites.simultaneas.max(1))
             .build();
         let huecos = Huecos::nuevo(limites.simultaneas, limites.en_espera);
-        Proxy { destino, fuente, limites, agente, huecos, sesion_perdida: AtomicBool::new(false) }
-    }
-
-    /// Proxy de la app: el destino y el token salen del `Login`, y atiende `RUTA_INICIAR`.
-    /// Esqueleto del lote `app-login`.
-    pub fn con_login(
-        _login: Arc<Login>,
-        _navegador: Arc<dyn Navegador>,
-        _limites: Limites,
-    ) -> Proxy {
-        todo!("lote app-login: Proxy::con_login")
+        Proxy { destino, fuente, inicios, limites, agente, huecos, rechazado: Mutex::new(None) }
     }
 
     /// Atiende una petición del webview. Nunca entra en pánico ni devuelve el token.
@@ -224,9 +243,71 @@ impl Proxy {
         respuesta
     }
 
-    /// `true` desde que el servidor rechazó el token (401 con `WWW-Authenticate: Bearer`).
+    /// `true` desde que el servidor rechazó un token (401 con `WWW-Authenticate: Bearer`) y
+    /// mientras la fuente no entregue otro distinto.
     pub fn sesion_perdida(&self) -> bool {
-        self.sesion_perdida.load(Ordering::SeqCst)
+        self.rechazado().is_some() && self.token_vigente().is_none()
+    }
+
+    fn rechazado(&self) -> Option<Token> {
+        self.rechazado.lock().unwrap_or_else(|envenenado| envenenado.into_inner()).clone()
+    }
+
+    /// El token de la fuente, salvo que sea el que el servidor ya rechazó.
+    fn token_vigente(&self) -> Option<Token> {
+        let token = self.fuente.token()?;
+        (self.rechazado().as_ref() != Some(&token)).then_some(token)
+    }
+
+    /// El servidor rechazó ese token: no vuelve a salir, y el login lo olvida.
+    fn rechazar(&self, token: &Token) {
+        *self.rechazado.lock().unwrap_or_else(|envenenado| envenenado.into_inner()) =
+            Some(token.clone());
+        if let Some(inicios) = &self.inicios {
+            inicios.login.rechazar(token);
+        }
+    }
+
+    /// Sin token no hay petición de red: la navegación ve la pantalla y el resto un 401.
+    fn sin_sesion(&self, es_navegacion: bool) -> Response<Vec<u8>> {
+        if !es_navegacion {
+            return error_local(StatusCode::UNAUTHORIZED, MSG_SIN_SESION);
+        }
+        match &self.inicios {
+            Some(inicios) => pantalla_de_login(inicios.login.estado(Instant::now())),
+            None => pantalla_sin_sesion(),
+        }
+    }
+
+    /// Todo lo que cuelga de `/__app` se responde aquí. Solo el `POST` a la ruta literal del
+    /// botón hace algo, y nada de la petición entra en la URL que se abre: la construye el login.
+    fn atender_local(&self, metodo: &str, ruta: &str, cabeceras: &HeaderMap) -> Response<Vec<u8>> {
+        let Some(inicios) = &self.inicios else {
+            return error_local(StatusCode::NOT_FOUND, MSG_LOCAL);
+        };
+        if metodo != "POST" || ruta != RUTA_INICIAR {
+            return error_local(StatusCode::NOT_FOUND, MSG_LOCAL);
+        }
+        // Exactamente un `Origin`, y de la app. WebView2 lo manda en todo lo que no es GET: un
+        // marco ajeno o una página de origen opaco no pasan de aquí.
+        let mut origenes = cabeceras.get_all(ORIGIN).iter();
+        let propio = origenes.next().is_some_and(es_origen_de_la_app) && origenes.next().is_none();
+        if !propio {
+            return error_local(StatusCode::FORBIDDEN, MSG_ORIGEN);
+        }
+        if let Inicio::Abrir(url) = inicios.login.iniciar(Instant::now()) {
+            if !inicios.navegador.abrir(&url) {
+                inicios.login.navegador_no_abre();
+            }
+        }
+        // Siempre lo mismo, se haya abierto o no: de vuelta a la raíz, que pinta el estado.
+        let mut respuesta = Response::new(Vec::new());
+        *respuesta.status_mut() = StatusCode::SEE_OTHER;
+        let salida = respuesta.headers_mut();
+        salida.insert(LOCATION, HeaderValue::from_static("/"));
+        salida.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        salida.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
+        respuesta
     }
 
     /// Las comprobaciones, en el orden de la spec. Solo la última toca la red. `aislado` queda a
@@ -256,15 +337,19 @@ impl Proxy {
             return error_local(StatusCode::BAD_REQUEST, MSG_RUTA);
         };
 
+        let ruta = solo_ruta(ruta_y_consulta);
+        if es_ruta_local(ruta) {
+            return self.atender_local(metodo, ruta, &partes.headers);
+        }
+
         let es_lectura = metodo == "GET" || metodo == "HEAD";
-        if es_ruta_de_auth(solo_ruta(ruta_y_consulta), es_lectura) {
+        if es_ruta_de_auth(ruta, es_lectura) {
             return error_local(StatusCode::NOT_FOUND, MSG_AUTH);
         }
 
         let es_navegacion = es_lectura && acepta_html(&partes.headers);
-        let token = match self.fuente.token() {
-            Some(token) if !self.sesion_perdida() => token,
-            _ => return sin_sesion(es_navegacion),
+        let Some(token) = self.token_vigente() else {
+            return self.sin_sesion(es_navegacion);
         };
 
         if cuerpo.len() > self.limites.cuerpo_peticion {
@@ -275,13 +360,14 @@ impl Proxy {
             return error_local(StatusCode::SERVICE_UNAVAILABLE, MSG_OCUPADO);
         };
         // Otra petición pudo perder la sesión mientras esta esperaba: el token ya no sale.
-        if self.sesion_perdida() {
-            return sin_sesion(es_navegacion);
+        if self.rechazado().as_ref() == Some(&token) {
+            return self.sin_sesion(es_navegacion);
         }
 
-        self.reenviar(metodo, &url, &partes.headers, &cuerpo, &token, aislado)
+        self.reenviar(metodo, &url, &partes.headers, &cuerpo, &token, es_navegacion, aislado)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn reenviar(
         &self,
         metodo: &str,
@@ -289,6 +375,7 @@ impl Proxy {
         cabeceras: &HeaderMap,
         cuerpo: &[u8],
         token: &Token,
+        es_navegacion: bool,
         aislado: &mut bool,
     ) -> Response<Vec<u8>> {
         let mut peticion = self.agente.request(metodo, url);
@@ -319,13 +406,15 @@ impl Proxy {
             Err(ureq::Error::Status(_, respuesta)) => respuesta,
             Err(ureq::Error::Transport(_)) => return error_local(StatusCode::BAD_GATEWAY, MSG_RED),
         };
-        self.entregar(metodo == "HEAD", respuesta, aislado)
+        let rechazo = Rechazo { token, es_navegacion };
+        self.entregar(metodo == "HEAD", respuesta, rechazo, aislado)
     }
 
     fn entregar(
         &self,
         es_head: bool,
         respuesta: ureq::Response,
+        rechazo: Rechazo<'_>,
         aislado: &mut bool,
     ) -> Response<Vec<u8>> {
         let invalida = || error_local(StatusCode::BAD_GATEWAY, MSG_RESPUESTA);
@@ -436,7 +525,12 @@ impl Proxy {
         }
 
         if token_rechazado {
-            self.sesion_perdida.store(true, Ordering::SeqCst);
+            self.rechazar(rechazo.token);
+            // Un `fetch` ve el 401 del servidor tal cual. Una navegación ve la pantalla de
+            // login en vez de ese JSON.
+            if rechazo.es_navegacion {
+                return self.sin_sesion(true);
+            }
         }
         *aislado = con_sandbox;
         salida
@@ -471,13 +565,29 @@ impl Proxy {
     }
 }
 
+/// Qué hacer si el servidor rechaza el token de una petición: cuál era y quién la hizo.
+struct Rechazo<'a> {
+    token: &'a Token,
+    es_navegacion: bool,
+}
+
+/// `true` si el valor de un `Origin` es, byte a byte, uno de los de la app.
+fn es_origen_de_la_app(valor: &HeaderValue) -> bool {
+    ORIGENES_APP.iter().any(|origen| valor.as_bytes() == origen.as_bytes())
+}
+
+/// `/__app` y `/__app/*`, comparando la ruta decodificada una vez y en minúsculas, como `/auth`.
+fn es_ruta_local(ruta: &str) -> bool {
+    let Some(decodificada) = decodificar_una_vez(ruta) else { return true };
+    let decodificada = decodificada.to_ascii_lowercase();
+    decodificada == b"/__app" || decodificada.starts_with(b"/__app/")
+}
+
 /// `true` si la petición viene del propio portal. El proxy añade el token y quita `Origin`, así
 /// que la comprobación que el servidor ya no puede hacer se hace aquí.
 fn origen_permitido(metodo: &Method, cabeceras: &HeaderMap) -> bool {
     // Un `Origin`, si viene, es byte a byte uno de los de la app. Sin excepciones.
-    let es_propio =
-        |valor: &HeaderValue| ORIGENES_APP.iter().any(|o| valor.as_bytes() == o.as_bytes());
-    if !cabeceras.get_all(ORIGIN).iter().all(es_propio) {
+    if !cabeceras.get_all(ORIGIN).iter().all(es_origen_de_la_app) {
         return false;
     }
 
@@ -550,15 +660,6 @@ fn trae_sandbox(csp: &str) -> bool {
             .find(|token| !token.is_empty())
             .is_some_and(|nombre| nombre.eq_ignore_ascii_case("sandbox"))
     })
-}
-
-/// Sin token no hay petición de red: la navegación ve la pantalla y el resto un 401.
-fn sin_sesion(es_navegacion: bool) -> Response<Vec<u8>> {
-    if es_navegacion {
-        pantalla_sin_sesion()
-    } else {
-        error_local(StatusCode::UNAUTHORIZED, MSG_SIN_SESION)
-    }
 }
 
 /// Respuesta generada por la cáscara: `{"error":"<mensaje>"}` con un mensaje fijo.
