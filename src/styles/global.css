@@ -240,7 +240,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 /* Resumen del proyecto: sin aside de metadatos, así que el contenido ocupa el resto y queda centrado. */
 .doc.doc-2 { grid-template-columns: 240px minmax(0, 1fr); }
 .doc-2 > main { width: 100%; max-width: 1040px; margin-inline: auto; min-width: 0; }
-.sidenav { position: sticky; top: 92px; max-height: calc(100vh - 108px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
+.sidenav { position: sticky; top: calc(var(--cabecera-fondo) + 25px); max-height: calc(100vh - var(--cabecera-fondo) - 41px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
 .sidenav-toggle { display: none; }
 .sidenav h2 { margin: 18px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sidenav ul { list-style: none; margin: 0; padding: 0; }
@@ -251,7 +251,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 .nav-contador { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; pointer-events: none; }
 .sidenav .extra { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
 
-.meta { position: sticky; top: 92px; font-size: 13px; color: var(--muted); }
+.meta { position: sticky; top: calc(var(--cabecera-fondo) + 25px); font-size: 13px; color: var(--muted); }
 .meta dl { margin: 0; display: grid; gap: 10px; }
 .meta dt { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
 .meta dd { margin: 0; color: var(--text); }
@@ -668,7 +668,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .barras-movil { display: none; }
 @media screen and (min-width: 900px) {
   .doc-wiki { transition: grid-template-columns .2s ease; }
-  .doc-wiki > .barra-caja { position: sticky; top: 92px; display: flex; flex-direction: column; max-height: calc(100vh - 108px); overflow: hidden; }
+  .doc-wiki > .barra-caja { position: sticky; top: calc(var(--cabecera-fondo) + 25px); display: flex; flex-direction: column; max-height: calc(100vh - var(--cabecera-fondo) - 41px); overflow: hidden; }
   .barra-caja-izq .barra-btn { align-self: flex-start; }
   .barra-caja-der .barra-btn { align-self: flex-end; }
   .barra-caja .barra-btn { flex: none; }
