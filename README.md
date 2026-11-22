@@ -92,9 +92,9 @@ python tools/integrados.py --entrada tools/ejemplos/ne555.csv --salida salida/
 ```
 
 - **Entrada**: un CSV o un `.kicad_sym` de KiCad (la extensión decide el formato). Ejemplos: `tools/ejemplos/ne555.csv` y `tools/ejemplos/ne555.kicad_sym`.
-- **CSV**: UTF-8, separado por comas, con cabecera. Columnas obligatorias `integrado`, `pin`, `nombre` y `lado`; opcional `tipo` (entrada, salida, bidireccional, alimentacion, pasivo, sin_conexion). El lado es izquierda, derecha, arriba o abajo. Un archivo puede traer varios integrados.
+- **CSV**: UTF-8, separado por comas o por «punto y coma» (el que exporta Excel en español; se decide con la cabecera), con cabecera. Columnas obligatorias `integrado`, `pin`, `nombre` y `lado`; opcional `tipo` (entrada, salida, bidireccional, alimentacion, pasivo, sin_conexion). El lado es izquierda, derecha, arriba o abajo. Un archivo puede traer varios integrados.
 - **`.kicad_sym`**: un integrado por símbolo; el lado sale del ángulo de cada pin y el dibujo del símbolo se ignora (siempre se pinta una caja).
-- **Salida**: `<base>.xml` (la biblioteca) y `<slug>.svg` por integrado. Es determinista; para cambiar un pin se edita la tabla y se regenera. No se versiona.
+- **Salida**: `<base>.xml` (la biblioteca) y `<slug>.svg` por integrado. Es determinista; para cambiar un pin se edita la tabla y se regenera sobre la misma carpeta: los archivos que ya existan se reemplazan (si cambia alguno, `aviso:` en stderr). No se versiona.
 - **Abrirla**: en diagrams.net, «Archivo › Abrir biblioteca» y elegir el `.xml`. Cada integrado trae un punto de conexión por pin.
 - Entrada inválida: sale con código 1 y `error: <archivo>:<línea>: …` sin escribir nada. `--ayuda` lista las opciones.
 

@@ -22,6 +22,7 @@ TIPO_KICAD = {
     "power_out": "alimentacion", "passive": "pasivo", "no_connect": "sin_conexion",
 }
 CONTROL = re.compile("[\x00-\x1f\x7f\ufffe\uffff]")
+CONTROL_TERMINAL = re.compile("[\x00-\x1f\x7f-\x9f]")
 
 AYUDA = """\
 uso: python tools/integrados.py --entrada <archivo.csv|.kicad_sym> --salida <carpeta>
@@ -33,9 +34,12 @@ opciones:
   --salida CARPETA    carpeta donde se escriben los archivos (se crea si falta)
   -h, --ayuda         muestra esta ayuda y termina
 
-CSV: UTF-8, separado por comas, primera fila de cabecera. Columnas obligatorias: integrado, pin, nombre, lado
+CSV: UTF-8, separado por comas o por punto y coma (se decide con la cabecera), primera fila de cabecera. Columnas obligatorias: integrado, pin, nombre, lado
 (izquierda, derecha, arriba o abajo). Columna opcional: tipo (entrada, salida, bidireccional, alimentacion,
 pasivo, sin_conexion).
+
+Si en la carpeta de salida ya existen archivos con esos nombres, se reemplazan (si cambia el contenido de alguno,
+se avisa por stderr).
 
 Códigos de salida: 0 bien, 1 entrada inválida, 2 uso incorrecto.
 """
@@ -94,24 +98,59 @@ def techo10(v):
 
 
 # ── lectura de CSV ────────────────────────────────────────────────────────────────────────────────────────────────────
-def leer_csv(texto):
-    lector = csv.reader(io.StringIO(texto, newline=""), strict=True)
+MAL_FORMADO = ("CSV mal formado: revisa las comillas (texto pegado a una comilla de cierre, comilla sin cerrar "
+               "o un campo demasiado largo)")
+
+
+def registros(texto, separador, solo_primero=False):
+    """Registros no vacíos del CSV como (línea donde empieza, campos)."""
+    lector = csv.reader(io.StringIO(texto, newline=""), delimiter=separador, strict=True)
     filas = []
-    try:
-        for campos in lector:
-            if any(c.strip() for c in campos):
-                filas.append((lector.line_num, campos))
-    except csv.Error as e:
-        raise Error(f"CSV mal formado: {e}", lector.line_num) from None
+    while True:
+        inicio = lector.line_num + 1
+        try:
+            campos = next(lector)
+        except StopIteration:
+            break
+        except csv.Error:
+            raise Error(MAL_FORMADO, inicio) from None
+        if any(c.strip() for c in campos):
+            filas.append((inicio, campos))
+            if solo_primero:
+                break
+    return filas
+
+
+def elegir_separador(texto):
+    """Decide entre coma y punto y coma mirando solo la cabecera (primer registro no vacío)."""
+    lecturas = []  # (separador, línea, celdas) de las lecturas que pudieron leer la cabecera
+    for sep in (",", ";"):
+        try:
+            filas = registros(texto, sep, True)
+        except Error:
+            continue
+        if filas:
+            lecturas.append((sep, filas[0][0], [c.strip().lower() for c in filas[0][1]]))
+    if not lecturas:
+        return ","
+    validas = [sep for sep, _, cab in lecturas if all(c in cab for c in COLUMNAS_OBLIGATORIAS)]
+    if len(validas) == 2:
+        raise Error("el separador es ambiguo: la cabecera es válida con coma y con punto y coma; "
+                    "deja solo uno de los dos en la cabecera", lecturas[0][1])
+    if validas:
+        return validas[0]
+    mejor = max(lecturas, key=lambda t: sum(c in t[2] for c in COLUMNAS_OBLIGATORIAS))  # en empate, la de coma
+    faltan = [c for c in COLUMNAS_OBLIGATORIAS if c not in mejor[2]]
+    raise Error(f"faltan columnas obligatorias: {', '.join(faltan)} (la cabecera debe llevar "
+                f"{', '.join(COLUMNAS_OBLIGATORIAS)}, separadas por coma o por punto y coma)", mejor[1])
+
+
+def leer_csv(texto):
+    filas = registros(texto, elegir_separador(texto))
     if not filas:
         raise Error("el archivo está vacío")
     _, cab = filas[0]
     cab = [c.strip().lower() for c in cab]
-    faltan = [c for c in COLUMNAS_OBLIGATORIAS if c not in cab]
-    if faltan:
-        raise Error(
-            f"faltan columnas obligatorias: {', '.join(faltan)} (la cabecera debe separarse con comas y llevar "
-            f"{', '.join(COLUMNAS_OBLIGATORIAS)})", filas[0][0])
     for i, c in enumerate(cab):
         if c not in COLUMNAS:
             raise Error(f"columna desconocida «{c}» (admitidas: {', '.join(COLUMNAS)})", filas[0][0])
@@ -361,9 +400,17 @@ def modelo_drawio(nombre, pines):
             etiqueta(i, "n", p["numero"], px - ln / 2, cn - 7, ln, "center", True)
             etiqueta(i, "m", p["nombre"], px - lm / 2, cm - 7, lm, "center", True)
 
+    # Sin franja propia, el nombre va centrado en el hueco entre las columnas de rótulos (solo si son de distinto ancho).
+    desplazo = ""
+    if not banda:
+        izq_libre = 2 + nuL + noL if nl else 0
+        der_libre = w - 2 - nuR - noR if nr else w
+        d = izq_libre + der_libre - w
+        if d:
+            desplazo = f";spacingLeft={n(d)}" if d > 0 else f";spacingRight={n(-d)}"
     estilo = ("rounded=0;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#000000;fontColor=#000000;fontSize=11;fontStyle=1;"
               f"{f'verticalAlign=top;spacingTop={n(res_arriba)}' if banda else 'verticalAlign=middle'};"
-              f"align=center;points=[{','.join(puntos)}]")
+              f"align=center{desplazo};points=[{','.join(puntos)}]")
     xml = (
         '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>'
         f'<mxCell id="cuerpo" value="{esc(nombre)}" style="{estilo}" vertex="1" parent="1">'
@@ -405,6 +452,10 @@ def svg_integrado(nombre, pines):
     ox = oy = M + stub
     W, H = w + 2 * ox, h + 2 * oy
 
+    titulo_x = ox + w / 2
+    if not banda and noL != noR:  # nombre centrado en el hueco libre entre los rótulos laterales
+        titulo_x = ox + ((noL - PAD if nl else 0) + (w - (noR - PAD) if nr else w)) / 2
+
     def texto(x, y, valor, ancla, extra=""):
         return f'<text x="{n(x)}" y="{n(y)}" text-anchor="{ancla}" fill="#111111"{extra}>{esc(valor)}</text>'
 
@@ -413,7 +464,7 @@ def svg_integrado(nombre, pines):
         f"<title>{esc(nombre)}</title>",
         f'<rect x="0" y="0" width="{W}" height="{H}" fill="#ffffff"/>',
         f'<rect x="{ox}" y="{oy}" width="{w}" height="{h}" fill="#fff8dc" stroke="#333333" stroke-width="2"/>',
-        texto(ox + w / 2, oy + (res_arriba + 14 if banda else (y0 + filas / 2 if filas else h / 2) + 4), nombre, "middle", ' font-weight="bold" font-size="14"'),
+        texto(titulo_x, oy + (res_arriba + 14 if banda else (y0 + filas / 2 if filas else h / 2) + 4), nombre, "middle", ' font-weight="bold" font-size="14"'),
     ]
     contador = {x: 0 for x in LADOS}
     for p in pines:
@@ -490,7 +541,7 @@ def procesar(entrada, salida):
         with open(entrada, "rb") as f:
             datos = f.read()
     except OSError as e:
-        raise Error(f"no se pudo leer: {e.strerror or e}") from None
+        raise Error(f"no se pudo leer el archivo ({motivo(e)})") from None
     texto = decodificar(datos)
     chips, avisos = leer_csv(texto) if ext == ".csv" else leer_kicad(texto)
     vistos = {}
@@ -505,16 +556,92 @@ def procesar(entrada, salida):
     archivos = {f"{base}.xml": biblioteca([modelo_drawio(nom, pines) for nom, pines, _ in chips])}
     for nombre, pines, _ in chips:
         archivos[f"{slug(nombre)}.svg"] = svg_integrado(nombre, pines)
+    reemplazados = escribir(salida, archivos)
+    return len(chips), avisos, reemplazados
+
+
+def motivo(e):
+    if isinstance(e, PermissionError):
+        return "sin permiso"
+    if isinstance(e, FileNotFoundError):
+        return "no se encuentra la ruta"
+    return "error del sistema"
+
+
+def escribir(salida, archivos):
+    """Escribe los archivos de forma atómica por archivo (temporal en la carpeta de salida + os.replace).
+
+    Devuelve cuántos archivos que ya existían cambiaron de contenido."""
+    if os.path.exists(salida) and not os.path.isdir(salida):
+        raise Error("la salida existe y no es una carpeta", archivo=salida)
+    for nombre_salida in archivos:
+        if os.path.isdir(os.path.join(salida, nombre_salida)):
+            raise Error(f"{nombre_salida} es una carpeta y no se puede reemplazar por un archivo", archivo=salida)
     try:
-        if os.path.exists(salida) and not os.path.isdir(salida):
-            raise Error("la salida existe y no es una carpeta", archivo=salida)
         os.makedirs(salida, exist_ok=True)
-        for nombre_salida, contenido in archivos.items():
-            with open(os.path.join(salida, nombre_salida), "w", encoding="utf-8", newline="\n") as f:
-                f.write(contenido)
     except OSError as e:
-        raise Error(f"no se pudo escribir: {e.strerror or e}", archivo=salida) from None
-    return len(chips), avisos
+        raise Error(f"no se pudo crear la carpeta de salida ({motivo(e)})", archivo=salida) from None
+    temporales = {}  # nombre de salida -> ruta del temporal que aún no se colocó
+    reemplazados = 0
+    try:
+        for i, (nombre_salida, contenido) in enumerate(archivos.items()):
+            datos = contenido.encode("utf-8")
+            try:
+                with open(os.path.join(salida, nombre_salida), "rb") as f:
+                    if f.read() != datos:
+                        reemplazados += 1
+            except OSError:
+                pass  # no existía (o no se puede leer): no cuenta como reemplazo
+            try:
+                temporales[nombre_salida] = crear_temporal(salida, i, datos)
+            except OSError as e:
+                raise Error(f"no se pudo escribir {nombre_salida} ({motivo(e)})", archivo=salida) from None
+        for nombre_salida in list(temporales):
+            try:
+                os.replace(temporales[nombre_salida], os.path.join(salida, nombre_salida))
+            except OSError as e:
+                raise Error(f"no se pudo colocar {nombre_salida} en la carpeta de salida ({motivo(e)})", archivo=salida) from None
+            del temporales[nombre_salida]
+    finally:
+        for ruta in temporales.values():
+            try:
+                os.remove(ruta)
+            except OSError:
+                pass
+    return reemplazados
+
+
+def crear_temporal(salida, indice, datos):
+    """Crea un temporal nuevo (nombre que no acaba en .xml ni .svg) en la carpeta de salida y lo llena."""
+    intento = 0
+    banderas = os.O_WRONLY | os.O_CREAT | os.O_EXCL | (os.O_BINARY if os.name == "nt" else 0)
+    while True:
+        ruta = os.path.join(salida, f".integrados-{os.getpid()}-{indice}-{intento}.tmp")
+        try:
+            fd = os.open(ruta, banderas, 0o666)
+            break
+        except FileExistsError:
+            intento += 1
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(datos)
+    except BaseException:
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+        raise
+    return ruta
+
+
+def neutralizar(texto):
+    """Escribe cada carácter de control (C0, DEL y C1) como \\xNN para que no llegue a la terminal ni a los logs."""
+    return CONTROL_TERMINAL.sub(lambda m: f"\\x{ord(m.group()):02x}", texto)
+
+
+def emitir(flujo, linea):
+    """Único punto de salida de mensajes: una línea, sin caracteres de control."""
+    flujo.write(neutralizar(linea) + "\n")
 
 
 def main(argv):
@@ -526,26 +653,28 @@ def main(argv):
     try:
         args = parsear_args(argv)
     except Uso as e:
-        print(f"error: {e}. Usa --ayuda para ver las opciones.", file=sys.stderr)
+        emitir(sys.stderr, f"error: {e}. Usa --ayuda para ver las opciones.")
         return 2
     if args is None:
         sys.stdout.write(AYUDA)
         return 0
     entrada, salida = args
     try:
-        cantidad, avisos = procesar(entrada, salida)
+        cantidad, avisos, reemplazados = procesar(entrada, salida)
     except Error as e:
         lugar = e.archivo or entrada
         if e.linea is not None:
             lugar += f":{e.linea}"
-        print(f"error: {lugar}: {e.mensaje}", file=sys.stderr)
+        emitir(sys.stderr, f"error: {lugar}: {e.mensaje}")
         return 1
     except RecursionError:
-        print(f"error: {entrada}: anidamiento excesivo (paréntesis anidados en exceso)", file=sys.stderr)
+        emitir(sys.stderr, f"error: {entrada}: anidamiento excesivo (paréntesis anidados en exceso)")
         return 1
     for aviso in avisos:
-        print(f"aviso: {entrada}: {aviso}", file=sys.stderr)
-    print(f"{cantidad} integrado(s) generado(s) en la carpeta de salida")
+        emitir(sys.stderr, f"aviso: {entrada}: {aviso}")
+    if reemplazados:
+        emitir(sys.stderr, f"aviso: {salida}: se reemplazaron {reemplazados} archivo(s) que ya existían con otro contenido")
+    emitir(sys.stdout, f"{cantidad} integrado(s) generado(s) en la carpeta de salida")
     return 0
 
 
