@@ -64,15 +64,16 @@ export function origenDeNavegador(referrerPolicy, origenPagina, urlDestino) {
   return pagina.origin;
 }
 
-// Simula GitHub para /auth/callback. `miembro` y `publico` son los estados HTTP de las dos comprobaciones de acceso.
-export function mockGitHub({ login, miembro = 404, publico = 404 }) {
+// Simula GitHub para /auth/callback. `miembro` y `publico` son los estados HTTP de las dos comprobaciones de acceso;
+// `estado` es el `state` de la membresía cuando responde 200 ("active" deja entrar; "pending" no).
+export function mockGitHub({ login, miembro = 404, publico = 404, estado = "active" }) {
   const vistas = [];
   globalThis.fetch = async (input) => {
     const url = String(input instanceof Request ? input.url : input);
     vistas.push(url);
     if (url.includes("/login/oauth/access_token")) return Response.json({ access_token: "gho_prueba" });
     if (url.endsWith("/user")) return Response.json({ login });
-    if (url.includes("/user/memberships/orgs/")) return miembro === 200 ? Response.json({ state: "active" }) : new Response("{}", { status: miembro });
+    if (url.includes("/user/memberships/orgs/")) return miembro === 200 ? Response.json({ state: estado }) : new Response("{}", { status: miembro });
     if (url.includes("/public_members/")) return new Response(null, { status: publico });
     return new Response(null, { status: 404 });
   };

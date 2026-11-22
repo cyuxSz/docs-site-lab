@@ -14,6 +14,7 @@ import {
   FORM,
   crearEnv,
   cargarCore,
+  cargarWorker,
   pedir,
   canje,
   emitir,
@@ -320,6 +321,180 @@ test("callback: si la revocación falla (D1 caído o sin binding), la respuesta 
     assert.match(html, /@ana/);
     assert.ok(!html.includes("D1_ERROR"));
   }
+});
+
+// ---------- Corrección tras la revisión (decisiones 10 a 12): no revocar sin motivo ----------
+
+test("callback: un 403 de la membresía es «incierto» — no revoca nada, y la página 403 de «Sin acceso» no cambia", async () => {
+  const { env } = crearEnv();
+  const a1 = await emitir(env, { login: "ana", nombre: "PC de Ana" });
+  const a2 = await emitir(env, { login: "ana", nombre: "Portátil", plataforma: "linux" });
+
+  // GitHub responde 403 también por límite de tasa (primario o secundario) y cuando la org restringe la OAuth App:
+  // con un 403 no se sabe si la persona perdió el acceso, responda lo que responda la consulta pública.
+  for (const publico of [404, 403, 429, 500]) {
+    mockGitHub({ login: "Ana", miembro: 403, publico });
+    const res = await callback(env);
+    assert.equal(res.status, 403, `membresía 403 + pública ${publico}: no se entra, como hoy`);
+    const html = await res.text();
+    assert.match(html, /@Ana/);
+    assert.match(html, /github\.com\/orgs\/vanttec\/people/, "la misma página de «Sin acceso» de siempre");
+    assert.equal(res.headers.get("set-cookie"), null, "sin cookie de sesión");
+    assert.equal(filasTokens(env).length, 2, `membresía 403 + pública ${publico}: no se revoca ningún token`);
+  }
+  globalThis.fetch = realFetch;
+  assert.equal(await vivo(env, a1.token), true);
+  assert.equal(await vivo(env, a2.token), true);
+});
+
+test("callback: guarda — la negativa concluyente sigue revocando (membresía 404 o 200 no activa, y pública exactamente 404)", async () => {
+  for (const caso of [
+    { miembro: 404, publico: 404 },
+    { miembro: 200, estado: "pending", publico: 404 },
+  ]) {
+    const { env } = crearEnv();
+    await emitir(env, { login: "ana" });
+    await emitir(env, { login: "beto" });
+    mockGitHub({ login: "ana", ...caso });
+    assert.equal((await callback(env)).status, 403, JSON.stringify(caso));
+    assert.deepEqual(filasTokens(env).map((f) => f.login), ["beto"], `${JSON.stringify(caso)}: se revocan los tokens de ana y solo esos`);
+  }
+  // La consulta pública tiene que responder exactamente 404: cualquier otra cosa deja la pregunta sin contestar.
+  for (const caso of [
+    { miembro: 404, publico: 403 },
+    { miembro: 404, publico: 429 },
+    { miembro: 200, estado: "pending", publico: 403 },
+    { miembro: 401, publico: 404 },
+    { miembro: 429, publico: 404 },
+  ]) {
+    const { env } = crearEnv();
+    await emitir(env, { login: "ana" });
+    mockGitHub({ login: "ana", ...caso });
+    assert.equal((await callback(env)).status, 403, JSON.stringify(caso));
+    assert.equal(filasTokens(env).length, 1, `${JSON.stringify(caso)}: no se revoca`);
+  }
+});
+
+test("callback: sin ALLOWED_ORG, un login fuera de ALLOWED_USERS recibe el 403 de siempre y conserva sus tokens", async () => {
+  for (const extra of [{ ALLOWED_ORG: "" }, { ALLOWED_ORG: undefined }, { ALLOWED_ORG: "", ALLOWED_USERS: "beto, carla" }]) {
+    const { env } = crearEnv(extra);
+    const a = await emitir(env, { login: "ana" });
+    const vistas = mockGitHub({ login: "ana", miembro: 404, publico: 404 });
+    const res = await callback(env);
+    assert.equal(res.status, 403, `${JSON.stringify(extra)}: el acceso se niega igual que hoy`);
+    const html = await res.text();
+    assert.match(html, /@ana no está en la lista de acceso/, "la misma página de siempre");
+    assert.equal(res.headers.get("set-cookie"), null);
+    assert.ok(!vistas.some((u) => u.includes("/memberships/") || u.includes("/public_members/")), "sin organización no se consulta ninguna membresía");
+    // Un error de configuración del operador (quitar ALLOWED_ORG) no puede borrar dispositivos.
+    assert.equal(filasTokens(env).length, 1, `${JSON.stringify(extra)}: sin organización configurada no se revoca nada`);
+    globalThis.fetch = realFetch;
+    assert.equal(await vivo(env, a.token), true);
+  }
+});
+
+// Hace que la petición `req` deje de constar como identificada: el hash que el core guarda por petición (el WeakMap
+// `validadas` de lib/dispositivos-core.mjs, Request → hash) deja de encontrarse, como pasaría si un refactor envolviera
+// la petición con `new Request` entre resolverBearer y revocarPropio. No toca la caché del resultado de resolverBearer
+// (su valor es una promesa, no un string), así que la credencial sigue resolviéndose como «ok».
+async function sinIdentificar(req, fn) {
+  const { get, has } = WeakMap.prototype;
+  const esHash = (mapa, k) => k === req && typeof get.call(mapa, k) === "string";
+  WeakMap.prototype.get = function (k) {
+    return esHash(this, k) ? undefined : get.call(this, k);
+  };
+  WeakMap.prototype.has = function (k) {
+    return esHash(this, k) ? false : has.call(this, k);
+  };
+  try {
+    return await fn();
+  } finally {
+    WeakMap.prototype.get = get;
+    WeakMap.prototype.has = has;
+  }
+}
+const peticionRevocar = (token) => new Request(`${ORIGIN}${API_REVOCAR}`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+// D1 que pierde las filas de tokens justo antes del DELETE: la fila «ya no estaba» cuando llega la revocación.
+const d1QueYaNoTieneLaFila = (real) => ({
+  ...real,
+  sqlite: real.sqlite,
+  batch: (...a) => real.batch(...a),
+  prepare(sql) {
+    if (/^\s*DELETE\s+FROM\s+tokens\b/i.test(sql)) real.sqlite.prepare("DELETE FROM tokens").run();
+    return real.prepare(sql);
+  },
+});
+
+test("core: revocarPropio distingue «revocado», «ya-revocado» y «no-identificado»", async () => {
+  const { resolverBearer, revocarPropio } = await cargarCore();
+
+  // Petición identificada y fila presente.
+  const { env } = crearEnv();
+  const { token } = await emitir(env, { login: "ana" });
+  const req = peticionRevocar(token);
+  assert.equal((await resolverBearer(req, env)).estado, "ok");
+  assert.equal(await revocarPropio(req, env), "revocado");
+  assert.equal(filasTokens(env).length, 0);
+  // Misma petición otra vez: sigue identificada, pero la fila ya no existe.
+  assert.equal(await revocarPropio(req, env), "ya-revocado");
+
+  // Petición con un Bearer vivo que NO pasó por resolverBearer: no se sabe qué token es y no se toca D1.
+  const { env: env2 } = crearEnv();
+  const otro = await emitir(env2, { login: "ana" });
+  assert.equal(await revocarPropio(peticionRevocar(otro.token), env2), "no-identificado");
+  assert.equal(filasTokens(env2).length, 1, "sin identificar el token no se borra nada");
+  // Lo mismo si la petición pasó por resolverBearer pero dejó de constar como validada.
+  const req2 = peticionRevocar(otro.token);
+  assert.equal((await resolverBearer(req2, env2)).estado, "ok");
+  assert.equal(await sinIdentificar(req2, () => revocarPropio(req2, env2)), "no-identificado");
+  assert.equal(filasTokens(env2).length, 1);
+});
+
+test("api: POST /auth/app/revocar responde 503 JSON (nunca ok:true) si no pudo identificar el token de la petición", async () => {
+  const { env } = crearEnv();
+  const { token } = await emitir(env, { login: "ana" });
+  const worker = await cargarWorker();
+  const enviar = async (req) => {
+    let res;
+    const salida = await conConsola(async () => {
+      res = await sinIdentificar(req, () => worker.fetch(req, env, { waitUntil() {}, passThroughOnException() {} }));
+    });
+    return { res, salida };
+  };
+
+  // Sin Origin, la regla de Origin (que también mira si la petición se validó con Bearer) puede cortar antes con su
+  // 403: vale cualquier error, pero nunca un 2xx ni ok:true.
+  const sinOrigin = await enviar(peticionRevocar(token));
+  assert.ok([403, 503].includes(sinOrigin.res.status), `sin Origin: 403 o 503, no ${sinOrigin.res.status}`);
+  esJson(sinOrigin.res);
+  assert.ok(!("ok" in (await sinOrigin.res.json())));
+
+  // Con el Origin propio la regla de Origin no corta: es el caso que hoy responde ok:true con el token vivo.
+  const req = peticionRevocar(token);
+  req.headers.set("origin", ORIGIN);
+  const { res, salida } = await enviar(req);
+  assert.equal(filasTokens(env).length, 1, "condición del test: sin identificar el token no se borra nada");
+  assert.equal(res.status, 503, "el token sigue vivo: la app no puede recibir ok:true");
+  esJson(res);
+  assert.match(res.headers.get("cache-control") ?? "", /no-store/);
+  assert.equal(res.headers.get("set-cookie"), null);
+  const texto = await res.text();
+  const json = JSON.parse(texto);
+  assert.deepEqual(Object.keys(json), ["error"], "solo un mensaje genérico, sin ok ni detalles");
+  assert.equal(typeof json.error, "string");
+  for (const secreto of [token, sha256hex(token), "validadas", "WeakMap", "hash"]) {
+    assert.ok(!texto.includes(secreto) && !salida.includes(secreto), `sin «${secreto.slice(0, 12)}» en la respuesta ni en console.*`);
+  }
+  assert.equal(await vivo(env, token), true, "el token sigue vivo y la app lo sabe por el 503");
+});
+
+test("api: guarda — POST /auth/app/revocar sigue respondiendo ok:true si el token estaba identificado y la fila ya no existía", async () => {
+  const { env } = crearEnv();
+  const { token } = await emitir(env, { login: "ana" });
+  const res = await pedir(API_REVOCAR, { env: { ...env, DB: d1QueYaNoTieneLaFila(env.DB) }, method: "POST", bearer: token });
+  assert.equal(res.status, 200, "revocar es idempotente: el dispositivo ya estaba fuera");
+  assert.deepEqual(await res.json(), { ok: true });
+  assert.equal(filasTokens(env).length, 0);
 });
 
 // ---------- Criterio 7: rutas de navegador con Bearer ----------
