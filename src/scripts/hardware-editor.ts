@@ -42,6 +42,7 @@ import {
   type PaginaIndice,
 } from "../lib/hardware-editor";
 import { archivosKicad, bloqueKicad, bloquePdf, bomDeArchivo, bloqueBom, insertarBloqueTexto, tituloDeArchivo } from "../lib/visores";
+import { conectarImportar } from "./hardware-importar";
 
 interface PaginaHw {
   slug: string;
@@ -1482,6 +1483,9 @@ async function iniciar(root: HTMLElement) {
   });
   escuchar(dlgPapelera.querySelector("[data-hw-no]")!, "click", () => dlgPapelera.close());
   escuchar(dlgPapelera, "close", () => btnPapelera.focus());
+
+  // ---------- importar páginas ----------
+  conectarImportar({ proyecto, disciplina, senal, slugs: () => indice.map((p) => p.slug), hayCambios, mostrarEstado, mostrarError, recargar: async () => (await cargarIndice()) && mostrar() });
 
   // ---------- arranque ----------
   void cargarRender().catch(() => {});
