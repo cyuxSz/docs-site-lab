@@ -54,6 +54,7 @@ fn main() -> ExitCode {
                 .use_https_scheme(true)
                 .zoom_hotkeys_enabled(true)
                 .on_navigation(|url| navegacion_permitida(url.as_str()))
+                .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
                 .build()?;
             Ok(())
         })

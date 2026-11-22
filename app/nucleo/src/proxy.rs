@@ -12,18 +12,23 @@ use std::time::{Duration, Instant};
 
 use http::header::{
     HeaderName, ACCEPT, ALLOW, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION,
-    X_CONTENT_TYPE_OPTIONS,
+    ORIGIN, X_CONTENT_TYPE_OPTIONS,
 };
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode};
 
 use crate::destino::{decodificar_una_vez, solo_ruta, Destino};
 use crate::pantalla::pantalla_sin_sesion;
 use crate::token::{FuenteDeToken, Token};
-use crate::TOPE_CUERPO;
+use crate::{ORIGENES_APP, TOPE_CUERPO};
 
 const METODOS: [&str; 6] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 const METODOS_ALLOW: &str = "GET, HEAD, POST, PUT, PATCH, DELETE";
 
+const SEC_FETCH_SITE: &str = "sec-fetch-site";
+const SEC_FETCH_MODE: &str = "sec-fetch-mode";
+const SEC_FETCH_DEST: &str = "sec-fetch-dest";
+
+const MSG_ORIGEN: &str = "Origen no permitido";
 const MSG_METODO: &str = "Método no permitido";
 const MSG_RUTA: &str = "Ruta no válida";
 const MSG_AUTH: &str = "No disponible en la app";
@@ -68,6 +73,8 @@ pub struct Limites {
     pub timeout_total: Duration,
     /// Peticiones al servidor a la vez.
     pub simultaneas: usize,
+    /// Peticiones esperando un hueco a la vez. La que llega con la cola llena no espera.
+    pub en_espera: usize,
 }
 
 impl Default for Limites {
@@ -78,41 +85,65 @@ impl Default for Limites {
             timeout_conexion: Duration::from_secs(10),
             timeout_total: Duration::from_secs(120),
             simultaneas: 6,
+            en_espera: 64,
         }
     }
 }
 
-/// Cuántas peticiones al servidor caben a la vez.
+/// Los huecos libres y cuántas peticiones esperan uno.
+struct Turnos {
+    libres: usize,
+    esperando: usize,
+}
+
+/// Cuántas peticiones al servidor caben a la vez, y cuántas pueden esperar su turno.
 struct Huecos {
-    libres: Mutex<usize>,
+    turnos: Mutex<Turnos>,
     aviso: Condvar,
+    en_espera: usize,
 }
 
 impl Huecos {
-    fn nuevo(total: usize) -> Huecos {
-        Huecos { libres: Mutex::new(total.max(1)), aviso: Condvar::new() }
+    fn nuevo(total: usize, en_espera: usize) -> Huecos {
+        let turnos = Turnos { libres: total.max(1), esperando: 0 };
+        Huecos { turnos: Mutex::new(turnos), aviso: Condvar::new(), en_espera }
     }
 
-    /// Un contador no queda a medias aunque otro hilo haya fallado con el cerrojo tomado.
-    fn cerrojo(&self) -> MutexGuard<'_, usize> {
-        self.libres.lock().unwrap_or_else(|envenenado| envenenado.into_inner())
+    /// Los contadores no quedan a medias aunque otro hilo haya fallado con el cerrojo tomado.
+    fn cerrojo(&self) -> MutexGuard<'_, Turnos> {
+        self.turnos.lock().unwrap_or_else(|envenenado| envenenado.into_inner())
     }
 
-    /// Espera un hueco como mucho `plazo`. `None` si vence.
+    /// Toma un hueco. Si no hay ninguno libre espera como mucho `plazo`, salvo que la cola ya
+    /// esté llena: entonces no espera. `None` si no cabe en la cola o si vence el plazo.
     fn tomar(&self, plazo: Duration) -> Option<Hueco<'_>> {
+        let mut turnos = self.cerrojo();
+        if turnos.libres > 0 {
+            turnos.libres -= 1;
+            return Some(Hueco(self));
+        }
+        if turnos.esperando >= self.en_espera {
+            return None;
+        }
+        // El puesto en la cola se cuenta y se descuenta con el cerrojo tomado, y entre medias
+        // no hay nada que pueda fallar: se libera siempre al salir de ella.
+        turnos.esperando += 1;
         let inicio = Instant::now();
-        let mut libres = self.cerrojo();
-        loop {
-            if *libres > 0 {
-                *libres -= 1;
-                return Some(Hueco(self));
+        let conseguido = loop {
+            if turnos.libres > 0 {
+                turnos.libres -= 1;
+                break true;
             }
-            let resta = plazo.checked_sub(inicio.elapsed()).filter(|resta| !resta.is_zero())?;
-            libres = match self.aviso.wait_timeout(libres, resta) {
+            let resta = plazo.checked_sub(inicio.elapsed()).filter(|resta| !resta.is_zero());
+            let Some(resta) = resta else { break false };
+            turnos = match self.aviso.wait_timeout(turnos, resta) {
                 Ok((guarda, _)) => guarda,
                 Err(envenenado) => envenenado.into_inner().0,
             };
-        }
+        };
+        turnos.esperando -= 1;
+        drop(turnos);
+        conseguido.then(|| Hueco(self))
     }
 }
 
@@ -121,7 +152,7 @@ struct Hueco<'a>(&'a Huecos);
 
 impl Drop for Hueco<'_> {
     fn drop(&mut self) {
-        *self.0.cerrojo() += 1;
+        self.0.cerrojo().libres += 1;
         self.0.aviso.notify_one();
     }
 }
@@ -145,7 +176,7 @@ impl Proxy {
             .timeout(limites.timeout_total)
             .max_idle_connections_per_host(limites.simultaneas.max(1))
             .build();
-        let huecos = Huecos::nuevo(limites.simultaneas);
+        let huecos = Huecos::nuevo(limites.simultaneas, limites.en_espera);
         Proxy { destino, fuente, limites, agente, huecos, sesion_perdida: AtomicBool::new(false) }
     }
 
@@ -168,6 +199,11 @@ impl Proxy {
     /// Las comprobaciones, en el orden de la spec. Solo la última toca la red.
     fn atender_peticion(&self, peticion: Request<Vec<u8>>) -> Response<Vec<u8>> {
         let (partes, cuerpo) = peticion.into_parts();
+
+        // Lo primero, y sin mirar nada más: a otro origen se le contesta siempre lo mismo.
+        if !origen_permitido(&partes.method, &partes.headers) {
+            return error_local(StatusCode::FORBIDDEN, MSG_ORIGEN);
+        }
 
         let metodo = partes.method.as_str();
         if !METODOS.contains(&metodo) {
@@ -379,6 +415,39 @@ impl Proxy {
             None
         }
     }
+}
+
+/// `true` si la petición viene del propio portal. El proxy añade el token y quita `Origin`, así
+/// que la comprobación que el servidor ya no puede hacer se hace aquí.
+fn origen_permitido(metodo: &Method, cabeceras: &HeaderMap) -> bool {
+    // Un `Origin`, si viene, es byte a byte uno de los de la app. Sin excepciones.
+    let es_propio =
+        |valor: &HeaderValue| ORIGENES_APP.iter().any(|o| valor.as_bytes() == o.as_bytes());
+    if !cabeceras.get_all(ORIGIN).iter().all(es_propio) {
+        return false;
+    }
+
+    // Un `Sec-Fetch-Site`, si viene, es `same-origin` o `none`.
+    let es_sitio = |valor: &HeaderValue, esperado: &str| {
+        valor.as_bytes().trim_ascii().eq_ignore_ascii_case(esperado.as_bytes())
+    };
+    let sitios: Vec<&HeaderValue> = cabeceras.get_all(SEC_FETCH_SITE).iter().collect();
+    if sitios.iter().all(|sitio| es_sitio(sitio, "same-origin") || es_sitio(sitio, "none")) {
+        return true;
+    }
+
+    // La única excepción: la navegación GET del marco principal desde otro sitio, que es lo
+    // que hace un enlace de una página de origen opaco del propio portal.
+    let unica = |nombre: &str, esperado: &str| {
+        let mut valores = cabeceras.get_all(nombre).iter();
+        let primera = valores.next();
+        valores.next().is_none() && primera.is_some_and(|v| v.as_bytes() == esperado.as_bytes())
+    };
+    metodo == Method::GET
+        && !cabeceras.contains_key(ORIGIN)
+        && matches!(sitios[..], [sitio] if es_sitio(sitio, "cross-site") || es_sitio(sitio, "same-site"))
+        && unica(SEC_FETCH_MODE, "navigate")
+        && unica(SEC_FETCH_DEST, "document")
 }
 
 /// `/auth` y `/auth/*`, comparando la ruta decodificada una vez y en minúsculas, como la ve
