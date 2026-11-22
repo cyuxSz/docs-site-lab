@@ -117,7 +117,9 @@ impl fmt::Debug for EnlaceDeLogin {
 
 /// `None` si el enlace no tiene exactamente la forma que emite el servidor.
 pub fn leer_enlace(enlace: &str) -> Option<EnlaceDeLogin> {
-    let resto = enlace.strip_prefix(ESQUEMA_ENLACE)?.strip_prefix("://auth?code=")?;
+    // Windows añade una `/` tras `auth` al abrir el enlace por el registro: se admite una, opcional.
+    let tras_auth = enlace.strip_prefix(ESQUEMA_ENLACE)?.strip_prefix("://auth")?;
+    let resto = tras_auth.strip_prefix('/').unwrap_or(tras_auth).strip_prefix("?code=")?;
     let (codigo, state) = resto.split_once("&state=")?;
     let codigo_valido = codigo.len() == LARGO_B64 && es_b64url(codigo);
     let state_valido = (22..=128).contains(&state.len()) && es_b64url(state);
