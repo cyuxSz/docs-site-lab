@@ -220,3 +220,189 @@ test("A4 Base.astro: la nota del diálogo ya no dice que todos los atajos se pau
   assert.match(nota, /Esc/, "y Esc");
   assert.ok(nota.length <= 90, `corta (${nota.length} caracteres)`);
 });
+
+// ====================================================================================================================
+// Ampliación tras la revisión completa (ui BLOQUEA, ux DUDAS). Criterios 8–10 de la spec:
+// C5: con la vista de lector, el aviso fijo no tapa el comentario enlazado (scroll-margin-top solo en ese modo).
+// C6: el anillo de foco de un comentario resuelto no se atenúa (la opacidad baja al contenido, no al li).
+// A5: contenteditable="false" no cuenta como campo de escritura.
+// ====================================================================================================================
+const cabeceraLib = await import("../src/lib/cabecera.ts");
+
+// Reglas de global.css en plano (las de dentro de @media también, sin su condición): basta para propiedades que este
+// lote no declara dentro de ningún @media. Gana la última que case en la hoja (ninguna de estas compite en especificidad).
+function reglasPlanas() {
+  const css = read("src/styles/global.css").replace(/\/\*[^]*?\*\//g, "");
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selector: m[1].trim(),
+    decls: Object.fromEntries(
+      m[2]
+        .split(";")
+        .map((d) => d.trim())
+        .filter(Boolean)
+        .map((d) => [d.slice(0, d.indexOf(":")).trim().toLowerCase(), d.slice(d.indexOf(":") + 1).trim()]),
+    ),
+  }));
+}
+function declarado(reglas, el, prop) {
+  let v = null;
+  for (const r of reglas) {
+    if (!(prop in r.decls)) continue;
+    let casa = false;
+    try {
+      casa = el.matches(r.selector);
+    } catch {
+      /* selector que jsdom no entiende: no aplica */
+    }
+    if (casa) v = r.decls[prop];
+  }
+  return v;
+}
+// Resuelve un largo con px, calc(), max()/min() y las dos variables de altura a un número de px.
+function enPx(v, vars) {
+  assert.ok(v, "la propiedad no tiene valor");
+  let s = v.replace(/var\(\s*(--[\w-]+)\s*(?:,[^()]*)?\)/g, (_, n) => {
+    assert.ok(n in vars, `variable que el test no conoce: ${n} en «${v}»`);
+    return `${vars[n]}px`;
+  });
+  s = s.replace(/calc/g, "").replace(/\b(max|min)\(/g, "Math.$1(").replace(/([\d.]+)px/g, "$1");
+  assert.match(s.replace(/Math\.(max|min)/g, ""), /^[\d\s.,+\-*/()]+$/, `largo que el test no sabe resolver: ${v}`);
+  return Function(`"use strict"; return (${s});`)();
+}
+const docHtml = (attrs, cuerpo) => new JSDOM(`<!doctype html><html ${attrs}><body>${cuerpo}</body></html>`).window.document;
+const HILOS = `<div class="hw-aviso-lector" data-hw-aviso-lector role="status"></div>
+  <ol class="comentarios-lista">
+    <li class="comentario resuelto" id="hilo">
+      <div class="comentario-cab" id="hilo-cab"></div><p class="comentario-texto" id="hilo-texto"></p>
+      <div class="comentario-acciones" id="hilo-acciones"><button>Responder</button></div>
+      <form class="comentarios-form-inline" id="hilo-form"><textarea></textarea></form>
+      <ol class="comentarios-respuestas" id="respuestas">
+        <li class="comentario" id="respuesta">
+          <div class="comentario-cab" id="resp-cab"></div><p class="comentario-texto" id="resp-texto"></p>
+          <div class="comentario-acciones" id="resp-acciones"><button>Editar</button></div>
+        </li>
+      </ol>
+    </li>
+    <li class="comentario resuelto borrado" id="borrado"><p class="comentario-texto" id="borrado-texto">Comentario borrado</p></li>
+    <li class="comentario" id="abierto">
+      <div class="comentario-cab" id="abierto-cab"></div><p class="comentario-texto" id="abierto-texto"></p>
+    </li>
+  </ol>`;
+
+// ---------- C5. El aviso de la vista de lector no tapa el comentario enlazado ----------
+const SCROLL_PADDING = 96; // html { scroll-padding-top: 96px }: no se toca en este lote
+const ANILLO = 4; // outline 2px + outline-offset 2px
+
+test("C5 altoAviso(alto): alto del aviso de lector en px enteros, con respaldo de 57px si está oculto o no es un número", () => {
+  const altoAviso = fn(cabeceraLib, "src/lib/cabecera.ts", "altoAviso");
+  assert.equal(altoAviso(57), "57px", "una línea, escritorio");
+  assert.equal(altoAviso(103.6), "104px", "dos líneas a 375 px; redondea al entero más cercano");
+  for (const a of [0, -1, NaN, Infinity, undefined]) assert.equal(altoAviso(a), "57px", `respaldo con ${a} (display: none mide 0)`);
+});
+
+test("C5 CSS: :root declara --aviso-lector-alto: 57px y el scroll-padding-top global sigue en 96px", () => {
+  const r = reglasPlanas();
+  const d = docHtml("", HILOS);
+  assert.equal(declarado(r, d.documentElement, "--aviso-lector-alto"), "57px", "respaldo en :root (lo ajusta el script)");
+  assert.equal(declarado(r, d.documentElement, "scroll-padding-top"), "96px", "las demás anclas no cambian");
+  assert.equal(declarado(r, docHtml("data-vista-lector", HILOS).documentElement, "scroll-padding-top"), "96px", "tampoco con la vista de lector");
+});
+
+test("C5 CSS: con la vista de lector, el comentario enlazado (hilo o respuesta) queda entero bajo el aviso, anillo incluido, con un hueco pequeño", () => {
+  const r = reglasPlanas();
+  const d = docHtml("data-vista-lector", HILOS);
+  const aviso = d.querySelector(".hw-aviso-lector");
+  // Cabecera y aviso de escritorio (67 + 57: el caso de la captura, aviso de y=75 a y=132), 375 px con el aviso en
+  // dos líneas, y una cabecera más alta: el margen tiene que seguir a las dos medidas, no a un valor fijo.
+  for (const [fondo, alto] of [[67, 57], [62, 104], [90, 57], [62, 57]]) {
+    const vars = { "--cabecera-fondo": fondo, "--aviso-lector-alto": alto };
+    const fondoAviso = enPx(declarado(r, aviso, "top"), vars) + alto;
+    for (const id of ["hilo", "respuesta", "abierto"]) {
+      const margen = declarado(r, d.getElementById(id), "scroll-margin-top");
+      assert.ok(margen, `#${id}: falta scroll-margin-top en .comentario con :root[data-vista-lector]`);
+      const hueco = SCROLL_PADDING + enPx(margen, vars) - ANILLO - fondoAviso;
+      assert.ok(hueco >= 4, `#${id} con cabecera ${fondo} y aviso ${alto}: el aviso (hasta y=${fondoAviso}) tapa el anillo (hueco ${hueco} px)`);
+      assert.ok(hueco <= 16, `#${id} con cabecera ${fondo} y aviso ${alto}: hueco de ${hueco} px, demasiado grande`);
+    }
+  }
+});
+
+test("C5 CSS: sin la vista de lector, .comentario no gana scroll-margin-top (nada cambia)", () => {
+  const r = reglasPlanas();
+  const d = docHtml("", HILOS);
+  for (const id of ["hilo", "respuesta", "abierto"]) assert.equal(declarado(r, d.getElementById(id), "scroll-margin-top"), null, `#${id}`);
+  // La regla nueva solo alcanza a los comentarios: otras anclas de la página de hardware siguen como estaban.
+  const otra = docHtml("data-vista-lector", `<h2 id="titulo">t</h2><section class="hw-pagina" id="pagina"></section>`);
+  for (const id of ["titulo", "pagina"]) assert.equal(declarado(r, otra.getElementById(id), "scroll-margin-top"), null, `#${id} con vista de lector`);
+  // Y existe: sin esta comprobación el test pasaría antes de implementar nada.
+  assert.ok(declarado(r, docHtml("data-vista-lector", HILOS).getElementById("hilo"), "scroll-margin-top"), "con la vista de lector sí lo lleva");
+});
+
+test("C5 hardware-editor.ts: mide el aviso con ResizeObserver y publica --aviso-lector-alto con altoAviso()", () => {
+  const s = read("src/scripts/hardware-editor.ts");
+  assert.match(s, /import \{[^}]*\baltoAviso\b[^}]*\} from "\.\.\/lib\/cabecera(\.ts)?"/);
+  assert.match(s, /\[data-hw-aviso-lector\]/, "localiza el aviso por su atributo");
+  assert.match(s, /setProperty\(\s*"--aviso-lector-alto",\s*altoAviso\(/, "publica la variable en el documento");
+  assert.match(s, /typeof ResizeObserver !== "undefined"/, "sin ResizeObserver (jsdom, navegador viejo) no lanza: queda el respaldo de 57px");
+  assert.match(s, /new ResizeObserver\(/, "el aviso pasa a dos líneas a 375 px y mide 0 mientras está oculto");
+});
+
+// ---------- C6. El anillo de un comentario resuelto no se atenúa ----------
+// Opacidad con la que se pinta de verdad un elemento: la suya por la de todos sus ancestros.
+function opacidadReal(reglas, el) {
+  let o = 1;
+  for (let e = el; e && e.nodeType === 1; e = e.parentElement) o *= Number(declarado(reglas, e, "opacity") ?? 1);
+  return Math.round(o * 1000) / 1000;
+}
+
+test("C6 CSS: el li de un comentario resuelto (y el de sus respuestas) no lleva opacidad, así que su anillo de foco se pinta entero", () => {
+  const r = reglasPlanas();
+  const d = docHtml("", HILOS);
+  for (const id of ["hilo", "respuesta", "borrado", "abierto"]) {
+    assert.equal(opacidadReal(r, d.getElementById(id)), 1, `#${id}: el outline se pinta con la opacidad del li (con .6, --accent queda cerca de 2,4:1 en tema claro)`);
+  }
+  assert.equal(opacidadReal(r, d.getElementById("respuestas")), 1, "la lista de respuestas tampoco: atenuaría el anillo de una respuesta enlazada");
+});
+
+test("C6 CSS: el contenido de un hilo resuelto sigue atenuado a .6, una sola vez (las respuestas no acumulan .36)", () => {
+  const r = reglasPlanas();
+  const d = docHtml("", HILOS);
+  // El propio li ya no lleva la opacidad (si la llevara, esto pasaría hoy y no probaría nada).
+  assert.equal(declarado(r, d.getElementById("hilo"), "opacity"), null, "la opacidad no va en el li resuelto");
+  for (const id of ["hilo-cab", "hilo-texto", "hilo-acciones", "hilo-form", "resp-cab", "resp-texto", "resp-acciones", "borrado-texto"]) {
+    assert.equal(opacidadReal(r, d.getElementById(id)), 0.6, `#${id}`);
+  }
+  for (const id of ["abierto-cab", "abierto-texto"]) assert.equal(opacidadReal(r, d.getElementById(id)), 1, `#${id}: un hilo sin resolver no se atenúa`);
+});
+
+test("C6 CSS: el anillo de un resuelto es el mismo que el de uno sin resolver (misma regla, sin color propio) y nada lo atenúa", () => {
+  const r = reglasPlanas();
+  const d = docHtml("", HILOS);
+  const anillo = (id) => {
+    const li = d.getElementById(id);
+    li.setAttribute("tabindex", "-1");
+    li.focus();
+    assert.equal(d.activeElement, li);
+    return [...["outline", "outline-color", "outline-offset", "outline-width", "outline-style"].map((p) => declarado(r, li, p)), opacidadReal(r, li)];
+  };
+  const abierto = anillo("abierto");
+  assert.deepEqual(abierto, ["2px solid var(--accent)", null, "2px", null, null, 1]);
+  for (const id of ["hilo", "respuesta", "borrado"]) assert.deepEqual(anillo(id), abierto, `#${id}`);
+});
+
+// ---------- A5. contenteditable="false" no es un campo de escritura ----------
+test('A5 escribiendoEn: contenteditable="false" no cuenta, salvo dentro de otro editable', () => {
+  const escribiendoEn = fn(atajosLib, "src/lib/atajos.ts", "escribiendoEn");
+  const { doc, visto } = campos();
+  doc.querySelector("main").insertAdjacentHTML(
+    "beforeend",
+    `<div id="fijo" contenteditable="false" tabindex="0"><span id="fijo-dentro">x</span></div>
+     <div id="fijo-mayus" contenteditable="FALSE" tabindex="0"></div>
+     <div id="vacio" contenteditable><span id="vacio-dentro">x</span></div>
+     <div id="plano" contenteditable="plaintext-only"></div>
+     <div id="fuera" contenteditable="true"><span id="isla" contenteditable="false"><b id="isla-dentro">x</b></span></div>`,
+  );
+  for (const id of ["fijo", "fijo-dentro", "fijo-mayus"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), false, `#${id}: ahí no se escribe, los atajos siguen activos`);
+  for (const id of ["vacio", "vacio-dentro", "plano", "editor", "parrafo"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), true, `#${id}: editable`);
+  for (const id of ["isla", "isla-dentro"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), true, `#${id}: isla no editable dentro de un editor, el foco sigue en el editor`);
+});
