@@ -244,6 +244,7 @@ const RUTAS = [
   "/auth/signed-out",
   "/auth/dispositivos",
   "/auth/dispositivos/revocar",
+  "/auth/dispositivos/token",
   "/auth/app/iniciar",
   "/auth/app/autorizar",
   "/auth/app/dispositivos",

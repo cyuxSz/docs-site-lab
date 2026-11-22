@@ -206,8 +206,12 @@ test("listas: un token de subida no aparece como dispositivo en el core, en la A
   assert.deepEqual(json.dispositivos.map((d) => d.nombre), ["PC de Ana"]);
   assert.ok(!JSON.stringify(json).includes(subida.id), "ni el id del token de subida sale en la lista de la app");
 
-  const { html, filas } = await paginaCon(env, sesion("ana"), 1);
-  assert.equal(filas[0].id, delCore[0].id);
-  assert.ok(!html.includes("CLI de Ana") && !html.includes(subida.id), "la página de dispositivos no lo pinta como un dispositivo más");
-  assert.equal((await pedir("/auth/me", { env, bearer: subida.token })).status, 200, "no listarlo no lo revoca");
+  // Desde G2 la página sí lo muestra, pero aparte: en la sección «Tokens de subida», nunca en la lista de dispositivos.
+  const { filas } = await paginaCon(env, sesion("ana"), 2);
+  const deLista = filas.filter((f) => !f.form.closest("section"));
+  const deSeccion = filas.filter((f) => f.form.closest("section"));
+  assert.deepEqual(deLista.map((f) => f.id), [delCore[0].id], "la lista de dispositivos sigue trayendo solo el dispositivo");
+  assert.ok(!deLista[0].fila.textContent.includes("CLI de Ana"), "la página de dispositivos no lo pinta como un dispositivo más");
+  assert.deepEqual(deSeccion.map((f) => f.id), [subida.id], "el token de subida va en su propia sección");
+  assert.equal((await pedir("/auth/me", { env, bearer: subida.token })).status, 200, "listarlo aparte no lo revoca");
 });
