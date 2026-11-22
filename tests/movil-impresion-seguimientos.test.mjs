@@ -167,6 +167,47 @@ test("S1 script: si el elemento que tenía el foco ya no está en la página, el
   assert.equal(p.d.activeElement?.getAttribute("data-barra"), "der", "respaldo: el botón del cajón que se cerró");
 });
 
+// El origen sigue en el documento pero ya no se puede enfocar (dejó de renderizarse con el cajón abierto: un enlace
+// dentro de un <details> que se plegó, o algo que pasó a `hidden`/display:none). jsdom no calcula estilos de hoja, pero
+// sí hace que focus() no tenga efecto con el atributo `hidden` y con display:none en línea, igual que el navegador.
+test("S1 script: si el origen sigue en la página pero quedó oculto (`hidden`) y no recibe el foco, el foco va al botón de ese lado", async () => {
+  const p = await montar(NODOS);
+  p.el("enlace").focus();
+  p.atajo("derecha");
+  assert.equal(p.d.activeElement, p.el("nodo"), "el foco entra al cajón");
+  p.el("enlace").hidden = true;
+  p.esc();
+  assert.equal(p.html.dataset.cajon, undefined, "Esc cierra el cajón");
+  assert.ok(p.d.contains(p.el("enlace")), "el origen sigue en el documento");
+  assert.notEqual(p.d.activeElement, p.el("nodo"), "el foco no se queda dentro del cajón cerrado (hoy: se queda ahí)");
+  assert.equal(p.d.activeElement?.getAttribute("data-barra"), "der", "respaldo: el botón del cajón que se cerró");
+});
+
+test("S1 script: lo mismo si quien se oculta es un antecesor del origen (display:none), al cerrar con el velo y en el cajón izquierdo", async () => {
+  const p = await montar(NODOS);
+  p.el("enlace2").focus();
+  p.atajo("izquierda");
+  assert.equal(p.d.activeElement, p.el("nav1"));
+  p.el("enlace2").parentElement.style.display = "none";
+  p.velo.click();
+  assert.equal(p.html.dataset.cajon, undefined);
+  assert.equal(p.d.activeElement?.getAttribute("data-barra"), "izq", "respaldo: el botón del cajón izquierdo (hoy: el foco se queda en el cajón cerrado)");
+});
+
+test("S1 script: si el origen sí recibe el foco, el respaldo no interviene (ningún botón llega a tener el foco)", async () => {
+  const p = await montar(NODOS);
+  let enBoton = 0;
+  for (const b of p.d.querySelectorAll("[data-barra]")) b.addEventListener("focus", () => enBoton++);
+  p.el("enlace").focus();
+  p.atajo("derecha");
+  // Ocultar y volver a mostrar con el cajón abierto: lo que cuenta es el estado al cerrar.
+  p.el("enlace").hidden = true;
+  p.el("enlace").hidden = false;
+  p.esc();
+  assert.equal(p.d.activeElement, p.el("enlace"), "el foco vuelve al origen");
+  assert.equal(enBoton, 0, "el foco no pasa por el botón");
+});
+
 test("S1 script: si nada tenía el foco al abrir, al cerrar va al botón de ese lado (no se pierde)", async () => {
   const p = await montar(NODOS);
   assert.equal(p.d.activeElement, p.d.body);

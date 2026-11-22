@@ -64,8 +64,9 @@ function iniciar() {
       } else if (antes.cajon) {
         const o = origen as HTMLElement | null;
         origen = null;
-        if (o && o !== document.body && o !== document.documentElement && document.contains(o) && typeof o.focus === "function") o.focus();
-        else botonVisible(antes.cajon)?.focus();
+        const valido = !!o && o !== document.body && o !== document.documentElement && document.contains(o) && typeof o.focus === "function";
+        if (valido) o.focus();
+        if (!valido || document.activeElement !== o) botonVisible(antes.cajon)?.focus();
       }
     } else if (!estado.cajon) origen = null;
     return true;
