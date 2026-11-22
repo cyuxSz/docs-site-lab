@@ -2,7 +2,8 @@
 //   PROTO_MODO=remoto  -> ventana que carga https://docs.vanttec.workers.dev (prueba A)
 //   (por defecto)      -> ventana servida por el protocolo propio `proto` (prueba B)
 //   PROTO_HTTPS=1      -> use_https_scheme(true): https://proto.localhost en vez de http://
-//   PROTO_UPSTREAM     -> URL a la que /api/proxy reenvía el GET (servidor local de prueba)
+//   PROTO_ZOOM=1       -> zoom_hotkeys_enabled(true) (zoom y pellizco de WebView2)
+//   PROTO_UPSTREAM    -> URL a la que /api/proxy reenvía el GET (servidor local de prueba)
 //   PROTO_SALIDA       -> carpeta donde se escriben informe-b.json y peticiones.log
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -168,6 +169,9 @@ fn main() {
                 .title(if remoto { "Prueba A: sitio remoto" } else { "Prueba B: protocolo" })
                 .inner_size(1280.0, 860.0)
                 .use_https_scheme(https)
+                // Tauri lo deja en false: WebView2 queda con IsZoomControlEnabled e
+                // IsPinchZoomEnabled apagados. PROTO_ZOOM=1 los enciende para comparar.
+                .zoom_hotkeys_enabled(std::env::var("PROTO_ZOOM").as_deref() == Ok("1"))
                 .build()?;
             Ok(())
         })
