@@ -91,11 +91,11 @@ export async function leerArchivoModelo(doc: any, url: string): Promise<ArrayBuf
   return bytes;
 }
 
-// ¿El navegador da un contexto WebGL? Se prueba con un <canvas> desechable.
+// ¿El navegador da un contexto WebGL 2? Se prueba con un <canvas> desechable. El WebGLRenderer del paquete solo pide
+// «webgl2»: WebGL 1 no le sirve, así que no se pide.
 export function soportaWebgl(doc: any): boolean {
   try {
-    const lienzo = doc.createElement("canvas");
-    return lienzo.getContext("webgl2") != null || lienzo.getContext("webgl") != null;
+    return doc.createElement("canvas").getContext("webgl2") != null;
   } catch {
     return false;
   }
@@ -225,13 +225,26 @@ function mallaStl(THREE: any, bytes: ArrayBuffer): any {
 
 // GLTFLoader.parse con ruta base vacía. Defensa en profundidad tras inspeccionarGlb: el LoadingManager solo deja pasar URLs
 // blob: (las que crea el propio loader para las imágenes embebidas). Las texturas se cargan con <img> (TextureLoader), que la
-// CSP permite por img-src blob:, en lugar de fetch(blob:), que connect-src 'self' bloquea.
-function escenaGlb(THREE: any, bytes: ArrayBuffer): Promise<any> {
+// CSP permite por img-src blob:, en lugar de fetch(blob:), que connect-src 'self' bloquea. El loader solo revoca la URL blob:
+// de una imagen que carga: la de una que falla se revoca aquí, en el onError de su carga (vale aunque parse ya haya fallado).
+function escenaGlb(THREE: any, doc: any, bytes: ArrayBuffer): Promise<any> {
+  const win = doc.defaultView ?? globalThis;
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url: unknown) => (typeof url === "string" && url.startsWith("blob:") ? url : "about:invalid"));
   const loader = new THREE.GLTFLoader(manager);
   loader.register((parser: any) => {
-    parser.textureLoader = new THREE.TextureLoader(manager);
+    const texturas = new THREE.TextureLoader(manager);
+    const cargar = texturas.load;
+    texturas.load = (url: unknown, alCargar?: unknown, alAvanzar?: unknown, alFallar?: (err: unknown) => void) =>
+      cargar.call(texturas, url, alCargar, alAvanzar, (err: unknown) => {
+        try {
+          if (typeof url === "string" && url.startsWith("blob:")) win.URL.revokeObjectURL(url);
+        } catch {
+          // sin URL.revokeObjectURL no hay nada que soltar
+        }
+        alFallar?.(err);
+      });
+    parser.textureLoader = texturas;
     return { name: "vt-texturas" };
   });
   return new Promise((bien, mal) => {
@@ -470,7 +483,7 @@ async function montarAhora(doc: any, fig: any, d: DatosModelo, url: string, o: O
     }
     const THREE = await o.cargarThree();
     if (!sigue()) return;
-    const objeto = tipo === "stl" ? mallaStl(THREE, bytes) : await escenaGlb(THREE, bytes);
+    const objeto = tipo === "stl" ? mallaStl(THREE, bytes) : await escenaGlb(THREE, doc, bytes);
     if (!sigue()) {
       soltarObjeto(objeto);
       return;

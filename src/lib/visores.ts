@@ -114,6 +114,8 @@ export const MAX_JSON_GLB = 4 * 1024 * 1024;
 export const MAX_TRIANGULOS_MODELO = 500_000;
 export const MAX_LADO_TEXTURA_MODELO = 4096;
 export const MAX_PIXELES_TEXTURAS_MODELO = 4 * 4096 * 4096;
+// Presupuesto de memoria de un GLB: suma de los bytes que declaran todos sus accessors (count × componentes × bytes).
+export const MAX_BYTES_ACCESSORS_GLB = 64 * 1024 * 1024;
 
 export const parsearModelo = (cuerpo: string): DatosModelo | null => parsearPdf(cuerpo);
 
@@ -148,6 +150,9 @@ export function tipoModelo(bytes: ArrayBuffer): "glb" | "stl" | null {
 }
 
 const COMPRESION_GLB = new Set(["KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_meshopt_compression", "KHR_texture_basisu"]);
+// Las dos tablas de glTF 2 (las mismas que usa GLTFLoader). Map, para que «constructor» o «__proto__» no pasen por válidos.
+const COMPONENTES_ACCESSOR = new Map<unknown, number>([["SCALAR", 1], ["VEC2", 2], ["VEC3", 3], ["VEC4", 4], ["MAT2", 4], ["MAT3", 9], ["MAT4", 16]]);
+const BYTES_COMPONENTE = new Map<unknown, number>([[5120, 1], [5121, 1], [5122, 2], [5123, 2], [5125, 4], [5126, 4]]);
 export type InspeccionGlb = { ok: true } | { ok: false; motivo: "formato" | "externo" | "comprimido" | "complejo" };
 
 // Un GLB es contenido no confiable: se revisa antes de dárselo a GLTFLoader. Debe ser glTF 2 autocontenido (ninguna uri en
@@ -187,15 +192,21 @@ export function inspeccionarGlb(bytes: ArrayBuffer): InspeccionGlb {
   for (const clave of ["extensionsUsed", "extensionsRequired"]) {
     if ((json[clave] ?? []).some((e: unknown) => COMPRESION_GLB.has(e as string))) return { ok: false, motivo: "comprimido" };
   }
-  // Tamaño declarado, lo último: GLTFLoader reserva `count` elementos por accessor (sin bufferView, un arreglo a ceros), así
-  // que un JSON de pocos bytes puede pedir gigas antes de que se pueda medir nada.
+  // Tamaño declarado, lo último: GLTFLoader reserva `count` elementos por accessor (sin bufferView, un arreglo a ceros; si es
+  // disperso, una copia), así que un JSON de pocos bytes puede pedir gigas antes de que se pueda medir nada. Dos topes: los
+  // elementos de cada accessor y los bytes de todos juntos. Se recorren todos antes de decidir: uno mal formado gana.
   if (json.accessors !== undefined && !Array.isArray(json.accessors)) return formato;
   let complejo = false;
+  let declarados = 0;
   for (const a of json.accessors ?? []) {
     if (!a || typeof a !== "object" || Array.isArray(a) || !Number.isInteger(a.count) || a.count < 0) return formato;
+    const componentes = COMPONENTES_ACCESSOR.get(a.type);
+    const porComponente = BYTES_COMPONENTE.get(a.componentType);
+    if (componentes === undefined || porComponente === undefined) return formato;
     if (a.count > 3 * MAX_TRIANGULOS_MODELO) complejo = true;
+    declarados += a.count * componentes * porComponente;
   }
-  if (complejo) return { ok: false, motivo: "complejo" };
+  if (complejo || !(declarados <= MAX_BYTES_ACCESSORS_GLB)) return { ok: false, motivo: "complejo" };
   return { ok: true };
 }
 

@@ -995,10 +995,11 @@ figure.hw-modelo [role="status"] { margin: 0 0 8px; color: var(--muted); }
   figure.hw-modelo canvas { height: min(55vh, 380px); min-height: 240px; }
   figure.hw-modelo .hw-modelo-cargando { height: min(55vh, 380px); min-height: 240px; }
 }
-/* Un lienzo WebGL sale en blanco al imprimir: queda el enlace de descarga. */
+/* Un lienzo WebGL sale en blanco al imprimir, y un modelo aún sin cargar solo tiene su marcador: queda el enlace de descarga. */
 @media print {
   figure.hw-modelo [role="region"] { display: none; }
   figure.hw-modelo > .btn { display: none; }
+  figure.hw-modelo .hw-modelo-cargando { display: none; }
 }
 
 /* C14/C16: lectura de hardware con el aspecto del editor (tokens --hw-*, definidos en :root) */
