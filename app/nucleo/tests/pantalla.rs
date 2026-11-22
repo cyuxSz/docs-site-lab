@@ -35,8 +35,21 @@ fn c7_la_pantalla_lleva_su_csp_con_form_action_y_las_cabeceras_de_las_paginas_de
         assert_eq!(cabecera(&respuesta, "content-type").as_deref(), Some("text/html; charset=utf-8"));
         assert_eq!(cabecera(&respuesta, "cache-control").as_deref(), Some("no-store"));
         assert_eq!(cabecera(&respuesta, "x-content-type-options").as_deref(), Some("nosniff"));
-        assert_eq!(cabecera(&respuesta, "referrer-policy").as_deref(), Some("no-referrer"));
     }
+}
+
+#[test]
+fn c7_la_pantalla_se_sirve_con_referrer_policy_same_origin_en_todas_sus_vistas() {
+    // Medido en WebView2 157: con `no-referrer` el POST del formulario sale con `Origin: null` y
+    // la ruta del botón lo rechaza con 403. Con `same-origin` lleva el origen de la app. La
+    // pantalla no enlaza a nada externo ni carga subrecursos, así que no filtra nada.
+    for estado in estados() {
+        let respuesta = pantalla_de_login(estado);
+        let politicas: Vec<_> = respuesta.headers().get_all("referrer-policy").iter().collect();
+        assert_eq!(politicas, ["same-origin"], "{estado:?}: una sola Referrer-Policy, same-origin");
+    }
+    let politicas: Vec<_> = pantalla_sin_sesion().headers().get_all("referrer-policy").iter().cloned().collect();
+    assert_eq!(politicas, ["same-origin"], "pantalla_sin_sesion");
 }
 
 #[test]

@@ -234,6 +234,74 @@ fn c5_si_el_navegador_no_abre_la_pantalla_lo_dice() {
     assert_eq!(servidor.conexiones(), 0);
 }
 
+// ---------- Criterio 7 a través del proxy: la política de referente de la pantalla ----------
+
+/// La respuesta es la pantalla de login de ese estado y lleva una sola `Referrer-Policy`:
+/// `same-origin`. Con `no-referrer`, WebView2 envía el formulario con `Origin: null` (medido).
+fn es_pantalla_con_same_origin(respuesta: &Response<Vec<u8>>, estado: EstadoLogin, camino: &str) {
+    assert_eq!(respuesta.status().as_u16(), 200, "{camino}");
+    assert_eq!(respuesta.body(), pantalla_de_login(estado).body(), "{camino}: no es la pantalla de {estado:?}");
+    let politicas: Vec<_> = respuesta
+        .headers()
+        .get_all("referrer-policy")
+        .iter()
+        .map(|v| v.to_str().unwrap().to_string())
+        .collect();
+    assert_eq!(politicas, ["same-origin"], "{camino}: una sola Referrer-Policy, same-origin");
+}
+
+/// Servidor que rechaza el token y, además, manda su propia política: no debe llegar a la pantalla.
+fn portal_que_rechaza_el_token() -> Servidor {
+    Servidor::fijo(
+        Respuesta::nueva(401, b"{\"error\":\"token\"}")
+            .con("Content-Type", "application/json")
+            .con("WWW-Authenticate", "Bearer error=\"invalid_token\"")
+            .con("Referrer-Policy", "no-referrer"),
+    )
+}
+
+#[test]
+fn c7_la_pantalla_llega_con_referrer_policy_same_origin_por_todos_los_caminos() {
+    let sin = EstadoLogin::SinSesion;
+
+    // `Proxy::nuevo` (sin login): sin token, y tras un 401 del servidor en una navegación.
+    let servidor = Servidor::ok();
+    let proxy = Proxy::nuevo(servidor.destino(), sin_token(), limites());
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), sin, "Proxy::nuevo sin token");
+    let rechaza = portal_que_rechaza_el_token();
+    let proxy = Proxy::nuevo(rechaza.destino(), con_token(), limites());
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "Proxy::nuevo, 401 de navegación");
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "Proxy::nuevo, sesión ya perdida");
+
+    // `Proxy::con_login`: sin sesión y con el login en curso.
+    let navegador = NavegadorFalso::nuevo();
+    let (_login, proxy) = app(&servidor, None, navegador.clone());
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), sin, "con_login sin sesión");
+    es_vuelta_a_la_raiz(&pedir(&proxy, pulsar()));
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), EstadoLogin::EnCurso, "con_login en curso");
+
+    // Aviso: el navegador no abre.
+    let (_login, proxy) = app(&servidor, None, NavegadorFalso::roto());
+    es_vuelta_a_la_raiz(&pedir(&proxy, pulsar()));
+    let fallo = EstadoLogin::Fallo(Aviso::NavegadorNoAbre);
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), fallo, "con_login, navegador que no abre");
+
+    // Aviso: canje fallido.
+    let falla = Servidor::fijo(Respuesta::nueva(400, b"{\"error\":\"x\"}").con("Content-Type", "application/json"));
+    let navegador = NavegadorFalso::nuevo();
+    let (login, proxy) = app(&falla, None, navegador.clone());
+    es_vuelta_a_la_raiz(&pedir(&proxy, pulsar()));
+    let intento = partir_url(&falla.origen, &navegador.abiertas()[0]);
+    assert_eq!(login.recibir(&enlace(CODIGO, &intento.state), Instant::now()), Recibido::Fallo);
+    let fallo = EstadoLogin::Fallo(Aviso::NoSePudo);
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), fallo, "con_login, canje fallido");
+
+    // `Proxy::con_login`: 401 del servidor en una navegación, y la siguiente ya sin token.
+    let (_login, proxy) = app(&rechaza, Some(token()), NavegadorFalso::nuevo());
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "con_login, 401 de navegación");
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "con_login, sesión ya perdida");
+}
+
 // ---------- Criterio 6: la sesión vuelve sin reiniciar ----------
 
 /// Servidor que solo acepta `TOKEN_NUEVO`, y que lo entrega en el canje.
