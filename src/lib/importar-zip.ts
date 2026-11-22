@@ -28,7 +28,7 @@ const TAM_CENTRAL = 46;
 const TAM_LOCAL = 30;
 const SIN_DATO_16 = 0xffff; // en zip64 los campos de 16 y 32 bits van a tope y el valor real está en otro sitio
 const SIN_DATO_32 = 0xffffffff;
-const TROZO = 16 * 1024; // bytes comprimidos por llamada al inflador: acota cuánto se infla antes de poder cortar
+const TROZO = 4 * 1024; // bytes comprimidos por llamada al inflador: el límite se comprueba tras cada push, así que trozos pequeños acotan el pico de memoria ante una bomba
 const PAUSA_CADA = 4 * 1024 * 1024; // bytes procesados entre dos respiros al navegador
 
 const ERROR_DANADO = "El zip está dañado o no es un archivo .zip.";

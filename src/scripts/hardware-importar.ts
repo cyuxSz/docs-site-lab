@@ -256,6 +256,11 @@ export function conectarImportar({ proyecto, disciplina, senal, slugs, hayCambio
     resultado.textContent = r.texto;
     errorFinal.textContent = estado.detenido?.mensaje ?? "";
     errorFinal.hidden = !estado.detenido;
+    const voluntaria = estado.detenido?.causa === "usuario";
+    errorFinal.classList.toggle("hw-error", !voluntaria);
+    errorFinal.classList.toggle("hw-ayuda", voluntaria);
+    if (voluntaria) errorFinal.removeAttribute("role");
+    else errorFinal.setAttribute("role", "alert");
     pintarLista(
       listaPendientes,
       r.pendientes.map((p) => fila(p.titulo, p.motivo)),
