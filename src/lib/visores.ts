@@ -155,6 +155,14 @@ export function inspeccionarGlb(bytes: ArrayBuffer): InspeccionGlb {
   if (v.getUint32(0, true) !== MAGIA_GLB || v.getUint32(4, true) !== 2 || v.getUint32(8, true) !== largo) return formato;
   const largoJson = v.getUint32(12, true);
   if (v.getUint32(16, true) !== CHUNK_JSON || largoJson > MAX_JSON_GLB || 20 + largoJson > largo) return formato;
+  // GLTFLoader recorre todos los chunks y se queda con el último JSON: aquí se admite uno solo, el primero, y el resto
+  // (BIN o desconocidos) tiene que cubrir exactamente el archivo.
+  for (let o = 20 + largoJson; o < largo; ) {
+    if (largo - o < 8) return formato;
+    const largoChunk = v.getUint32(o, true);
+    if (v.getUint32(o + 4, true) === CHUNK_JSON || largoChunk > largo - o - 8) return formato;
+    o += 8 + largoChunk;
+  }
   let json: any;
   try {
     json = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes, 20, largoJson)));
