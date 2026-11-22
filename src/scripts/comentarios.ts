@@ -1,5 +1,5 @@
 // Interfaz de comentarios: pide la lista al entrar en vista y pinta con nodos DOM (nunca HTML del usuario).
-import { abrirPorHash, acciones, armarHilos, claveCacheNav, contador, contarAbiertos, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, partirMenciones, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
+import { abrirPorHash, acciones, armarHilos, claveCacheNav, contador, contarAbiertos, enfocarComentario, etiquetaComentarios, fechaRelativa, mensajeError, opcionesEscritura, partirMenciones, textoValido, tipoInfo, urlComentarios, type Comentario, type Hilo } from "../lib/comentarios";
 
 const raiz = document.querySelector<HTMLElement>("section.comentarios[data-pagina]");
 if (raiz) iniciar(raiz);
@@ -126,12 +126,9 @@ function iniciar(root: HTMLElement) {
     etiqueta.textContent = etiquetaComentarios(contarAbiertos(comentarios));
     estado.textContent = hilos.length ? "" : "Aún no hay comentarios. Sé el primero.";
     if (idHash) {
-      const destino = document.getElementById(`comentario-${idHash}`);
+      const enfocado = enfocarComentario(document, idHash);
       idHash = null;
-      if (destino) {
-        destino.tabIndex = -1;
-        destino.scrollIntoView({ block: "center" });
-        destino.focus();
+      if (enfocado) {
         volverA = null;
         return;
       }
@@ -343,13 +340,7 @@ function iniciar(root: HTMLElement) {
     toggle.setAttribute("aria-expanded", "true");
     signo.textContent = "−";
     if (h.id && cargado) {
-      const destino = document.getElementById(`comentario-${h.id}`);
-      if (destino) {
-        idHash = null;
-        destino.tabIndex = -1;
-        destino.scrollIntoView({ block: "center" });
-        destino.focus();
-      }
+      if (enfocarComentario(document, h.id)) idHash = null;
     }
     cargarUnaVez();
   }
