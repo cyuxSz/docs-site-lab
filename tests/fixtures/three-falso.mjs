@@ -695,3 +695,44 @@ export function stlBinario(triangulos = 2, cabecera = "portal") {
 
 export const STL_ASCII = "solid pieza\n facet normal 0 0 1\n  outer loop\n   vertex 0 0 0\n   vertex 1 0 0\n   vertex 0 1 0\n  endloop\n endfacet\nendsolid pieza\n";
 export const stlAscii = (texto = STL_ASCII) => new TextEncoder().encode(texto).buffer;
+
+// PNG real de 1 × 1 px (70 bytes).
+export const PNG_1X1 = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+
+// GLB válido y autocontenido: escena → nodo → malla de un triángulo (POSITION y TEXCOORD_0) con un material cuya textura de
+// color es una imagen incrustada (bufferView + mimeType). `imagenes` = tipos MIME, uno por imagen incrustada: la primera va
+// en baseColorTexture y la segunda, si la hay, en emissiveTexture. Los bytes de cada imagen son los de PNG_1X1.
+// `geometriaRota` declara más vértices de los que caben en su bufferView: el GLTFLoader real falla al leer la geometría.
+export function glbConTextura({ imagenes = ["image/png"], geometriaRota = false } = {}) {
+  if (imagenes.length < 1 || imagenes.length > 2) throw new Error("glbConTextura admite una o dos imágenes");
+  const posiciones = new Uint8Array(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer);
+  const uvs = new Uint8Array(new Float32Array([0, 0, 1, 0, 0, 1]).buffer);
+  const tramo = PNG_1X1.length + ((4 - (PNG_1X1.length % 4)) % 4);
+  const bin = new Uint8Array(60 + tramo * imagenes.length);
+  bin.set(posiciones, 0);
+  bin.set(uvs, 36);
+  imagenes.forEach((_, i) => bin.set(PNG_1X1, 60 + tramo * i));
+  const material = { pbrMetallicRoughness: { baseColorTexture: { index: 0 } } };
+  if (imagenes.length > 1) Object.assign(material, { emissiveTexture: { index: 1 }, emissiveFactor: [1, 1, 1] });
+  const json = {
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }] }],
+    materials: [material],
+    textures: imagenes.map((_, i) => ({ source: i })),
+    images: imagenes.map((mimeType, i) => ({ bufferView: 2 + i, mimeType })),
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: geometriaRota ? 300 : 3, type: "VEC3", min: [0, 0, 0], max: [1, 1, 0] },
+      { bufferView: 1, componentType: 5126, count: 3, type: "VEC2" },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 24 },
+      ...imagenes.map((_, i) => ({ buffer: 0, byteOffset: 60 + tramo * i, byteLength: PNG_1X1.length })),
+    ],
+    buffers: [{ byteLength: bin.length }],
+  };
+  return glb(json, { bin });
+}

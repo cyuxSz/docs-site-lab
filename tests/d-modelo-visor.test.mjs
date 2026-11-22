@@ -1,5 +1,6 @@
 // Lote d-modelo-3d: montaje del visor 3D (src/lib/modelo-visor.ts) a través de montarVisores, con un THREE falso
-// (tests/fixtures/three-falso.mjs). Aquí no hay WebGL ni se ejecuta el paquete vendorizado de three.
+// (tests/fixtures/three-falso.mjs). Aquí no hay WebGL ni se ejecuta el paquete vendorizado de three (los loaders del paquete
+// se ejecutan solo en tests/d-modelo-cr68.test.mjs).
 // Inyección, igual que OpcionesKicad:  montarVisores(raiz, md, { …, modelo: { cargarThree(), leer(url), webgl() } })
 //   cargarThree(): Promise<THREE>          el paquete (en producción, import() de /vendor/three/three-visor.js)
 //   leer(url): Promise<ArrayBuffer>        descarga del portal; rechaza con error.motivo === "grande" si pasa de 20 MB
@@ -11,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { crearThreeFalso, glb, stlAscii, stlBinario, Spherical, Vector3 } from "./fixtures/three-falso.mjs";
+import { crearThreeFalso, glb, glbConTextura, stlAscii, stlBinario, Spherical, Vector3 } from "./fixtures/three-falso.mjs";
 
 const A = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
 const B = "7a1c2d3e-4f50-4a61-9b72-8c9d0e1f2a3b";
@@ -344,7 +345,9 @@ test("fuente: modelo-visor.ts no usa requestAnimationFrame, setAnimationLoop, au
 // ---------- 3. GLB: texturas por <img>, URL modifier, sin animaciones ----------
 
 test("GLB: GLTFLoader.parse(buffer, \"\", …) con plugin vt-texturas (TextureLoader) y URL modifier que solo deja pasar blob:", async () => {
-  const bytes = glb({ asset: { version: "2.0" }, buffers: [{ byteLength: 8 }], images: [{ bufferView: 0, mimeType: "image/png" }] }, { bin: new Uint8Array(8) });
+  // GLB válido (escena, malla, material e imagen incrustada). Aquí el loader es el doble y solo se comprueba cómo lo configura
+  // el portal; el mismo archivo se carga con el GLTFLoader del paquete en tests/d-modelo-cr68.test.mjs.
+  const bytes = glbConTextura();
   const { f, fig } = await montar(bloque(`archivo: ${A}\ntitulo: Casco`), { archivo: bytes });
   const { THREE, registro } = f;
   assert.ok(lienzoDe(fig));
@@ -371,7 +374,8 @@ test("GLB: GLTFLoader.parse(buffer, \"\", …) con plugin vt-texturas (TextureLo
   const parser = loader.parsers[0];
   assert.ok(parser.textureLoader instanceof THREE.TextureLoader, "parser.textureLoader = new TextureLoader(manager)");
   assert.equal(parser.textureLoader.manager, loader.manager, "el TextureLoader usa el mismo manager (y su URL modifier)");
-  // La escena del GLB entra con sus materiales.
+  // La escena que devuelve el loader entra tal cual, con sus materiales (el doble siempre pone una textura: que el loader real
+  // abra la imagen incrustada se comprueba en d-modelo-cr68).
   const objetos = [];
   registro.escenas.at(-1).traverse((o) => objetos.push(o));
   const malla = objetos.find((o) => o.isMesh);
@@ -552,30 +556,39 @@ test("liberación: al repintar y volver a llamar a montarVisores se liberan los 
   };
   // Los modelos son GLB: así hay geometría, material y textura que soltar.
   const { f, doc } = await montar(texto, { win, archivo: glb() });
-  assert.equal(f.registro.renderers.length, 8);
+  // Los recursos del primer montaje, guardados antes de repintar: ocho de cada tipo, uno por visor.
+  const tipos = ["renderers", "controles", "geometrias", "materiales", "mapas"];
+  const antiguos = { ...Object.fromEntries(tipos.map((t) => [t, [...f.registro[t]]])), observadores: [...observadores] };
+  for (const [tipo, lista] of Object.entries(antiguos)) assert.equal(lista.length, 8, `premisa: 8 ${tipo} tras el primer montaje`);
   const { montarVisores } = await md();
-  // Mientras siguen en el DOM no se libera nada.
+  // Mientras siguen en el DOM no se libera nada ni se crea nada nuevo.
   await montarVisores(doc.body, texto, opciones({ modelo: f.modelo }));
-  assert.ok(f.registro.renderers.every((r) => r.liberado === 0), "los visores conectados no se tocan");
+  for (const tipo of tipos) {
+    assert.equal(f.registro[tipo].length, 8, `${tipo}: la segunda llamada no crea más`);
+    assert.ok(antiguos[tipo].every((x) => x.liberado === 0), `${tipo}: los visores conectados no se tocan`);
+  }
+  assert.ok(antiguos.renderers.every((r) => r.contextoPerdido === 0), "sin forceContextLoss mientras están conectados");
+  assert.equal(observadores.length, 8);
+  assert.ok(antiguos.observadores.every((o) => !o.desconectado), "los ResizeObserver siguen conectados");
   // Repintado tras guardar: figuras nuevas, las viejas quedan fuera del DOM.
   await pintar(win, texto);
   await montarVisores(doc.body, texto, opciones({ modelo: f.modelo }));
-  const viejos = f.registro.renderers.slice(0, 8);
-  for (const r of viejos) {
-    assert.ok(r.liberado >= 1, "renderer.dispose()");
-    assert.ok(r.contextoPerdido >= 1, "renderer.forceContextLoss()");
-  }
-  for (const c of f.registro.controles.slice(0, 8)) assert.ok(c.liberado >= 1, "controls.dispose()");
-  assert.ok(observadores.slice(0, 8).every((o) => o.desconectado), "ResizeObserver desconectado");
-  // Geometrías, materiales y texturas de los 8 primeros modelos.
-  assert.ok(f.registro.geometrias.slice(0, 8).every((g) => g.liberado >= 1), "geometry.dispose()");
-  assert.ok(f.registro.materiales.slice(0, 8).every((m) => m.liberado >= 1), "material.dispose()");
-  assert.ok(f.registro.mapas.slice(0, 8).every((t) => t.liberado >= 1), "texture.dispose()");
-  // El contador bajó: los 8 nuevos caben.
-  assert.equal(f.registro.renderers.length, 16);
+  // Esos mismos ocho de cada tipo quedan liberados.
+  const nombres = { renderers: "renderer.dispose()", controles: "controls.dispose()", geometrias: "geometry.dispose()", materiales: "material.dispose()", mapas: "texture.dispose()" };
+  for (const tipo of tipos) antiguos[tipo].forEach((x, i) => assert.ok(x.liberado >= 1, `${nombres[tipo]} del visor antiguo ${i + 1}`));
+  antiguos.renderers.forEach((r, i) => assert.ok(r.contextoPerdido >= 1, `renderer.forceContextLoss() del visor antiguo ${i + 1}`));
+  antiguos.observadores.forEach((o, i) => assert.ok(o.desconectado, `ResizeObserver desconectado del visor antiguo ${i + 1}`));
+  // Aparte: el contador bajó, así que caben los ocho nuevos, y esos siguen vivos.
   assert.equal(doc.querySelectorAll("figure.hw-modelo canvas").length, 8);
   assert.equal(doc.querySelector("p[role=status]"), null, "ningún aviso de «demasiados»");
-  assert.ok(f.registro.renderers.slice(8).every((r) => r.liberado === 0));
+  for (const tipo of tipos) {
+    const nuevos = f.registro[tipo].filter((x) => !antiguos[tipo].includes(x));
+    assert.equal(nuevos.length, 8, `8 ${tipo} nuevos`);
+    assert.ok(nuevos.every((x) => x.liberado === 0), `${tipo}: los nuevos no se liberan`);
+  }
+  const observadoresNuevos = observadores.filter((o) => !antiguos.observadores.includes(o));
+  assert.equal(observadoresNuevos.length, 8, "8 ResizeObserver nuevos");
+  assert.ok(observadoresNuevos.every((o) => !o.desconectado), "y siguen conectados");
 });
 
 test("liberación: también al pintar una página sin modelos, y en pagehide", async () => {
@@ -956,14 +969,17 @@ test("leerArchivoModelo: tope de 20 MB por content-length (sin leer el cuerpo) y
   assert.equal((await leerArchivoModelo(win.document, src(A))).byteLength, MAX_MODELO_VISOR, "20 MB justos pasan");
 });
 
-test("soportaWebgl(doc): true si un <canvas> nuevo da contexto webgl2 o webgl; false si no hay o si lanza", async () => {
+// El WebGLRenderer del paquete (three 0.187) solo pide «webgl2»: con WebGL 1 a secas lanzaría al crear el visor.
+test("soportaWebgl(doc): true solo si un <canvas> nuevo da contexto webgl2; con solo WebGL 1, sin contexto o si lanza, false", async () => {
   const { soportaWebgl } = await mv();
   assert.equal(typeof soportaWebgl, "function");
-  const docCon = (getContext) => ({ createElement: (tag) => (assert.equal(tag, "canvas"), { getContext }) });
+  const pedidos = [];
+  const docCon = (getContext) => ({ createElement: (tag) => (assert.equal(tag, "canvas"), { getContext: (t, ...resto) => (pedidos.push(t), getContext(t, ...resto)) }) });
   assert.equal(soportaWebgl(docCon((t) => (t === "webgl2" ? {} : null))), true);
-  assert.equal(soportaWebgl(docCon((t) => (t === "webgl" ? {} : null))), true);
+  assert.equal(soportaWebgl(docCon((t) => (t === "webgl" || t === "experimental-webgl" ? {} : null))), false, "solo WebGL 1: el visor no puede montarse");
   assert.equal(soportaWebgl(docCon(() => null)), false);
   assert.equal(soportaWebgl(docCon(() => { throw new Error("bloqueado"); })), false);
+  assert.deepEqual([...new Set(pedidos)], ["webgl2"], "solo se pide webgl2 (no se crea un contexto WebGL 1 que no sirve)");
 });
 
 // ---------- 9. Ampliación: rol del lienzo, foco al perder el contexto y topes de triángulos y texturas ----------
