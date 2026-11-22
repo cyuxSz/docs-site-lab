@@ -235,3 +235,40 @@ export function correrVigilado(args, fallaEn = 0) {
 export const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
 // Líneas de un flujo de texto, sin el fin de línea (LF, o CRLF cuando Python escribe en Windows) ni la última vacía.
 export const lineas = (texto) => texto.split(/\r?\n/).filter((l, i, t) => i < t.length - 1 || l !== "");
+
+// ── Hilos de CodeRabbit del PR 63 ───────────────────────────────────────────────────────────────────────────────────
+// Los bits de permiso POSIX y el umask no existen en Windows: esos tests se saltan allí con el motivo a la vista.
+export const SIN_MODOS = !PYTHON
+  ? SIN_PYTHON
+  : process.platform === "win32"
+    ? { skip: "Windows no tiene bits de permiso POSIX ni umask; se comprueba en Linux, donde corre el CI (.github/workflows/build.yml, ubuntu-latest)" }
+    : {};
+
+// Corre `main(argv)` del generador con el umask dado (texto octal, p. ej. "022") y `os.open` vigilado: anota cada archivo
+// que se crea (ruta y bits de permiso recién creado, leídos con fstat). `tempfile.mkstemp` también pasa por `os.open`.
+const VIGILAR_MODOS = `
+import json, os, runpy, stat, sys
+generador, mascara, argv = sys.argv[1], int(sys.argv[2], 8), sys.argv[3:]
+os.umask(mascara)
+creados, real = [], os.open
+def vigilado(ruta, banderas, *a, **k):
+    existia = os.path.lexists(ruta) if "dir_fd" not in k else False
+    fd = real(ruta, banderas, *a, **k)
+    if banderas & os.O_CREAT and not existia:
+        creados.append([os.fsdecode(ruta), stat.S_IMODE(os.fstat(fd).st_mode)])
+    return fd
+os.open = vigilado
+modulo = runpy.run_path(generador, run_name="integrados_vigilado")
+codigo = modulo["main"](argv)
+sys.stdout.flush()
+sys.stderr.flush()
+print("CREADOS=" + json.dumps(creados))
+sys.exit(codigo)
+`;
+
+export function correrConModos(args, mascara = "022") {
+  const r = correrPython(VIGILAR_MODOS, [GENERADOR, mascara, ...args]);
+  const m = /^CREADOS=(.*)$/m.exec(r.salida);
+  assert.ok(m, `el generador no llegó a terminar bajo vigilancia; stdout: ${r.salida}; stderr: ${r.error}`);
+  return { ...r, salida: r.salida.slice(0, m.index), creados: JSON.parse(m[1]) };
+}
