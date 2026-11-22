@@ -6,7 +6,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
+import { buildSync } from "esbuild";
 import * as atajosLib from "../src/lib/atajos.ts";
 import * as comLib from "../src/lib/comentarios.ts";
 
@@ -405,4 +407,59 @@ test('A5 escribiendoEn: contenteditable="false" no cuenta, salvo dentro de otro 
   for (const id of ["fijo", "fijo-dentro", "fijo-mayus"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), false, `#${id}: ahí no se escribe, los atajos siguen activos`);
   for (const id of ["vacio", "vacio-dentro", "plano", "editor", "parrafo"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), true, `#${id}: editable`);
   for (const id of ["isla", "isla-dentro"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), true, `#${id}: isla no editable dentro de un editor, el foco sigue en el editor`);
+});
+
+// ---------- C5 (ampliación). El comentario del hash se posiciona con el indicador de carga ya retirado ----------
+// src/scripts/comentarios.ts empaquetado con esbuild y ejecutado sobre jsdom con el marcado real de Comentarios.astro.
+// Mientras <p data-comentarios-estado> lleva data-cargando, su spinner ::before lo mantiene en 26,4px + 12px de margen aunque
+// el texto esté vacío; si se quita después del scroll, el comentario sube 38,4px y el aviso de lector lo tapa.
+let guionComentarios;
+async function montarComentarios({ hash, respuesta }) {
+  guionComentarios ??= buildSync({ entryPoints: [fileURLToPath(new URL("../src/scripts/comentarios.ts", import.meta.url))], bundle: true, write: false, format: "iife", platform: "neutral" }).outputFiles[0].text;
+  const marcado = read("src/components/Comentarios.astro").replace(/^---[\s\S]*?---/, "").replace("data-pagina={pagina}", 'data-pagina="/uuv/electronica/"');
+  const dom = new JSDOM(`<!doctype html><html><body>${marcado}</body></html>`, { url: `https://docs.example/uuv/electronica/?p=placa${hash}` });
+  const w = dom.window;
+  const doc = w.document;
+  const estado = doc.querySelector("[data-comentarios-estado]");
+  assert.ok(estado?.hasAttribute("data-cargando"), "el marcado parte con el indicador de carga puesto");
+  const llamadas = [];
+  const anotar = (que, el) => {
+    if (el.classList.contains("comentario")) llamadas.push({ que, id: el.id, cargando: estado.hasAttribute("data-cargando"), texto: estado.textContent });
+  };
+  w.Element.prototype.scrollIntoView = function () {
+    anotar("scroll", this);
+  };
+  const focusReal = w.HTMLElement.prototype.focus;
+  w.HTMLElement.prototype.focus = function (o) {
+    anotar("focus", this);
+    return focusReal.call(this, o);
+  };
+  const fetch = async () => respuesta();
+  // Sin IntersectionObserver el script carga al momento: el mismo camino que un primer hash con los comentarios sin cargar.
+  new Function("window", "document", "location", "sessionStorage", "fetch", "IntersectionObserver", guionComentarios)(w, doc, w.location, w.sessionStorage, fetch, undefined);
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  return { doc, estado, llamadas };
+}
+const json = (status, cuerpo) => ({ ok: status < 400, status, headers: { get: () => null }, json: async () => cuerpo });
+const COMENTARIO = { id: UUID, pagina: "/uuv/electronica/", padre: null, tipo: "duda", texto: "hola", autor: "ana", creado: "2026-11-01T00:00:00Z", editado: false, resuelto: false, resueltoPor: null, borrado: false };
+
+test("C5 scripts/comentarios.ts: al enfocar el comentario del hash el indicador de carga ya no ocupa sitio (data-cargando retirado antes del scroll)", async () => {
+  const { doc, estado, llamadas } = await montarComentarios({ hash: `#comentario-${UUID}`, respuesta: () => json(200, { yo: "ana", comentarios: [COMENTARIO] }) });
+  const li = doc.getElementById(`comentario-${UUID}`);
+  assert.ok(li, "pinta el comentario enlazado");
+  const scroll = llamadas.find((l) => l.que === "scroll" && l.id === li.id);
+  const foco = llamadas.find((l) => l.que === "focus" && l.id === li.id);
+  assert.ok(scroll && foco, "desplaza y enfoca el comentario del hash");
+  assert.equal(doc.activeElement, li);
+  assert.equal(scroll.texto, "", "con hilos, el estado ya está vacío al desplazar");
+  assert.equal(scroll.cargando, false, "en el momento del scrollIntoView [data-comentarios-estado] ya no lleva data-cargando: si se quita después, el <p> colapsa 38,4px y el comentario sube bajo el aviso de lector");
+  assert.equal(foco.cargando, false, "tampoco al dar el foco");
+  assert.equal(estado.hasAttribute("data-cargando"), false);
+});
+
+test("C5 scripts/comentarios.ts: si la carga falla, el indicador se retira igualmente (el finally de cargar() se conserva)", async () => {
+  const { estado, llamadas } = await montarComentarios({ hash: `#comentario-${UUID}`, respuesta: () => json(500, { error: "x" }) });
+  assert.equal(estado.hasAttribute("data-cargando"), false, "sin spinner tras un error");
+  assert.notEqual(estado.textContent.trim(), "", "queda el mensaje de error");
+  assert.deepEqual(llamadas, [], "sin comentario que enfocar");
 });
