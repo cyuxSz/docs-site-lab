@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { chmodSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
-  SIN_MODOS, SIN_PYTHON, analizar, archivos, carpetaTemporal, correr, correrConModos, generar, generarBien, join, lineas,
+  SIN_MODOS, SIN_PYTHON, analizar, archivos, carpetaTemporal, correr, correrConModos, correrVigilado, generar, generarBien, join, lineas,
   readFileSync, writeFileSync,
 } from "./fixtures/integrados.mjs";
 
@@ -157,6 +157,70 @@ test("modos: sin vigilancia (como lo corre un usuario), regenerar no abre un arc
   assert.equal(r.codigo, 0, r.error);
   assert.equal(r.error, "", "regenerar sin cambios sigue sin avisos");
   assert.deepEqual(modos(dir), Object.fromEntries(LEGITIMOS.map((f) => [f, "0600"])));
+});
+
+// Salida existente de solo lectura: el temporal hereda su modo antes del os.replace (criterio 12). Si la colocación falla,
+// el temporal también es de solo lectura y en Windows no se deja borrar sin quitarle antes ese atributo: no debe quedarse.
+// Estos dos tests no se saltan en ninguna plataforma (chmod 0444 es el atributo «solo lectura» en Windows).
+const TEMPORAL = /\.tmp$/i;
+
+function conSalidaDeSoloLectura(cual, fn) {
+  const caso = entradaDos();
+  try {
+    assert.equal(correr(caso.args).codigo, 0, "primera generación");
+    const nuevo = bytes(caso.dir);
+    writeFileSync(join(caso.dir, cual), "CONTENIDO VIEJO\n");
+    writeFileSync(join(caso.dir, "otro.txt"), "ajeno\n");
+    chmodSync(join(caso.dir, cual), 0o444);
+    fn({ ...caso, nuevo, previo: bytes(caso.dir) });
+  } finally {
+    // Se devuelve el permiso de escritura a todo (también a un temporal suelto) para poder borrar la carpeta en Windows.
+    for (const f of archivos(caso.dir)) chmodSync(join(caso.dir, f), 0o666);
+    rmSync(caso.base, { recursive: true, force: true });
+  }
+}
+
+function falloDeColocacion(r, cual, que) {
+  assert.equal(r.codigo, 1, `${que}: debía salir con 1 (salió con ${r.codigo}); stderr: ${r.error}`);
+  assert.equal(lineas(r.error).length, 1, `${que}: una sola línea en stderr; stderr: ${r.error}`);
+  assert.match(r.error, /^error: .*no se pudo/, `${que}: el error es el del criterio 4; stderr: ${r.error}`);
+  assert.ok(r.error.includes(cual), `${que}: nombra ${cual}; stderr: ${r.error}`);
+  assert.doesNotMatch(r.error, TRAZA, `${que}: sin traza ni códigos del sistema`);
+  assert.doesNotMatch(r.salida, /generado/, `${que}: no anuncia que generó nada`);
+}
+
+for (const cual of LEGITIMOS) {
+  test(`solo lectura: si falla el primer renombrado y ${cual} ya existía de solo lectura, no queda ningún temporal`, SIN_PYTHON, () => {
+    conSalidaDeSoloLectura(cual, ({ dir, args, previo }) => {
+      const r = correrVigilado(args, 1);
+      falloDeColocacion(r, "a.xml", `${cual} de solo lectura`);
+      assert.deepEqual(archivos(dir).filter((f) => TEMPORAL.test(f)), [], "ningún temporal suelto, tampoco el que heredó el solo lectura");
+      assert.deepEqual(bytes(dir), previo, "falló el primer renombrado: la carpeta queda como estaba, archivo ajeno incluido");
+      assert.equal(modo(join(dir, cual)) & 0o222, 0, `${cual} sigue siendo de solo lectura`);
+    });
+  });
+}
+
+test("solo lectura: sin vigilancia, una salida existente de solo lectura no deja temporales (Windows: no se reemplaza; POSIX: se reemplaza y conserva el modo)", SIN_PYTHON, () => {
+  for (const cual of LEGITIMOS) {
+    conSalidaDeSoloLectura(cual, ({ dir, args, nuevo, previo }) => {
+      const r = correr(args);
+      assert.deepEqual(archivos(dir).filter((f) => TEMPORAL.test(f)), [], `${cual} de solo lectura: ningún temporal suelto; stderr: ${r.error}`);
+      assert.deepEqual(archivos(dir), [...LEGITIMOS, "otro.txt"].sort(), `${cual} de solo lectura: solo las salidas y el archivo ajeno`);
+      assert.equal(modo(join(dir, cual)) & 0o222, 0, `${cual} sigue siendo de solo lectura`);
+      if (process.platform === "win32") {
+        // os.replace no puede sustituir un destino de solo lectura: es un fallo de colocación del criterio 4.
+        falloDeColocacion(r, cual, `${cual} de solo lectura`);
+        assert.equal(bytes(dir)[cual], previo[cual], `${cual} conserva su contenido`);
+        if (cual === LEGITIMOS[0]) assert.deepEqual(bytes(dir), previo, "falló el primer renombrado: nada cambia");
+      } else {
+        // Con la carpeta escribible, os.replace sí sustituye un archivo de solo lectura: sale bien y conserva el 0444.
+        assert.equal(r.codigo, 0, `${cual} de solo lectura: en POSIX se reemplaza; stderr: ${r.error}`);
+        assert.deepEqual(bytes(dir), { ...nuevo, "otro.txt": previo["otro.txt"] }, "el contenido es el nuevo");
+        assert.equal(octal(modo(join(dir, cual))), "0444", `${cual} conserva su modo`);
+      }
+    });
+  }
 });
 
 test("modos: el detector no marca lo que hace falta para fijar los modos (os.chmod, os.fchmod, os.umask, os.stat, stat.S_IMODE)", SIN_PYTHON, () => {
