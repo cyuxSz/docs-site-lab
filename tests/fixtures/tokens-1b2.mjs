@@ -1,11 +1,55 @@
 // Ayudantes de los tests del lote 1B-2 (consentimiento /auth/app/iniciar y emisión /auth/app/autorizar).
 // Amplían los de los lotes 1A y 1B-1 sin tocarlos.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { JSDOM } from "jsdom";
-import { pedir, pkce, FORM } from "./tokens-1b.mjs";
+import { pedir, pkce, mockGitHub, FORM, SECRET, DIA } from "./tokens-1b.mjs";
 
 export * from "./tokens-1b.mjs";
+// La cookie de los lotes anteriores ({ login, exp }, sin `iat`): es la que tienen los navegadores con una sesión
+// emitida antes de este cambio. Sigue valiendo para todo el portal salvo para autorizar un dispositivo.
+export { sesion as sesionSinIat } from "./tokens-app.mjs";
+
+// Autorizar un dispositivo exige que la sesión haya pasado por el login hace como mucho 10 minutos (criterio 9).
+export const VENTANA_LOGIN = 10 * 60_000;
+
+// Cookie de sesión con la carga que se quiera: { login, exp (un día), ...extra }. Misma firma que sign() de lib/sesion.mjs.
+export function sesionCon(login, extra = {}, secret = SECRET) {
+  const body = Buffer.from(JSON.stringify({ login, exp: Date.now() + DIA, ...extra })).toString("base64url");
+  return `docs_session=${encodeURIComponent(`${body}.${createHmac("sha256", secret).update(body).digest("base64url")}`)}`;
+}
+
+// Sesión recién iniciada, como la que emite /auth/callback desde este lote: `iat` = ahora (ms). Sustituye en este
+// lote a la `sesion` del 1A, que no lleva `iat` (esa se exporta como `sesionSinIat`).
+export function sesion(login, secret = SECRET) {
+  return sesionCon(login, { iat: Date.now() }, secret);
+}
+
+// Cookie docs_session que pone una respuesta: su carga (JSON) y la cabecera `cookie` para reenviarla. null si no la
+// pone o si la borra. Comprueba de paso que va firmada con el formato de siempre.
+export function sesionDeRespuesta(res) {
+  const linea = res.headers.getSetCookie().find((c) => c.startsWith("docs_session="));
+  const valor = linea ? decodeURIComponent(/^docs_session=([^;]*)/.exec(linea)[1]) : "";
+  if (!valor) return null;
+  const [body, mac] = valor.split(".");
+  assert.equal(mac, createHmac("sha256", SECRET).update(body).digest("base64url"), "la cookie va firmada con SESSION_SECRET: base64url(JSON).base64url(HMAC)");
+  return { carga: JSON.parse(Buffer.from(body, "base64url").toString("utf8")), cookie: `docs_session=${encodeURIComponent(valor)}`, linea };
+}
+
+// El login completo tal como lo recorre el navegador: GET /auth/login?next=… (cookie oauth_state) y GET /auth/callback
+// con GitHub simulado (`github` son las opciones de mockGitHub). `cookieVieja` es la docs_session que el navegador
+// todavía tiene y envía. Devuelve la respuesta del callback.
+export async function pasarPorLogin(env, rutaLogin, github, cookieVieja) {
+  const login = await pedir(rutaLogin, { env, cookie: cookieVieja });
+  assert.equal(login.status, 302, "GET /auth/login redirige a GitHub");
+  assert.match(login.headers.get("location") ?? "", /^https:\/\/github\.com\/login\/oauth\/authorize\?/);
+  const estado = /^oauth_state=([^;]*)/.exec(login.headers.getSetCookie().find((c) => c.startsWith("oauth_state=")) ?? "");
+  assert.ok(estado, "el login guarda oauth_state");
+  const { state } = JSON.parse(decodeURIComponent(estado[1]));
+  mockGitHub(github);
+  const cookie = [cookieVieja, `oauth_state=${estado[1]}`].filter(Boolean).join("; ");
+  return pedir(`/auth/callback?state=${encodeURIComponent(state)}&code=C`, { env, cookie });
+}
 
 export const INICIAR = "/auth/app/iniciar";
 export const AUTORIZAR = "/auth/app/autorizar";
