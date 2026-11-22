@@ -157,6 +157,30 @@ test("c6 · main.rs deniega toda ventana nueva con on_new_window", () => {
   assert.doesNotMatch(todo, /NewWindowResponse::(\*|\{)/, "las variantes se escriben completas, para poder leerlas aquí");
 });
 
+// Guarda estática de la tercera vuelta. La decisión (navegar la ventana principal o negar) es
+// una función pura de `nucleo`, probada en app/nucleo/tests/firmas.rs; aquí solo se comprueba
+// que main.rs la usa y que lo único que hace con ella es navegar la ventana `main`.
+test("c6 · main.rs decide las ventanas nuevas con nucleo::decidir_ventana_nueva y solo navega la ventana main", () => {
+  const rs = sinComentarios(leer(MAIN));
+  const todo = fuentesRust("app/src-tauri/src").map((p) => sinComentarios(leer(p))).join("\n");
+  const inicio = rs.search(/\.on_new_window\s*\(/);
+  assert.ok(inicio >= 0, "falta on_new_window");
+  const fin = rs.indexOf(".build()", inicio);
+  assert.ok(fin > inicio, "on_new_window va en el WebviewWindowBuilder, antes de .build()");
+  const cierre = rs.slice(inicio, fin);
+  assert.match(cierre, /decidir_ventana_nueva\s*\(\s*\w+\.as_str\s*\(\s*\)\s*\)/, "on_new_window decide con nucleo::decidir_ventana_nueva(url.as_str())");
+  assert.match(cierre, /VentanaNueva::NavegarPrincipal\b/, "solo se navega cuando la decisión es NavegarPrincipal");
+  assert.match(cierre, /get_webview_window\s*\(\s*"main"\s*\)/, "la ventana que navega es la principal");
+  assert.match(cierre, /\.navigate\s*\(/, "navega con WebviewWindow::navigate");
+  assert.doesNotMatch(cierre, /navegacion_permitida/, "la regla vive en el núcleo, no se repite en el cierre");
+  assert.equal((todo.match(/decidir_ventana_nueva\s*\(/g) ?? []).length, 1, "una sola llamada a decidir_ventana_nueva");
+  assert.equal((todo.match(/\.navigate\s*\(/g) ?? []).length, 1, "la cáscara no navega en ningún otro sitio");
+  assert.equal((todo.match(/get_webview_window\s*\(/g) ?? []).length, 1, "la cáscara no busca ventanas en ningún otro sitio");
+  assert.doesNotMatch(todo, /\.load_url\s*\(|\.reload\s*\(|with_webview\s*\(|\.eval\w*\s*\(/, "sin otras formas de mover o tocar el webview");
+  assert.doesNotMatch(todo, /tauri_plugin_|\bopen::that|Command::new|ShellExecute/, "abrir en el navegador del sistema es del lote A3");
+  assert.match(rs, /NewWindowResponse::Deny\b/, "la respuesta a WebView2 sigue siendo Deny");
+});
+
 test("c6 · frontendDist es mínimo: existe, está dentro de app/ y no lleva JavaScript", () => {
   const conf = json(CONF);
   const dist = conf.build?.frontendDist;
