@@ -1146,3 +1146,38 @@ fn c16_un_401_con_bearer_marca_la_sesion_perdida_aunque_el_cuerpo_no_se_pueda_en
         assert_eq!(servidor.recibidas().len(), 1, "{caso}");
     }
 }
+
+// ---------- Segunda vuelta de CodeRabbit en el PR 72 ----------
+
+#[test]
+fn c21_un_content_encoding_que_no_se_puede_leer_es_502() {
+    // Un valor con bytes que no son ASCII visible (aquí, ni siquiera UTF-8) no sale en
+    // `ureq::Response::all`: sin contar los campos con `headers_names`, el proxy vería menos
+    // codificaciones de las que mandó el servidor y entregaría el cuerpo sin abrir.
+    let plano = b"<!doctype html><p>texto de la respuesta</p>".to_vec();
+    let ilegibles: [&[u8]; 3] = [b"gzip\xff", b"\xe9", b"br\x80"];
+    for ilegible in ilegibles {
+        // Sola, con el cuerpo sin comprimir: hoy `de("content-encoding")` está vacío.
+        let servidor = Servidor::fijo(
+            Respuesta::nueva(200, &plano).con("Content-Type", "text/html").con_bytes("Content-Encoding", ilegible),
+        );
+        let recibida = pedir(&proxy(&servidor), navegar("/uuv/"));
+        es_error_local(&recibida, 502);
+        assert!(!contiene(recibida.body(), b"texto de la respuesta"), "{ilegible:?}: el cuerpo no llega");
+
+        // Junto a un `gzip` legible, con el cuerpo comprimido dos veces: hoy se abre una capa.
+        let servidor = Servidor::fijo(
+            Respuesta::nueva(200, &gzip(&gzip(&plano)))
+                .con("Content-Type", "text/html")
+                .con("Content-Encoding", "gzip")
+                .con_bytes("Content-Encoding", ilegible),
+        );
+        let recibida = pedir(&proxy(&servidor), navegar("/uuv/"));
+        es_error_local(&recibida, 502);
+        assert!(!contiene(recibida.body(), &[0x1f, 0x8b]), "{ilegible:?}: no llega nada comprimido");
+    }
+
+    // Guarda: un único `gzip` legible se sigue abriendo.
+    let servidor = Servidor::fijo(Respuesta::nueva(200, &gzip(&plano)).con("Content-Encoding", "gzip"));
+    assert_eq!(pedir(&proxy(&servidor), navegar("/uuv/")).body(), &plano);
+}

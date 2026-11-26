@@ -52,6 +52,9 @@ pub struct Respuesta {
     pub cuerpo: Vec<u8>,
     pub demora: Duration,
     pub con_longitud: bool,
+    /// Cabeceras cuyo valor va en la red tal cual, byte a byte (puede no ser UTF-8). Se
+    /// escriben detrás de `cabeceras`.
+    pub crudas: Vec<(String, Vec<u8>)>,
 }
 
 impl Respuesta {
@@ -62,11 +65,18 @@ impl Respuesta {
             cuerpo: cuerpo.to_vec(),
             demora: Duration::ZERO,
             con_longitud: true,
+            crudas: Vec::new(),
         }
     }
 
     pub fn con(mut self, nombre: &str, valor: &str) -> Respuesta {
         self.cabeceras.push((nombre.to_string(), valor.to_string()));
+        self
+    }
+
+    /// Cabecera con un valor en bytes crudos, sin pasar por UTF-8.
+    pub fn con_bytes(mut self, nombre: &str, valor: &[u8]) -> Respuesta {
+        self.crudas.push((nombre.to_string(), valor.to_vec()));
         self
     }
 
@@ -520,7 +530,13 @@ impl Compuerta {
         let mut estado = estado.lock().unwrap();
         while estado.llegadas.len() < n {
             let ahora = std::time::Instant::now();
-            assert!(ahora < limite, "llegaron {} peticiones al servidor y se esperaban {n}", estado.llegadas.len());
+            if ahora >= limite {
+                // Se falla con el cerrojo ya suelto: un pánico con la guarda tomada envenena el
+                // mutex y `abrir_al_salir` haría un segundo pánico al soltarse (aborto).
+                let llegadas = estado.llegadas.len();
+                drop(estado);
+                panic!("llegaron {llegadas} peticiones al servidor y se esperaban {n}");
+            }
             estado = aviso.wait_timeout(estado, limite - ahora).unwrap().0;
         }
         estado.llegadas.clone()
@@ -549,31 +565,3 @@ pub fn servidor_retenido(compuerta: &Compuerta, respuesta: Respuesta) -> Servido
         respuesta.clone()
     })
 }
-
-/// Ganchos que el coder añade a `Proxy` (hilos 2 y 7 a 9 de CodeRabbit en el PR 72).
-///
-/// Mientras no existan, estos métodos por defecto hacen que los tests que los usan compilen y
-/// fallen al ejecutarse con un mensaje claro. Cuando existan los métodos propios de `Proxy` con
-/// el mismo nombre, Rust elige el propio (un método inherente gana a uno de trait) y este trait
-/// deja de usarse; se puede borrar entonces.
-pub trait GanchosPendientes {
-    /// Peticiones que esperan un hueco en este momento (las que cuentan para `en_espera`).
-    fn en_cola(&self) -> usize {
-        panic!("falta Proxy::en_cola (criterio 17)")
-    }
-
-    /// Peticiones admitidas por `atender_en_hilo` que todavía no se han respondido.
-    fn pendientes(&self) -> usize {
-        panic!("falta Proxy::pendientes (criterio 12)")
-    }
-
-    /// Atiende la petición en un hilo propio, o responde 503 en el acto sin crear hilo.
-    fn atender_en_hilo<F>(self: &Arc<Self>, _peticion: Request<Vec<u8>>, _responder: F)
-    where
-        F: FnOnce(Response<Vec<u8>>) + Send + 'static,
-    {
-        panic!("falta Proxy::atender_en_hilo (criterio 12)")
-    }
-}
-
-impl GanchosPendientes for Proxy {}

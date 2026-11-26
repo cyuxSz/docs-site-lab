@@ -6,8 +6,7 @@
 //! admitirla, y si ya hay `simultaneas + en_espera` pendientes responde 503 en el acto, en el
 //! hilo que llama, sin crear ninguno.
 //!
-//! Los métodos aún no existen: `comun::GanchosPendientes` hace que el archivo compile y que
-//! estos tests fallen al ejecutarse hasta que el coder los añada a `Proxy`.
+//! Criterio 19 (hilo `PRRT_kwDOVU6dHM68kqB7`): ese 503 síncrono a un HEAD va sin cuerpo.
 
 mod comun;
 
@@ -127,4 +126,60 @@ fn c12_las_respuestas_locales_tambien_liberan_su_puesto() {
         esperar_hasta("el pendiente se libera", || proxy.pendientes() == 0);
     }
     assert_eq!(servidor.conexiones(), 0);
+}
+
+/// Comprueba el 503 síncrono a un HEAD: el estado y las cabeceras del 503 local, la CSP de
+/// marcos y ningún byte de cuerpo.
+fn es_503_head_sin_cuerpo(respuesta: &http::Response<Vec<u8>>) {
+    assert_eq!(respuesta.status().as_u16(), 503);
+    assert_eq!(csps(respuesta), [MARCOS], "lleva la CSP de marcos, como toda respuesta del proxy");
+    assert_eq!(cabecera(respuesta, "cache-control").as_deref(), Some("no-store"));
+    assert_eq!(cabecera(respuesta, "x-content-type-options").as_deref(), Some("nosniff"));
+    assert!(
+        respuesta.body().is_empty(),
+        "un HEAD no lleva cuerpo, y el 503 síncrono entregó {:?}",
+        texto(respuesta)
+    );
+}
+
+#[test]
+fn c19_con_el_tope_de_pendientes_un_head_recibe_el_503_sin_cuerpo() {
+    let compuerta = Compuerta::nueva();
+    let _abrir = compuerta.abrir_al_salir();
+    let servidor = servidor_retenido(&compuerta, Respuesta::nueva(200, b"ok"));
+    let limites = Limites { simultaneas: 1, en_espera: 0, ..limites() };
+    let proxy = Arc::new(Proxy::nuevo(servidor.destino(), con_token(), limites));
+    let aqui = std::thread::current().id();
+    let (tx, rx) = mpsc::channel::<Entregada>();
+
+    // A ocupa el único puesto de pendientes.
+    lanzar(&proxy, "a", &tx);
+    assert_eq!(proxy.pendientes(), 1);
+
+    // Un HEAD que ya no cabe: 503 en el acto, en este hilo, sin cuerpo.
+    let tx_head = tx.clone();
+    proxy.atender_en_hilo(
+        peticion("HEAD", "/api/x?n=head").body(Vec::new()).unwrap(),
+        move |respuesta| {
+            let _ = tx_head.send(("head", respuesta, std::thread::current().id()));
+        },
+    );
+    let (nombre, respuesta, hilo) = rx.try_recv().expect("el 503 se entrega en el acto");
+    assert_eq!((nombre, hilo), ("head", aqui));
+    es_503_head_sin_cuerpo(&respuesta);
+
+    // Un GET que no cabe sigue recibiendo el JSON de siempre.
+    lanzar(&proxy, "get", &tx);
+    let (nombre, respuesta, hilo) = rx.try_recv().expect("el 503 se entrega en el acto");
+    assert_eq!((nombre, hilo), ("get", aqui));
+    es_error_local(&respuesta, 503);
+    assert_eq!(csps(&respuesta), [MARCOS]);
+    assert_eq!(proxy.pendientes(), 1, "las rechazadas no cuentan");
+
+    compuerta.abrir();
+    let (nombre, respuesta, _) = rx.recv_timeout(PLAZO).expect("A debe responder");
+    assert_eq!((nombre, respuesta.status().as_u16()), ("a", 200));
+    esperar_hasta("los pendientes vuelven a cero al responder", || proxy.pendientes() == 0);
+    let destinos: Vec<String> = servidor.recibidas().into_iter().map(|r| r.destino).collect();
+    assert_eq!(destinos, ["/api/x?n=a"], "las rechazadas no llegan a la red");
 }

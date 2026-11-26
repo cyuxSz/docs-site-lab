@@ -5,6 +5,12 @@ edition = "2021"
 publish = false
 description = "Proxy autenticado de la app VantTec Docs. No depende de la ventana, para probarse sin webview."
 
+# Sin el arnés de libtest: provoca el fallo al crear un hilo antes de que exista ninguno.
+[[test]]
+name = "hilo_fallido"
+path = "tests/hilo_fallido.rs"
+harness = false
+
 [dependencies]
 http = "=1.5.0"
 ureq = { version = "=2.12.1", default-features = false, features = ["tls"] }
