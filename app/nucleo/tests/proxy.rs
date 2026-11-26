@@ -626,47 +626,79 @@ fn c4_un_servidor_que_no_contesta_es_502_al_vencer_el_timeout() {
 
 #[test]
 fn c4_no_hay_mas_peticiones_simultaneas_que_el_maximo() {
-    let servidor = Servidor::fijo(Respuesta::nueva(200, b"ok").tras(Duration::from_millis(300)));
+    // Hilo 9 de CodeRabbit en el PR 72: la contención se establece y se observa antes de
+    // comprobar nada. Dos peticiones retenidas en el servidor ocupan los dos huecos y las otras
+    // cuatro están en la cola (gancho `Proxy::en_cola`, criterio 17) sin haber llegado a la red.
+    let compuerta = Compuerta::nueva();
+    let servidor = servidor_retenido(&compuerta, Respuesta::nueva(200, b"ok"));
     let proxy = Arc::new(con_limites(&servidor, Limites { simultaneas: 2, ..limites() }));
     let estados: Vec<u16> = std::thread::scope(|ambito| {
+        // Dentro del ámbito: si el test falla, abre antes de esperar a los hilos.
+        let _abrir = compuerta.abrir_al_salir();
         let hilos: Vec<_> = (0..6)
             .map(|i| {
                 let proxy = proxy.clone();
                 ambito.spawn(move || pedir(&proxy, get(&format!("/api/x?n={i}"))).status().as_u16())
             })
             .collect();
+        compuerta.esperar_llegadas(2);
+        esperar_hasta("las otras cuatro esperan en la cola", || proxy.en_cola() == 4);
+        assert_eq!(compuerta.llegadas().len(), 2, "con los dos huecos ocupados no llega ninguna más");
+        assert_eq!(servidor.max_activas(), 2);
+        compuerta.abrir();
         hilos.into_iter().map(|h| h.join().unwrap()).collect()
     });
     assert_eq!(estados, [200; 6], "las peticiones que esperan su turno también se atienden");
     assert_eq!(servidor.recibidas().len(), 6);
-    assert_eq!(servidor.max_activas(), 2, "debe haber 2 a la vez, ni más ni una sola");
+    assert_eq!(servidor.max_activas(), 2, "nunca más de 2 a la vez");
+    assert_eq!(proxy.en_cola(), 0, "la cola queda vacía");
 }
 
 #[test]
 fn c4_si_la_espera_por_un_hueco_vence_es_503_local() {
-    let servidor = Servidor::fijo(Respuesta::nueva(200, b"ok").tras(Duration::from_millis(1500)));
-    let proxy = Arc::new(con_limites(
-        &servidor,
-        Limites { simultaneas: 1, timeout_total: Duration::from_secs(2), ..limites() },
-    ));
-    let mut respuestas: Vec<(u16, String)> = std::thread::scope(|ambito| {
-        let hilos: Vec<_> = (0..3)
-            .map(|i| {
-                let proxy = proxy.clone();
-                ambito.spawn(move || {
-                    let respuesta = pedir(&proxy, get(&format!("/api/x?n={i}")));
-                    (respuesta.status().as_u16(), texto(&respuesta))
-                })
-            })
-            .collect();
-        hilos.into_iter().map(|h| h.join().unwrap()).collect()
+    // Hilo 9 de CodeRabbit en el PR 72. El plazo de la espera es `timeout_total`, el mismo que
+    // el de la petición, así que solo puede vencer detrás de dos: A ocupa el hueco; B y C
+    // esperan (observado con `en_cola`); al soltar A, una de las dos (X) toma el hueco y se
+    // queda retenida; la otra (Y) se rinde al cumplir su plazo, sin llegar a la red.
+    let total = Duration::from_millis(1500);
+    let compuerta = Compuerta::nueva();
+    let servidor = servidor_retenido(&compuerta, Respuesta::nueva(200, b"ok"));
+    let proxy = Arc::new(con_limites(&servidor, Limites { simultaneas: 1, timeout_total: total, ..limites() }));
+    std::thread::scope(|ambito| {
+        // Dentro del ámbito: si el test falla, abre antes de esperar a los hilos.
+        let _abrir = compuerta.abrir_al_salir();
+        let a = ambito.spawn(|| pedir(&proxy, get("/api/x?n=a")).status().as_u16());
+        compuerta.esperar_llegadas(1);
+        let (tx, rx) = std::sync::mpsc::channel();
+        for nombre in ["b", "c"] {
+            let (tx, proxy) = (tx.clone(), &proxy);
+            ambito.spawn(move || {
+                let inicio = Instant::now();
+                let respuesta = pedir(proxy, get(&format!("/api/x?n={nombre}")));
+                let _ = tx.send((nombre, respuesta, inicio.elapsed()));
+            });
+        }
+        esperar_hasta("B y C esperan un hueco", || proxy.en_cola() == 2);
+        // Margen, no prueba de estado: X empieza su petición (y su plazo de red) al menos un
+        // tercio del plazo después de que Y empezara a esperar, así que Y vence antes que X.
+        std::thread::sleep(total / 3);
+        compuerta.soltar(1);
+        assert_eq!(a.join().unwrap(), 200);
+        let x = compuerta.esperar_llegadas(2)[1].clone();
+
+        let (y, respuesta, tardo) = rx.recv_timeout(total + PLAZO).expect("la segunda en la cola debe rendirse");
+        assert!(!x.ends_with(&format!("n={y}")), "la que se rinde no es la que tomó el hueco");
+        es_error_local(&respuesta, 503);
+        assert!(tardo >= total, "se rinde al cumplir el plazo, no antes: tardó {tardo:?}");
+        assert_eq!(compuerta.llegadas().len(), 2, "la que se rinde no llega a la red");
+
+        compuerta.abrir();
+        let (_, respuesta, _) = rx.recv_timeout(PLAZO).expect("X debe responder");
+        assert_eq!(respuesta.status().as_u16(), 200);
     });
-    respuestas.sort();
-    let estados: Vec<u16> = respuestas.iter().map(|(estado, _)| *estado).collect();
-    assert_eq!(estados, [200, 200, 503], "dos pasan (una espera 1,5 s) y la tercera se rinde a los 2 s");
-    assert!(respuestas[2].1.starts_with("{\"error\":\""), "el 503 es JSON local: {}", respuestas[2].1);
     assert_eq!(servidor.recibidas().len(), 2, "la petición que se rinde no llega a la red");
     assert_eq!(servidor.max_activas(), 1);
+    assert_eq!(proxy.en_cola(), 0);
 }
 
 #[test]
@@ -1016,4 +1048,101 @@ fn c5_la_peticion_al_servidor_lleva_el_token_solo_en_authorization() {
         .collect();
     assert_eq!(con_token.len(), 1, "el token va en una sola cabecera: {con_token:?}");
     assert!(con_token[0].eq_ignore_ascii_case("authorization"));
+}
+
+// ---------- Hilos de CodeRabbit en el PR 72 ----------
+
+#[test]
+fn c13_mas_de_una_codificacion_en_la_respuesta_es_502() {
+    // Hilo 3. Con dos `Content-Encoding`, ureq 2.12.1 abre solo la primera capa y quita los dos
+    // campos (`response.rs:598-609`): el webview recibiría datos aún comprimidos. El proxy solo
+    // entrega una respuesta con exactamente una codificación, y esa es gzip.
+    let plano = b"<!doctype html><p>texto de la respuesta</p>".to_vec();
+    let doble = gzip(&gzip(&plano));
+    let casos: [(&[&str], Vec<u8>); 4] = [
+        (&["gzip", "gzip"], doble.clone()),
+        (&["x-gzip", "gzip"], doble.clone()),
+        (&["gzip", "br"], gzip(&plano)),
+        (&["gzip", "identity"], gzip(&plano)),
+    ];
+    for (codificaciones, cuerpo) in casos {
+        let mut respuesta = Respuesta::nueva(200, &cuerpo).con("Content-Type", "text/html");
+        for c in codificaciones {
+            respuesta = respuesta.con("Content-Encoding", c);
+        }
+        let servidor = Servidor::fijo(respuesta);
+        let recibida = pedir(&proxy(&servidor), navegar("/uuv/"));
+        es_error_local(&recibida, 502);
+        assert!(!contiene(recibida.body(), &[0x1f, 0x8b]), "{codificaciones:?}: no llega nada comprimido");
+    }
+
+    // Una sola capa gzip sigue llegando abierta, y el tope se sigue midiendo sobre lo abierto.
+    let servidor = Servidor::fijo(Respuesta::nueva(200, &gzip(&plano)).con("Content-Encoding", "gzip"));
+    assert_eq!(pedir(&proxy(&servidor), navegar("/uuv/")).body(), &plano);
+    let servidor = Servidor::fijo(Respuesta::nueva(200, &GZIP_3000_A).con("Content-Encoding", "gzip"));
+    let tope = Limites { cuerpo_respuesta: 1000, ..limites() };
+    es_error_local(&pedir(&con_limites(&servidor, tope), get("/x")), 502);
+}
+
+#[test]
+fn c14_head_204_y_304_con_content_encoding_no_leen_cuerpo() {
+    // Hilo 4. Estas respuestas no tienen cuerpo aunque declaren `Content-Encoding: gzip`; abrir
+    // un cuerpo vacío como gzip falla (fin de datos inesperado) y no es un error del servidor.
+    let servidor = Servidor::fijo(
+        Respuesta::nueva(200, &gzip(b"<p>hola</p>"))
+            .con("Content-Type", "text/html")
+            .con("Content-Encoding", "gzip")
+            .con("ETag", "\"v1\""),
+    );
+    let cabeza = pedir(&proxy(&servidor), peticion("HEAD", "/uuv/").body(Vec::new()).unwrap());
+    assert_eq!(cabeza.status().as_u16(), 200, "HEAD: {}", texto(&cabeza));
+    assert!(cabeza.body().is_empty());
+    assert_eq!(cabecera(&cabeza, "etag").as_deref(), Some("\"v1\""));
+    assert_eq!(cabecera(&cabeza, "content-type").as_deref(), Some("text/html"));
+    // El tamaño que anuncia el servidor es el del cuerpo comprimido: no describe lo que entrega
+    // el proxy, así que no se reenvía.
+    assert_eq!(cabecera(&cabeza, "content-length"), None);
+
+    let servidor = Servidor::fijo(Respuesta::nueva(204, b"").sin_longitud().con("Content-Encoding", "gzip"));
+    let borrado = pedir(&proxy(&servidor), peticion("DELETE", "/api/x").body(Vec::new()).unwrap());
+    assert_eq!(borrado.status().as_u16(), 204, "204: {}", texto(&borrado));
+    assert!(borrado.body().is_empty());
+
+    let servidor = Servidor::fijo(
+        Respuesta::nueva(304, b"").sin_longitud().con("Content-Encoding", "gzip").con("ETag", "\"v1\""),
+    );
+    let condicional = peticion("GET", "/uuv/").header("If-None-Match", "\"v1\"").body(Vec::new()).unwrap();
+    let igual = pedir(&proxy(&servidor), condicional);
+    assert_eq!(igual.status().as_u16(), 304, "304: {}", texto(&igual));
+    assert!(igual.body().is_empty());
+    assert_eq!(cabecera(&igual, "etag").as_deref(), Some("\"v1\""));
+
+    // Una codificación desconocida en una respuesta sin cuerpo sigue siendo 502 (criterio 3).
+    let servidor = Servidor::fijo(Respuesta::nueva(204, b"").sin_longitud().con("Content-Encoding", "br"));
+    es_error_local(&pedir(&proxy(&servidor), peticion("DELETE", "/api/x").body(Vec::new()).unwrap()), 502);
+}
+
+#[test]
+fn c16_un_401_con_bearer_marca_la_sesion_perdida_aunque_el_cuerpo_no_se_pueda_entregar() {
+    // Hilo 6. El servidor ya dijo que el token no vale en el estado y las cabeceras; que luego
+    // el cuerpo no se pueda entregar (demasiado grande, cortado o con una codificación que no
+    // se sabe abrir) no cambia eso. La respuesta sigue siendo 502 local.
+    let tope = Limites { cuerpo_respuesta: 1000, ..limites() };
+    let rechazo = |cuerpo: &[u8]| {
+        Respuesta::nueva(401, cuerpo).con("Content-Type", "application/json").con("WWW-Authenticate", "Bearer")
+    };
+    let casos = [
+        ("cuerpo por encima del tope", rechazo(&[b'a'; 5000])),
+        ("cuerpo cortado", rechazo(b"{\"error\":").con("Content-Length", "500").sin_longitud()),
+        ("codificación desconocida", rechazo(b"\x0b\x02\x80x\x03").con("Content-Encoding", "br")),
+    ];
+    for (caso, respuesta) in casos {
+        let servidor = Servidor::fijo(respuesta);
+        let proxy = con_limites(&servidor, tope.clone());
+        es_error_local(&pedir(&proxy, get("/api/x")), 502);
+        assert!(proxy.sesion_perdida(), "{caso}: el 401 con Bearer marca la sesión perdida");
+        // Desde ahí, el token no vuelve a salir.
+        es_error_local(&pedir(&proxy, get("/api/x")), 401);
+        assert_eq!(servidor.recibidas().len(), 1, "{caso}");
+    }
 }

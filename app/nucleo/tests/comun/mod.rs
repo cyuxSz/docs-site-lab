@@ -431,3 +431,149 @@ pub const GZIP_3000_A: [u8; 39] = [
     0x00, 0xc2, 0xa0, 0xac, 0xeb, 0x5f, 0xc2, 0x1a, 0x1e, 0x40, 0x01, 0x00, 0x00, 0xef, 0x06, 0xc8,
     0x3c, 0xdc, 0x5e, 0xb8, 0x0b, 0x00, 0x00,
 ];
+
+// ---------- Sincronización sin esperas a ciegas (hilos 7 a 9 de CodeRabbit en el PR 72) ----------
+
+/// Plazo máximo para que ocurra algo que el test espera. Solo acota un test colgado: ningún
+/// resultado depende de que se agote.
+pub const PLAZO: Duration = Duration::from_secs(5);
+
+/// Espera, como mucho `PLAZO`, a que se cumpla `condicion`. Si no se cumple, el test falla con
+/// `que`. Sondea estado observable; no es una espera a ciegas.
+pub fn esperar_hasta(que: &str, mut condicion: impl FnMut() -> bool) {
+    let limite = std::time::Instant::now() + PLAZO;
+    while !condicion() {
+        assert!(std::time::Instant::now() < limite, "no ocurrió en {PLAZO:?}: {que}");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[derive(Default)]
+struct EstadoCompuerta {
+    llegadas: Vec<String>,
+    permisos: usize,
+    abierta: bool,
+}
+
+/// Retiene en el servidor falso cada petición que llega hasta que el test la suelta. Mientras
+/// una petición está retenida, el proxy tiene ocupado su hueco: es la ocupación observable que
+/// sustituye a «esperar 300 ms y suponer».
+#[derive(Clone, Default)]
+pub struct Compuerta(Arc<(Mutex<EstadoCompuerta>, std::sync::Condvar)>);
+
+impl Compuerta {
+    pub fn nueva() -> Compuerta {
+        Compuerta::default()
+    }
+
+    /// Para el servidor: anota la llegada y espera permiso. Como mucho 20 s, para que un test
+    /// que falla no deje hilos colgados para siempre.
+    fn retener(&self, destino: &str) {
+        let (estado, aviso) = &*self.0;
+        let mut estado = estado.lock().unwrap();
+        estado.llegadas.push(destino.to_string());
+        aviso.notify_all();
+        let limite = std::time::Instant::now() + Duration::from_secs(20);
+        while !estado.abierta && estado.permisos == 0 {
+            let ahora = std::time::Instant::now();
+            if ahora >= limite {
+                return;
+            }
+            estado = aviso.wait_timeout(estado, limite - ahora).unwrap().0;
+        }
+        if !estado.abierta {
+            estado.permisos -= 1;
+        }
+    }
+
+    /// Deja pasar `n` peticiones retenidas (o las próximas en llegar).
+    pub fn soltar(&self, n: usize) {
+        let (estado, aviso) = &*self.0;
+        estado.lock().unwrap().permisos += n;
+        aviso.notify_all();
+    }
+
+    /// Deja pasar todo, lo retenido y lo que llegue.
+    pub fn abrir(&self) {
+        let (estado, aviso) = &*self.0;
+        estado.lock().unwrap().abierta = true;
+        aviso.notify_all();
+    }
+
+    /// Vuelve a retener lo que llegue a partir de ahora.
+    pub fn cerrar(&self) {
+        let (estado, _) = &*self.0;
+        let mut estado = estado.lock().unwrap();
+        estado.abierta = false;
+        estado.permisos = 0;
+    }
+
+    /// Destinos (ruta y consulta) de las peticiones que han llegado, en orden de llegada.
+    pub fn llegadas(&self) -> Vec<String> {
+        self.0 .0.lock().unwrap().llegadas.clone()
+    }
+
+    /// Espera, como mucho `PLAZO`, a que hayan llegado al servidor `n` peticiones en total.
+    pub fn esperar_llegadas(&self, n: usize) -> Vec<String> {
+        let (estado, aviso) = &*self.0;
+        let limite = std::time::Instant::now() + PLAZO;
+        let mut estado = estado.lock().unwrap();
+        while estado.llegadas.len() < n {
+            let ahora = std::time::Instant::now();
+            assert!(ahora < limite, "llegaron {} peticiones al servidor y se esperaban {n}", estado.llegadas.len());
+            estado = aviso.wait_timeout(estado, limite - ahora).unwrap().0;
+        }
+        estado.llegadas.clone()
+    }
+
+    /// Abre la compuerta al soltar la guarda, también si el test falla: así ningún hilo del
+    /// proxy se queda retenido hasta su timeout.
+    pub fn abrir_al_salir(&self) -> AbrirAlSalir {
+        AbrirAlSalir(self.clone())
+    }
+}
+
+pub struct AbrirAlSalir(Compuerta);
+
+impl Drop for AbrirAlSalir {
+    fn drop(&mut self) {
+        self.0.abrir();
+    }
+}
+
+/// Servidor que contesta `respuesta` a todo, pero solo cuando la compuerta deja pasar.
+pub fn servidor_retenido(compuerta: &Compuerta, respuesta: Respuesta) -> Servidor {
+    let compuerta = compuerta.clone();
+    Servidor::nuevo(move |recibida| {
+        compuerta.retener(&recibida.destino);
+        respuesta.clone()
+    })
+}
+
+/// Ganchos que el coder añade a `Proxy` (hilos 2 y 7 a 9 de CodeRabbit en el PR 72).
+///
+/// Mientras no existan, estos métodos por defecto hacen que los tests que los usan compilen y
+/// fallen al ejecutarse con un mensaje claro. Cuando existan los métodos propios de `Proxy` con
+/// el mismo nombre, Rust elige el propio (un método inherente gana a uno de trait) y este trait
+/// deja de usarse; se puede borrar entonces.
+pub trait GanchosPendientes {
+    /// Peticiones que esperan un hueco en este momento (las que cuentan para `en_espera`).
+    fn en_cola(&self) -> usize {
+        panic!("falta Proxy::en_cola (criterio 17)")
+    }
+
+    /// Peticiones admitidas por `atender_en_hilo` que todavía no se han respondido.
+    fn pendientes(&self) -> usize {
+        panic!("falta Proxy::pendientes (criterio 12)")
+    }
+
+    /// Atiende la petición en un hilo propio, o responde 503 en el acto sin crear hilo.
+    fn atender_en_hilo<F>(self: &Arc<Self>, _peticion: Request<Vec<u8>>, _responder: F)
+    where
+        F: FnOnce(Response<Vec<u8>>) + Send + 'static,
+    {
+        panic!("falta Proxy::atender_en_hilo (criterio 12)")
+    }
+}
+
+impl GanchosPendientes for Proxy {}
