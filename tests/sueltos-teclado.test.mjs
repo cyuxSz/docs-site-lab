@@ -152,6 +152,9 @@ test("A2 escribiendoEn: un campo dentro de un shadow DOM (visores) también cuen
   const { raiz, visto } = campos();
   assert.equal(visto(raiz.getElementById("dentro"), escribiendoEn), true, "input en shadow DOM");
   assert.equal(visto(raiz.getElementById("boton-dentro"), escribiendoEn), false, "un botón en shadow DOM no es escribir");
+  // Criterio 11: aunque no sea escribir, está dentro de un componente y «?» no se dispara.
+  const enComponente = fn(atajosLib, "src/lib/atajos.ts", "enComponente");
+  assert.equal(visto(raiz.getElementById("boton-dentro"), (e) => escribiendoEn(e) || enComponente(e)), true, "un botón en shadow DOM cuenta como dentro de un componente: «?» no se dispara");
 });
 
 test("A1 escribiendoEn: destinos raros (document, null, sin composedPath) no lanzan y no cuentan", () => {
@@ -407,6 +410,108 @@ test('A5 escribiendoEn: contenteditable="false" no cuenta, salvo dentro de otro 
   for (const id of ["fijo", "fijo-dentro", "fijo-mayus"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), false, `#${id}: ahí no se escribe, los atajos siguen activos`);
   for (const id of ["vacio", "vacio-dentro", "plano", "editor", "parrafo"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), true, `#${id}: editable`);
   for (const id of ["isla", "isla-dentro"]) assert.equal(visto(doc.getElementById(id), escribiendoEn), true, `#${id}: isla no editable dentro de un editor, el foco sigue en el editor`);
+});
+
+// ---------- A6 (criterio 11). Con el foco dentro de un componente con shadow DOM (visor KiCad) «?» no se dispara ----------
+// Medido en Edge con kicanvas: foco por Tab en «zoom to page» (botón en su shadow DOM abierto) y «?» abría la ayuda,
+// porque el listener de document ve el anfitrión como e.target y escribiendoEn() solo excluye campos de escritura.
+function visorKicad({ modo = "open" } = {}) {
+  const dom = new JSDOM(`<!doctype html><html><body><main><button id="fuera">b</button>
+    <visor-kicad id="visor"></visor-kicad><visor-foco id="host" tabindex="0"></visor-foco></main></body></html>`);
+  const w = dom.window;
+  const doc = w.document;
+  let raiz = null;
+  w.customElements.define("visor-kicad", class extends w.HTMLElement {
+    constructor() {
+      super();
+      raiz = this.attachShadow({ mode: modo });
+      raiz.innerHTML = `<button id="zoom" title="zoom to page">z</button>`;
+    }
+  });
+  // Anfitrión que toma el foco él mismo (tabindex / delegatesFocus).
+  w.customElements.define("visor-foco", class extends w.HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: modo }).innerHTML = `<canvas></canvas>`;
+    }
+  });
+  const host = doc.getElementById("visor");
+  // Enfoca el origen y despacha un keydown «?» real (composed, bubbles) desde él; devuelve lo que vería el listener de document.
+  const pulsar = (origen, decide) => {
+    origen.focus();
+    let r = null;
+    const oir = (e) => (r = { decide: decide(e), target: e.target });
+    doc.addEventListener("keydown", oir);
+    origen.dispatchEvent(new w.KeyboardEvent("keydown", { key: "?", shiftKey: true, bubbles: true, composed: true }));
+    doc.removeEventListener("keydown", oir);
+    return r;
+  };
+  return { dom, w, doc, host, raiz, pulsar };
+}
+const noDispara = (e) => atajosLib.escribiendoEn(e) || fn(atajosLib, "src/lib/atajos.ts", "enComponente")(e);
+
+test("A6 enComponente: foco por Tab en un botón dentro del shadow DOM de un visor (custom element): el listener ve el anfitrión y «?» no se dispara", () => {
+  const { doc, host, raiz, pulsar } = visorKicad();
+  const boton = raiz.getElementById("zoom");
+  const r = pulsar(boton, noDispara);
+  assert.equal(doc.activeElement, host, "en el documento el foco está en el anfitrión");
+  assert.equal(r.target, host, "con el evento composed, e.target en document es el anfitrión, no el botón");
+  assert.equal(atajosLib.escribiendoEn({ target: host, composedPath: () => [boton] }), false, "no es escribir");
+  assert.equal(r.decide, true, "pero está dentro de un componente: «?» no abre la ayuda");
+});
+
+test("A6 enComponente: con el foco en el propio anfitrión (tabindex) tampoco se dispara", () => {
+  const { doc, pulsar } = visorKicad();
+  const host = doc.getElementById("host");
+  const r = pulsar(host, noDispara);
+  assert.equal(doc.activeElement, host);
+  assert.equal(r.decide, true, "anfitrión con shadowRoot enfocado");
+});
+
+test("A6 enComponente: shadow root cerrado (composedPath no llega dentro): el respaldo document.activeElement lo cuenta como dentro", () => {
+  const { doc, host, raiz, pulsar } = visorKicad({ modo: "closed" });
+  assert.equal(host.shadowRoot, null, "cerrado: el anfitrión no expone shadowRoot");
+  const r = pulsar(raiz.getElementById("zoom"), noDispara);
+  assert.equal(r.target, host);
+  assert.equal(doc.activeElement, host);
+  assert.equal(r.decide, true, "anfitrión enfocado con guion en el nombre: dentro de un componente");
+});
+
+test("A6 enComponente: un botón normal fuera del visor, document, null o sin composedPath no cuentan (los atajos siguen)", () => {
+  const enComponente = fn(atajosLib, "src/lib/atajos.ts", "enComponente");
+  const { doc, pulsar } = visorKicad();
+  assert.equal(pulsar(doc.getElementById("fuera"), noDispara).decide, false, "botón normal: «?» sí abre la ayuda");
+  assert.equal(pulsar(doc.body, enComponente).decide, false, "sin foco en nada");
+  assert.equal(enComponente({ target: doc }), false);
+  assert.equal(enComponente({ target: null }), false);
+  assert.equal(enComponente({}), false);
+  assert.equal(enComponente({ target: doc.getElementById("fuera"), composedPath: () => [] }), false);
+});
+
+test("A6 scripts/atajos.ts: combina escribiendoEn(e) || enComponente(e) al decidir si «?» se ignora", () => {
+  const s = read("src/scripts/atajos.ts");
+  assert.match(s, /import \{[^}]*\benComponente\b[^}]*\} from "\.\.\/lib\/atajos(\.ts)?"/);
+  assert.match(s, /escribiendo:\s*escribiendoEn\(e\)\s*\|\|\s*enComponente\(e\)/);
+});
+
+let guionAtajos;
+test("A6 scripts/atajos.ts (comportamiento): «?» desde un botón del visor o desde el anfitrión no abre la ayuda; desde un botón normal abre y cierra", () => {
+  guionAtajos ??= buildSync({ entryPoints: [fileURLToPath(new URL("../src/scripts/atajos.ts", import.meta.url))], bundle: true, write: false, format: "iife", platform: "neutral" }).outputFiles[0].text;
+  const { w, doc, raiz, pulsar } = visorKicad();
+  doc.body.insertAdjacentHTML("afterbegin", `<dialog id="atajos" data-wiki="/uuv/wiki/"><button data-atajos-cerrar>Cerrar</button></dialog>`);
+  // jsdom no implementa showModal()/close(): los imita con el atributo open.
+  w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  w.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+  new Function("window", "document", "location", "CustomEvent", guionAtajos)(w, doc, w.location, w.CustomEvent);
+  const ayuda = doc.getElementById("atajos");
+  pulsar(raiz.getElementById("zoom"), () => null);
+  assert.equal(ayuda.open, false, "foco en «zoom to page» del visor: «?» no abre la ayuda");
+  pulsar(doc.getElementById("host"), () => null);
+  assert.equal(ayuda.open, false, "foco en el anfitrión: «?» no abre la ayuda");
+  pulsar(doc.getElementById("fuera"), () => null);
+  assert.equal(ayuda.open, true, "fuera del visor «?» sigue abriendo la ayuda");
+  pulsar(doc.getElementById("fuera"), () => null);
+  assert.equal(ayuda.open, false, "y la vuelve a cerrar");
 });
 
 // ---------- C5 (ampliación). El comentario del hash se posiciona con el indicador de carga ya retirado ----------
