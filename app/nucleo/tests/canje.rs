@@ -100,7 +100,12 @@ fn c4_un_state_distinto_o_una_forma_inesperada_se_ignoran_y_el_intento_sigue() {
         format!("{bueno}&x=1"),
         format!("{bueno}#x"),
         format!("{bueno} "),
-        bueno.replacen("vanttec-docs://auth?", "vanttec-docs://auth/?", 1),
+        bueno.replacen("vanttec-docs://auth?", "vanttec-docs://auth//?", 1),
+        bueno.replacen("vanttec-docs://auth?", "vanttec-docs://auth/x?", 1),
+        bueno.replacen("vanttec-docs://auth?", "vanttec-docs://AUTH/?", 1),
+        bueno.replacen("vanttec-docs://auth?", "VANTTEC-DOCS://auth/?", 1),
+        bueno.replacen("vanttec-docs://auth?", "vanttec-docs://auth/?", 1) + "&x=1",
+        bueno.replacen("vanttec-docs://auth?", "vanttec-docs://auth/?", 1) + "#x",
         bueno.replacen("vanttec-docs:", "VANTTEC-DOCS:", 1),
         format!("vanttec-docs://auth?state={}&code={CODIGO}", intento.state),
         format!("vanttec-docs://auth?code={}&state={}", &CODIGO[..42], intento.state),
@@ -115,6 +120,38 @@ fn c4_un_state_distinto_o_una_forma_inesperada_se_ignoran_y_el_intento_sigue() {
     // Un enlace ajeno no gasta el intento: el bueno todavía sirve.
     assert_eq!(login.recibir(&bueno, t0), Recibido::Sesion);
     assert_eq!(servidor.recibidas().len(), 1);
+}
+
+/// Medido en Windows 11: abierto por el registro, el enlace llega con una `/` tras `auth`. Es la
+/// vía normal, y tiene que canjear con el mismo código y contra el mismo intento.
+#[test]
+fn c4_el_enlace_con_barra_tras_auth_canjea_igual() {
+    let servidor = Servidor::fijo(canje_ok(TOKEN_NUEVO));
+    let login = login_hacia(&servidor);
+    let t0 = Instant::now();
+    let intento = iniciar(&login, t0);
+    let con_barra = format!("vanttec-docs://auth/?code={CODIGO}&state={}", intento.state);
+
+    // Con la barra y otro state sigue sin haber canje, y el intento no se gasta.
+    let ajeno = format!("vanttec-docs://auth/?code={CODIGO}&state={STATE_AJENO}");
+    assert_eq!(login.recibir(&ajeno, t0), Recibido::Ignorado);
+    assert_eq!(login.estado(t0), EstadoLogin::EnCurso);
+    assert_eq!(servidor.conexiones(), 0, "un state ajeno no llega al servidor");
+
+    assert_eq!(login.recibir(&con_barra, t0), Recibido::Sesion, "el enlace que entrega Windows canjea");
+    assert_eq!(login.token(), Some(token_nuevo()));
+    assert_eq!(login.estado(t0), EstadoLogin::ConSesion);
+
+    // El código que viaja es el del enlace, sin la barra, y el verifier es el del intento.
+    let peticion = servidor.unica();
+    assert_eq!(peticion.destino, "/auth/app/canje");
+    let verifier = verifier_de(&peticion, CODIGO);
+    assert_eq!(desafio_s256(&verifier), intento.challenge);
+
+    // Las dos formas son el mismo enlace: ninguna canjea por segunda vez.
+    assert_eq!(login.recibir(&con_barra, t0), Recibido::Ignorado);
+    assert_eq!(login.recibir(&enlace(CODIGO, &intento.state), t0), Recibido::Ignorado);
+    assert_eq!(servidor.recibidas().len(), 1, "un solo canje");
 }
 
 #[test]

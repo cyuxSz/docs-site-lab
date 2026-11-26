@@ -63,7 +63,7 @@ pub fn pantalla_de_login(estado: EstadoLogin) -> Response<Vec<u8>> {
     cabeceras.insert(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_PANTALLA));
     cabeceras.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     cabeceras.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-    cabeceras.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    cabeceras.insert(REFERRER_POLICY, HeaderValue::from_static("same-origin"));
     respuesta
 }
 
