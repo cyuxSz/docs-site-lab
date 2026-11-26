@@ -191,6 +191,12 @@ fn atender_conexion(
     for (n, v) in &respuesta.cabeceras {
         salida.extend_from_slice(format!("{n}: {v}\r\n").as_bytes());
     }
+    for (n, v) in &respuesta.crudas {
+        salida.extend_from_slice(format!("{n}: ").as_bytes());
+        salida.extend_from_slice(v);
+        salida.extend_from_slice(b"
+");
+    }
     if respuesta.con_longitud {
         salida.extend_from_slice(format!("Content-Length: {}\r\n", respuesta.cuerpo.len()).as_bytes());
     }

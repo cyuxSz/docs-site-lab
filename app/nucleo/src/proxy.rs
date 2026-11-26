@@ -236,13 +236,14 @@ impl Proxy {
     where
         F: FnOnce(Response<Vec<u8>>) + Send + 'static,
     {
+        let es_head = peticion.method() == Method::HEAD;
         let tope = self.limites.simultaneas.max(1).saturating_add(self.limites.en_espera);
         let admitida = self
             .pendientes
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < tope).then(|| n + 1))
             .is_ok();
         if !admitida {
-            responder(ocupado());
+            responder(ocupado(es_head));
             return;
         }
         // El responder se comparte para poder usarlo aquí si el hilo no llega a crearse.
@@ -261,7 +262,7 @@ impl Proxy {
             self.pendientes.fetch_sub(1, Ordering::SeqCst);
             let responder = responder.lock().unwrap_or_else(|e| e.into_inner()).take();
             if let Some(responder) = responder {
-                responder(ocupado());
+                responder(ocupado(es_head));
             }
         }
     }
@@ -396,6 +397,7 @@ impl Proxy {
         let csp_ilegible = csp_legibles.len() < csp_recibidas
             || csp_legibles.iter().any(|valor| HeaderValue::from_str(valor).is_err());
         let con_sandbox = csp_legibles.iter().any(|valor| trae_sandbox(valor));
+        let ce_recibidas = nombres.iter().filter(|n| n.as_str() == "content-encoding").count();
         let mut vistos = Vec::new();
         nombres.retain(|n| !vistos.contains(n) && { vistos.push(n.clone()); true });
         let recibidas: Vec<(String, Vec<String>)> = nombres
@@ -418,6 +420,9 @@ impl Proxy {
         }
 
         // Ninguna codificación, o exactamente un campo con gzip. Cualquier otra cosa no se abre.
+        if de("content-encoding").len() < ce_recibidas {
+            return invalida();
+        }
         let es_gzip = match de("content-encoding") {
             [] => false,
             [unica] => {
@@ -640,8 +645,12 @@ fn con_csp_propias(mut respuesta: Response<Vec<u8>>, aislado: bool) -> Response<
 }
 
 /// El 503 local de «Demasiadas peticiones a la vez», ya con la CSP de marcos.
-fn ocupado() -> Response<Vec<u8>> {
-    con_csp_propias(error_local(StatusCode::SERVICE_UNAVAILABLE, MSG_OCUPADO), false)
+fn ocupado(es_head: bool) -> Response<Vec<u8>> {
+    let mut respuesta = error_local(StatusCode::SERVICE_UNAVAILABLE, MSG_OCUPADO);
+    if es_head {
+        respuesta.body_mut().clear();
+    }
+    con_csp_propias(respuesta, false)
 }
 
 /// Sin token no hay petición de red: la navegación ve la pantalla y el resto un 401.
