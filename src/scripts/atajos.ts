@@ -1,5 +1,5 @@
-// Atajos globales: [ ] f mandan wiki:barras a las barras de la wiki; g w / g g / g n navegan dentro del proyecto y ? abre la ayuda. Ctrl K y / siguen en Base.astro.
-import { atajo, destino, escribiendoEn } from "../lib/atajos.ts";
+// Atajos globales: [ ] f mandan wiki:barras a las barras de la wiki; g w / g g / g n navegan dentro del proyecto y ? abre la ayuda. Ctrl K y / siguen en Base.astro. Se ignoran con el foco en un campo de escritura o dentro de un componente con shadow DOM (visores).
+import { atajo, destino, enComponente, escribiendoEn } from "../lib/atajos.ts";
 
 const dialogo = document.getElementById("atajos") as HTMLDialogElement | null;
 if (dialogo) {
@@ -13,7 +13,7 @@ if (dialogo) {
       altKey: e.altKey,
       shiftKey: e.shiftKey,
       altGraph: e.getModifierState("AltGraph"),
-      escribiendo: escribiendoEn(e),
+      escribiendo: escribiendoEn(e) || enComponente(e),
       ayudaAbierta: dialogo.open,
       dialogoAbierto: document.querySelector("dialog[open]") !== null,
       t: e.timeStamp,
