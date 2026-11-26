@@ -79,14 +79,16 @@ La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `dat
 - `GET /auth/app/dispositivos` (solo Bearer) devuelve `{ login, dispositivos: [{ id, nombre, plataforma, creado, ultimoUso, expira, actual }] }` con los dispositivos del login del token. `POST /auth/app/revocar` (solo Bearer) borra el token de la propia petición y responde `{ "ok": true }` (también si el token ya estaba revocado), o 503 si no pudo identificar el token de la petición; no lee cuerpo ni query, así que un token no puede revocar otro dispositivo. Sin Bearer las dos responden 401 JSON `Token requerido`.
 - `/auth/dispositivos` (solo con la cookie de sesión) es la página donde cada persona ve sus dispositivos y los revoca. La pinta el Worker, sin JavaScript: cada fila es un formulario que envía `POST /auth/dispositivos/revocar` con el `id` público y un token anti-CSRF ligado a la sesión (HMAC de la cookie con `SESSION_SECRET`); exige `Origin` propio y responde 303 de vuelta a la página.
 - Las rutas de navegador (`/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/signed-out`, `/auth/dispositivos` y `/auth/dispositivos/revocar`) responden 400 JSON `Ruta solo para navegador` a una petición con un Bearer válido. `/auth/logout` no revoca un token: para eso está `POST /auth/app/revocar`.
-- Cuando alguien intenta entrar y GitHub confirma que ya no tiene acceso, `/auth/callback` borra todos sus tokens antes de responder el 403. Se borran solo cuando GitHub contesta que no es miembro (membresía 404 o no activa, y miembro público 404). No se borra nada con un 403 de GitHub, con un error o límite de tasa, ni cuando falta `ALLOWED_ORG`: en esos casos (por ejemplo, alguien que se quita de `ALLOWED_USERS`; una restricción de la OAuth App puede dar 403, que no borra, o 404, que sí borra, ver «Acceso») la revocación es a mano con el comando de abajo. Quien pierde el acceso y no vuelve a intentar entrar conserva su token hasta que caduque; para revocarlo a mano (login en minúsculas):
+- Cuando alguien intenta entrar y GitHub confirma que ya no tiene acceso, `/auth/callback` borra todos sus tokens antes de responder el 403. Se borran solo cuando GitHub contesta que no es miembro (membresía 404 o no activa, y miembro público 404). No se borra nada con un 403 de GitHub, con un error o límite de tasa, ni cuando falta `ALLOWED_ORG`: en esos casos (por ejemplo, alguien que se quita de `ALLOWED_USERS`; una restricción de la OAuth App puede dar 403, que no borra) la revocación es a mano con el comando de abajo. Quien pierde el acceso y no vuelve a intentar entrar conserva su token hasta que caduque; para revocarlo a mano (login en minúsculas):
 
   ```bash
   npx wrangler d1 execute docs-site --remote --command "DELETE FROM tokens WHERE lower(login) = 'login-en-minusculas'"
   ```
 
+  Ojo: si una restricción de la OAuth App hace que GitHub responda 404 a un miembro con membresía privada, el callback sí borra sus tokens (ver «Acceso»).
+
 - Los códigos caducados de `codigos_app` se purgan al crear un código nuevo (como mucho 50 por creación).
-- Rotar `SESSION_SECRET` tampoco invalida los tokens: solo cierra las sesiones de navegador.
+- Rotar `SESSION_SECRET` no invalida los tokens de dispositivo: solo cierra las sesiones de navegador.
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
 
