@@ -326,3 +326,34 @@ test("c8 · la app fija sus dependencias: locks versionados y los mismos crates 
   const distintos = nucleo.filter((p) => !app.has(p));
   assert.deepEqual(distintos, [], "la app debe compilar el núcleo con las mismas versiones con las que se prueba");
 });
+
+// ---------- Hilos de CodeRabbit en el PR 72 ----------
+
+// Guarda estática del criterio 12: el tope de pendientes vive en el núcleo
+// (`Proxy::atender_en_hilo`, probado en app/nucleo/tests/admision.rs). Aquí solo se comprueba
+// que la cáscara lo usa y no crea hilos por su cuenta antes de pasar por él.
+test("c12 · main.rs entrega cada petición con Proxy::atender_en_hilo y no crea hilos por su cuenta", () => {
+  const rs = sinComentarios(leer(MAIN));
+  const todo = fuentesRust("app/src-tauri/src").map((p) => sinComentarios(leer(p))).join("\n");
+  const inicio = rs.search(/register_asynchronous_uri_scheme_protocol\s*\(/);
+  assert.ok(inicio >= 0, "falta el protocolo propio");
+  const fin = rs.indexOf(".setup(", inicio);
+  assert.ok(fin > inicio, "el manejador del protocolo va antes de .setup(");
+  const manejador = rs.slice(inicio, fin);
+  assert.match(manejador, /\.atender_en_hilo\s*\(/, "el manejador entrega la petición con Proxy::atender_en_hilo");
+  assert.equal((todo.match(/\.atender_en_hilo\s*\(/g) ?? []).length, 1, "una sola llamada a atender_en_hilo");
+  assert.doesNotMatch(todo, /\bthread::(spawn|Builder)\b|\bspawn\s*\(/, "la cáscara no crea hilos: lo hace el núcleo tras admitir la petición");
+  assert.doesNotMatch(todo, /\.atender\s*\(/, "la cáscara no llama a Proxy::atender directamente");
+});
+
+test("c18 · README: en Windows hacen falta las Microsoft C++ Build Tools", () => {
+  const readme = leer("app/README.md");
+  const inicio = readme.search(/^## Requisitos\s*$/m);
+  assert.ok(inicio >= 0, "falta la sección «Requisitos»");
+  const resto = readme.slice(inicio + 1);
+  const fin = resto.search(/^## /m);
+  const requisitos = fin >= 0 ? resto.slice(0, fin) : resto;
+  assert.match(requisitos, /Microsoft C\+\+ Build Tools/, "nombra las Microsoft C++ Build Tools");
+  assert.match(requisitos, /Desarrollo para el escritorio con C\+\+/, "nombra la carga de trabajo «Desarrollo para el escritorio con C++»");
+  assert.match(requisitos, /WebView2/, "WebView2 sigue entre los requisitos");
+});
