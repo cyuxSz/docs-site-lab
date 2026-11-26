@@ -13,7 +13,7 @@ use base64::Engine;
 use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::destino::Destino;
-use crate::llavero::Llavero;
+use crate::llavero::{Llavero, SinLlavero};
 use crate::token::{FuenteDeToken, Token};
 use crate::{ESQUEMA_ENLACE, NOMBRE_POR_DEFECTO, PAUSA_ENTRE_INICIOS, PLATAFORMA, VIDA_INTENTO};
 
@@ -27,6 +27,11 @@ const CANJE_TOTAL: Duration = Duration::from_secs(20);
 
 /// Máximo de bytes que se leen de la respuesta del canje.
 const TOPE_CANJE: usize = 4096;
+
+/// Ruta y tiempos de la revocación: para conectar y para la petición entera.
+const RUTA_REVOCAR: &str = "/auth/app/revocar";
+const REVOCAR_CONEXION: Duration = Duration::from_secs(5);
+const REVOCAR_TOTAL: Duration = Duration::from_secs(10);
 
 /// Bytes de azar del `verifier` y del `state`. En base64url sin relleno son 43 caracteres.
 const BYTES_DE_AZAR: usize = 32;
@@ -45,6 +50,25 @@ fn es_b64url(valor: &str) -> bool {
 /// Compara sin cortar en la primera diferencia, para no dar pistas del `state` por el tiempo.
 fn iguales(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |suma, (x, y)| suma | (x ^ y)) == 0
+}
+
+/// `true` si alguno de los desafíos de un `WWW-Authenticate` es de esquema `Bearer`.
+fn desafia_con_bearer(valor: &str) -> bool {
+    valor.split(',').any(|parte| {
+        parte.split_whitespace().next().is_some_and(|esquema| esquema.eq_ignore_ascii_case("bearer"))
+    })
+}
+
+/// El token que había en el llavero, si tiene exactamente la forma de uno: `vtd_` y 43
+/// caracteres base64url.
+fn token_guardado(bytes: &[u8]) -> Option<Token> {
+    let texto = std::str::from_utf8(bytes).ok()?;
+    let resto = texto.strip_prefix(PREFIJO_TOKEN)?;
+    if resto.len() == LARGO_B64 && es_b64url(resto) {
+        Token::nuevo(texto)
+    } else {
+        None
+    }
 }
 
 /// 32 bytes de la aleatoriedad del sistema, en base64url sin relleno. `None` si el sistema no
@@ -182,7 +206,13 @@ pub enum Fin {
 impl Fin {
     /// El texto que ve el usuario. Fijo: nunca lleva nada de la respuesta del servidor.
     pub fn texto(&self) -> &'static str {
-        todo!("lote app-sesion: textos del fin de la sesión")
+        match self {
+            Fin::Cerrada => "Se cerró la sesión.",
+            Fin::CerradaSinServidor => {
+                "Se cerró la sesión en este equipo. No se pudo avisar al servidor."
+            }
+            Fin::Caducada => "La sesión caducó. Inicia sesión de nuevo.",
+        }
     }
 }
 
@@ -247,6 +277,8 @@ struct Interior {
     fallo: Option<Aviso>,
     /// Cuándo se pidió abrir el navegador por última vez.
     ultima_apertura: Option<Instant>,
+    /// Por qué terminó la última sesión, hasta el siguiente intento o la siguiente sesión.
+    fin: Option<Fin>,
 }
 
 /// El login de la app. Se comparte entre hilos con `Arc<Login>` y es la fuente de token del
@@ -256,31 +288,16 @@ pub struct Login {
     /// Nombre del dispositivo, ya limpio y codificado para la URL.
     nombre: String,
     agente: ureq::Agent,
+    /// Agente de la revocación: sin redirecciones y con tiempos más cortos que el del canje.
+    agente_revocar: ureq::Agent,
+    llavero: Arc<dyn Llavero>,
     interior: Mutex<Interior>,
 }
 
 impl Login {
     /// `nombre_equipo` pasa por `nombre_de_dispositivo`. `inicial` es el token de desarrollo.
     pub fn nuevo(destino: Destino, nombre_equipo: Option<&str>, inicial: Option<Token>) -> Login {
-        // Sin redirecciones y sin proxies HTTP del entorno.
-        let agente = ureq::AgentBuilder::new()
-            .redirects(0)
-            .timeout_connect(CANJE_CONEXION)
-            .timeout(CANJE_TOTAL)
-            .build();
-        let interior = Interior {
-            token: inicial,
-            intento: None,
-            canjeando: false,
-            fallo: None,
-            ultima_apertura: None,
-        };
-        Login {
-            destino,
-            nombre: codificar(&nombre_de_dispositivo(nombre_equipo)),
-            agente,
-            interior: Mutex::new(interior),
-        }
+        Login::con_llavero(destino, nombre_equipo, inicial, Arc::new(SinLlavero))
     }
 
     /// Como `nuevo`, con un llavero. Sin token `inicial`, la sesión se lee del llavero. Tras un
@@ -291,8 +308,48 @@ impl Login {
         inicial: Option<Token>,
         llavero: Arc<dyn Llavero>,
     ) -> Login {
-        let _ = (destino, nombre_equipo, inicial, llavero);
-        todo!("lote app-sesion: login con llavero")
+        // Sin redirecciones y sin proxies HTTP del entorno.
+        let agente = ureq::AgentBuilder::new()
+            .redirects(0)
+            .timeout_connect(CANJE_CONEXION)
+            .timeout(CANJE_TOTAL)
+            .build();
+        let agente_revocar = ureq::AgentBuilder::new()
+            .redirects(0)
+            .timeout_connect(REVOCAR_CONEXION)
+            .timeout(REVOCAR_TOTAL)
+            .build();
+        // Con token de desarrollo el llavero ni se lee. Sin él, se lee una vez: lo que no tiene
+        // forma de token se borra, y un fallo al leer deja la app sin sesión y sin aviso.
+        let token = match inicial {
+            Some(token) => Some(token),
+            None => match llavero.leer() {
+                Ok(Some(guardado)) => {
+                    let token = token_guardado(&guardado);
+                    if token.is_none() {
+                        let _ = llavero.borrar();
+                    }
+                    token
+                }
+                Ok(None) | Err(_) => None,
+            },
+        };
+        let interior = Interior {
+            token,
+            intento: None,
+            canjeando: false,
+            fallo: None,
+            ultima_apertura: None,
+            fin: None,
+        };
+        Login {
+            destino,
+            nombre: codificar(&nombre_de_dispositivo(nombre_equipo)),
+            agente,
+            agente_revocar,
+            llavero,
+            interior: Mutex::new(interior),
+        }
     }
 
     pub fn destino(&self) -> &Destino {
@@ -302,7 +359,60 @@ impl Login {
     /// Cierra la sesión: borra el token de la memoria y del llavero y pide al servidor que lo
     /// revoque. Bloquea mientras dura la petición.
     pub fn cerrar_sesion(&self) -> Cierre {
-        todo!("lote app-sesion: cerrar sesión")
+        // Primero la memoria y el llavero, con el cerrojo tomado: quien llegue después no
+        // encuentra sesión, y una sola llamada pide la revocación.
+        let token = {
+            let mut interior = self.cerrojo();
+            let Some(token) = interior.token.take() else { return Cierre::SinSesion };
+            let _ = self.llavero.borrar();
+            token
+        };
+        // Pase lo que pase en la petición, la sesión ya está cerrada aquí.
+        let confirmada = catch_unwind(AssertUnwindSafe(|| self.revocar(&token))).unwrap_or(false);
+        let fin = if confirmada { Fin::Cerrada } else { Fin::CerradaSinServidor };
+        let mut interior = self.cerrojo();
+        // Si mientras tanto hubo un login nuevo, el aviso ya no tiene sentido.
+        if interior.token.is_none() {
+            interior.fin = Some(fin);
+        }
+        if confirmada {
+            Cierre::Revocada
+        } else {
+            Cierre::SoloLocal
+        }
+    }
+
+    /// `POST /auth/app/revocar` con el token, sin cuerpo ni nada del webview. `true` solo si el
+    /// servidor confirma que el token ya no vale. Del fallo no sale nada: solo `false`.
+    fn revocar(&self, token: &Token) -> bool {
+        let url = format!("{}{RUTA_REVOCAR}", self.destino.origen());
+        let enviada = self
+            .agente_revocar
+            .post(&url)
+            .set("authorization", &format!("Bearer {}", token.exponer()))
+            .send_bytes(&[]);
+        let respuesta = match enviada {
+            Ok(respuesta) => respuesta,
+            Err(ureq::Error::Status(_, respuesta)) => respuesta,
+            Err(ureq::Error::Transport(_)) => return false,
+        };
+        match respuesta.status() {
+            // El token ya no valía: el dispositivo está fuera, que es lo que se quería.
+            401 => respuesta.all("www-authenticate").iter().any(|valor| desafia_con_bearer(valor)),
+            200 => {
+                let mut leido = Vec::new();
+                let lectura =
+                    respuesta.into_reader().take(TOPE_CANJE as u64 + 1).read_to_end(&mut leido);
+                if lectura.is_err() || leido.len() > TOPE_CANJE {
+                    return false;
+                }
+                serde_json::from_slice::<serde_json::Value>(&leido)
+                    .ok()
+                    .and_then(|json| json.get("ok").and_then(serde_json::Value::as_bool))
+                    == Some(true)
+            }
+            _ => false,
+        }
     }
 
     /// El estado no queda a medias aunque otro hilo haya fallado con el cerrojo tomado.
@@ -318,6 +428,8 @@ impl Login {
             EstadoLogin::EnCurso
         } else if let Some(aviso) = interior.fallo {
             EstadoLogin::Fallo(aviso)
+        } else if let Some(fin) = interior.fin {
+            EstadoLogin::Terminada(fin)
         } else {
             EstadoLogin::SinSesion
         }
@@ -350,6 +462,7 @@ impl Login {
         // El intento nuevo sustituye al anterior, y con él se va el aviso que hubiera.
         interior.intento = Some(Intento { verifier, state, abierto: ahora });
         interior.fallo = None;
+        interior.fin = None;
         Inicio::Abrir(url)
     }
 
@@ -394,8 +507,11 @@ impl Login {
         interior.canjeando = false;
         match resultado {
             Ok(token) => {
+                // Si no se puede guardar, la sesión sigue en memoria y no se avisa.
+                let _ = self.llavero.guardar(token.exponer().as_bytes());
                 interior.token = Some(token);
                 interior.fallo = None;
+                interior.fin = None;
                 Recibido::Sesion
             }
             Err(aviso) => {
@@ -452,6 +568,9 @@ impl Login {
         let mut interior = self.cerrojo();
         if interior.token.as_ref() == Some(token) {
             interior.token = None;
+            interior.fin = Some(Fin::Caducada);
+            // Si el llavero no deja borrar, la sesión termina igual en esta ejecución.
+            let _ = self.llavero.borrar();
         }
     }
 }

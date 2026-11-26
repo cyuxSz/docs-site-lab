@@ -3,6 +3,8 @@
 //! El núcleo solo conoce este trait. La implementación real (el almacén de credenciales del
 //! sistema) vive en la cáscara, así que los tests del núcleo corren sin dependencias de sistema.
 
+use crate::{LLAVERO_SERVICIO, LLAVERO_SERVICIO_DEV};
+
 /// El llavero no pudo leer, guardar o borrar. No lleva detalles: el texto del error del sistema
 /// no debe llegar a ningún mensaje.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +40,9 @@ impl Llavero for SinLlavero {
 /// Nombre de la credencial en el almacén del sistema: `LLAVERO_SERVICIO` en release y
 /// `LLAVERO_SERVICIO_DEV` en debug, para que el desarrollo no pise la sesión real.
 pub fn nombre_de_llavero(es_debug: bool) -> &'static str {
-    let _ = es_debug;
-    todo!("lote app-sesion: nombre de la credencial según el tipo de build")
+    if es_debug {
+        LLAVERO_SERVICIO_DEV
+    } else {
+        LLAVERO_SERVICIO
+    }
 }
