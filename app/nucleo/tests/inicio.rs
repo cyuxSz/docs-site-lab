@@ -297,9 +297,12 @@ fn c7_la_pantalla_llega_con_referrer_policy_same_origin_por_todos_los_caminos() 
     es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), fallo, "con_login, canje fallido");
 
     // `Proxy::con_login`: 401 del servidor en una navegación, y la siguiente ya sin token.
-    let (_login, proxy) = app(&rechaza, Some(token()), NavegadorFalso::nuevo());
-    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "con_login, 401 de navegación");
-    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "con_login, sesión ya perdida");
+    // app-sesion: tras el 401 con `Bearer` el estado es `Terminada(Caducada)`, no `SinSesion`.
+    let caducada = EstadoLogin::Terminada(Fin::Caducada);
+    let (login, proxy) = app(&rechaza, Some(token()), NavegadorFalso::nuevo());
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), caducada, "con_login, 401 de navegación");
+    assert_eq!(login.estado(Instant::now()), caducada);
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), caducada, "con_login, sesión ya perdida");
 }
 
 // ---------- Criterio 6: la sesión vuelve sin reiniciar ----------
