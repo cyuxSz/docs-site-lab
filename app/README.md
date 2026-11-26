@@ -18,7 +18,7 @@ siguen viendo, y Excalidraw y el visor de PDF funcionan. Un enlace con `target="
 
 ## Requisitos
 
-Rust (cargo) y Node. En Windows, además, WebView2 (viene con Windows 11).
+Rust (cargo) y Node. En Windows, además, WebView2 (viene con Windows 11) y las Microsoft C++ Build Tools con la carga de trabajo «Desarrollo para el escritorio con C++» (el enlazador de MSVC que usa la toolchain `x86_64-pc-windows-msvc`).
 
 ## Tests
 
