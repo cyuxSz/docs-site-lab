@@ -91,6 +91,17 @@ La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `dat
   Ojo: si una restricción de la OAuth App hace que GitHub responda 404 a un miembro con membresía privada, el callback sí borra sus tokens (ver «Acceso»).
 
 - Los códigos caducados de `codigos_app` se purgan al crear un código nuevo (como mucho 50 por creación).
+- **Token de subida** (`vts_…`, `tipo='subida'`, `alcance='subida'`). Es un segundo tipo de token en la misma tabla. Sirve para subir adjuntos de hardware y leer hardware, y para nada más. Dura 30 días y se revoca igual que el otro. Todavía no hay ruta que lo emita. Solo puede pedir esto (las claves de la query tienen que ser exactamente las de un grupo, una vez cada una):
+
+  | Método | Ruta | Claves de la query |
+  |---|---|---|
+  | GET | `/auth/me` | cualquiera |
+  | POST | `/auth/app/revocar` | cualquiera (no se lee) |
+  | GET | `/api/archivos` | `capacidades` · `lista, proyecto` · `lista, proyecto, disciplina` · `proyecto, id` |
+  | POST | `/api/archivos` | `proyecto, disciplina, id, nombre` |
+  | GET | `/api/hardware` | `proyecto, disciplina` · `proyecto, disciplina, pagina` |
+
+  Todo lo demás responde 403 con JSON `{ "error": …, "codigo": "alcance" }`: el resto de rutas y métodos, las páginas del portal, los comentarios, y una query con claves de más, de menos o repetidas. Una ruta nueva queda cerrada hasta que se añada a la lista (`lib/alcance-subida.mjs`). El `codigo` distingue este 403 del 403 por permisos, que no lo lleva. Dentro de la lista mandan los permisos del login: solo sube quien es editor de la disciplina, y solo lee los proyectos a los que tiene acceso. El token de subida no sale en las listas de dispositivos. Si el `tipo` o el `alcance` de la fila no son exactamente esos, o no cuadran con el prefijo del token, la respuesta es el 401 de un token inválido.
 - Rotar `SESSION_SECRET` no invalida los tokens de dispositivo: solo cierra las sesiones de navegador.
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
