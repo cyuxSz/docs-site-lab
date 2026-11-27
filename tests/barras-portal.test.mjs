@@ -83,7 +83,9 @@ test("atajos.ts (script): manda [ ] f a las barras con un CustomEvent, pasa AltG
   const s = read(ATAJOS_JS);
   assert.match(s, /new CustomEvent\(\s*["']wiki:barras["']/);
   assert.match(s, /getModifierState\(\s*["']AltGraph["']\s*\)/);
-  assert.match(s, /closest\?\.\(\s*["'][^"']*\bselect\b[^"']*["']\s*\)/, "un <select> también cuenta como escribiendo");
+  // Lote «sueltos-teclado»: quién está escribiendo lo decide escribiendoEn() en la lógica pura, que cubre <select> y
+  // shadow DOM (tests/sueltos-teclado.test.mjs).
+  assert.match(s, /escribiendo:\s*escribiendoEn\(e\)/, "un <select> también cuenta como escribiendo");
 });
 
 // ---------- 3. Antes de pintar ----------

@@ -1,5 +1,6 @@
 :root {
   --cabecera-fondo: 67px;
+  --aviso-lector-alto: 57px;
   --hw-h1-size: 2.625em;
   --hw-h2-size: 2.25em;
   --hw-h3-size: 2em;
@@ -621,7 +622,9 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .comentarios-lista, .comentarios-respuestas { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .comentarios-respuestas { margin-top: 12px; margin-inline-start: 16px; padding-inline-start: 12px; border-inline-start: 2px solid var(--line); }
 .comentario { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); }
-.comentario.resuelto { opacity: .6; }
+.comentario:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.comentario.resuelto > :not(.comentarios-respuestas), .comentario.resuelto > .comentarios-respuestas > .comentario > * { opacity: .6; }
+:root[data-vista-lector] .comentario { scroll-margin-top: calc(var(--cabecera-fondo) + var(--aviso-lector-alto) + 20px - 96px); }
 .comentario.borrado > .comentario-texto { color: var(--muted); font-style: italic; }
 .comentario-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
 .comentario-autor { color: var(--text); font-weight: 600; }

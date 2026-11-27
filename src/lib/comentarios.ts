@@ -78,6 +78,25 @@ export function abrirPorHash(hash: string | null | undefined): { abrir: boolean;
   return id ? { abrir: true, id } : { abrir: false, id: null };
 }
 
+// Deja el comentario arriba (bajo la cabecera, por el scroll-padding del documento) y con foco. El tabindex es temporal.
+interface ElementoFoco {
+  setAttribute(n: string, v: string): void;
+  removeAttribute(n: string): void;
+  addEventListener(t: string, f: () => void, o?: { once: boolean }): void;
+  scrollIntoView?: (o: { block: "start" }) => void;
+  focus(o?: { preventScroll: boolean }): void;
+}
+export function enfocarComentario(doc: { getElementById(id: string): ElementoFoco | null }, id: string | null | undefined): boolean {
+  if (typeof id !== "string" || !RE_COMENTARIO.test(`#comentario-${id}`)) return false;
+  const el = doc.getElementById(`comentario-${id}`);
+  if (!el) return false;
+  el.setAttribute("tabindex", "-1");
+  el.addEventListener("blur", () => el.removeAttribute("tabindex"), { once: true });
+  el.scrollIntoView?.({ block: "start" });
+  el.focus({ preventScroll: true });
+  return true;
+}
+
 export const etiquetaComentarios = (n: number | null): string => (n === null ? "Comentarios" : `Comentarios (${n})`);
 
 export function mensajeError(codigo: number | string, opts: { retryAfter?: string | number | null; servidor?: unknown } = {}): string {
