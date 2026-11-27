@@ -1,7 +1,7 @@
 // E2: biblioteca de integrados en el editor diagrams.net embebido. La biblioteca (<mxlibrary>, generada por
 // tools/integrados.py) se sube como adjunto .xml de la disciplina; al abrir diagrams.net el portal la descarga de
-// /api/archivos, la sanea en el cliente y la entrega por la vía `configure` (configure=1 en la URL y
-// {action:"configure", config:{libraries:[…]}} en respuesta al evento). Nada de la biblioteca viaja en la URL.
+// /api/archivos, la sanea en el cliente y la entrega por la vía `configure` (configure=1 en la URL solo si hay
+// alguna biblioteca y {action:"configure", config:{libraries:[…]}} en respuesta al evento). Nada de la biblioteca viaja en la URL.
 // Solo funciones puras y lectura de fuentes: nada contra diagrams.net en CI (headless recibe 403 en embed.diagrams.net).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -305,17 +305,45 @@ test("5. cargarBibliotecas: avisa cuando el saneado descarta formas, y omite una
 
 // ---------- 6. Integración en el editor (src/scripts/diagramas.ts, hardware-editor.ts) ----------
 
-test("6. el editor abre diagrams.net con configure=1 y responde siempre al evento configure con respuestaConfigure", async () => {
-  const { ESPERA_BIBLIOTECAS_MS } = await diag();
-  assert.equal(ESPERA_BIBLIOTECAS_MS, 10000, "si la carga tarda más, se responde sin bibliotecas");
+test("6. cargarBibliotecasConTope: devuelve lo cargado o, pasado el tope, ninguna biblioteca con aviso; nunca cuelga", async () => {
+  const { cargarBibliotecasConTope, cargarBibliotecas, ESPERA_BIBLIOTECAS_MS } = await diag();
+  assert.equal(ESPERA_BIBLIOTECAS_MS, 5000, "tope de la carga antes de abrir el iframe sin bibliotecas");
+  const listar = async () => [adj("ne555.xml")];
+  const descargar = async () => fixture("ne555.xml");
+  const normal = await cargarBibliotecasConTope({ disciplina: "elec", listar, descargar }, 1000);
+  assert.deepEqual(normal, await cargarBibliotecas({ disciplina: "elec", listar, descargar }));
+  assert.equal(normal.bibliotecas.length, 1);
+  const nunca = () => new Promise(() => {});
+  for (const o of [{ listar: nunca, descargar }, { listar, descargar: nunca }]) {
+    const t0 = Date.now();
+    const r = await cargarBibliotecasConTope({ disciplina: "elec", ...o }, 30);
+    assert.ok(Date.now() - t0 < 1000, "resuelve al llegar el tope");
+    assert.deepEqual(r.bibliotecas, []);
+    assert.ok(r.avisos.length >= 1, "aviso de que las bibliotecas tardaron");
+  }
+  const roto = await cargarBibliotecasConTope({ disciplina: "elec", listar: () => { throw new Error("x"); }, descargar }, 30);
+  assert.deepEqual(roto.bibliotecas, []);
+  assert.ok(roto.avisos.length >= 1);
+});
+
+test("6. el editor carga las bibliotecas antes del iframe y solo pide configure=1 si hay alguna", async () => {
   const dg = leer("src/scripts/diagramas.ts");
-  assert.match(dg, /marco\.src = urlDrawio\(true\);/);
+  const iCarga = dg.indexOf("cargarBibliotecasConTope(");
+  const iSrc = dg.indexOf("marco.src = urlDrawio(");
+  assert.ok(iCarga >= 0, "usa cargarBibliotecasConTope");
+  assert.ok(iSrc > iCarga, "el iframe se crea después de cargar las bibliotecas");
+  assert.match(dg, /await cargarBibliotecasConTope\(/);
+  assert.match(dg, /const conBibliotecas = bibliotecas\.length > 0;/);
+  assert.match(dg, /marco\.src = urlDrawio\(conBibliotecas\);/, "sin bibliotecas, la URL de hoy (sin configure=1)");
+  assert.doesNotMatch(dg, /urlDrawio\(true\)/);
   const caso = /case "configure":([\s\S]*?)(?:case "|\n\s*\}\n)/.exec(dg);
-  assert.ok(caso, "el switch atiende el evento configure");
-  assert.match(caso[1], /enviarDrawio\(marco\.contentWindow,\s*respuestaConfigure\(/, "responde con targetOrigin exacto vía enviarDrawio");
-  assert.match(dg, /cargarBibliotecas\(/);
-  assert.match(dg, /ESPERA_BIBLIOTECAS_MS/);
-  assert.match(dg, /\.avisos/, "los avisos se muestran al usuario");
+  assert.ok(caso, "el switch atiende el evento configure (defensa si llega sin pedirlo)");
+  assert.match(
+    caso[1],
+    /enviarDrawio\(marco\.contentWindow,\s*respuestaConfigure\(conBibliotecas \? bibliotecas : null\)\)/,
+    "lo cargado si se pidió, config vacío si no; targetOrigin exacto vía enviarDrawio",
+  );
+  assert.match(dg, /\.avisos|\bavisos\b/, "los avisos se muestran al usuario");
   assert.match(dg, /\/api\/archivos\//);
   assert.match(dg, /lista:\s*"1"/, "listado de adjuntos con lista=1");
   assert.match(dg, /credentials:\s*"same-origin"/);
