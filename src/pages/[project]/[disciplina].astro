@@ -3,6 +3,7 @@
 // (src/scripts/hardware-editor.ts) lee y, con permiso de escritura, escribe por /api/hardware/ con la sesión del usuario.
 import Base from "../../layouts/Base.astro";
 import Comentarios from "../../components/Comentarios.astro";
+import HwImportar from "../../components/HwImportar.astro";
 import { usadoPor, enlacesHardware } from "../../lib/hw-enlaces";
 import { builtProjects, project as load, projectNav } from "../../lib/data";
 
@@ -27,6 +28,7 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
             <ul class="hw-indice" data-hw-indice></ul>
             <p class="hw-nueva" data-hw-solo-editor hidden>
               <button type="button" class="btn" data-hw-nueva>Nueva página</button>
+              <button type="button" class="btn" data-hw-importar aria-haspopup="dialog">Importar</button>
               <button type="button" class="btn" data-hw-abrir-papelera aria-haspopup="dialog">Papelera</button>
             </p>
           </div>
@@ -44,6 +46,7 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
         <section class="hw-vacio" data-hw-vacio hidden>
           <p data-hw-vacio-texto>Todavía no hay páginas en {etiqueta}</p>
           <button type="button" class="btn btn-primary" data-hw-inicializar hidden>Inicializar desde plantilla</button>
+          <button type="button" class="btn" data-hw-importar data-hw-solo-editor aria-haspopup="dialog" hidden>Importar páginas</button>
         </section>
 
         <section class="hw-no-encontrada" data-hw-no-encontrada hidden>
@@ -216,6 +219,7 @@ const usado = usadoPor(p.id, p.ros ?? null, enlacesHw, disciplina);
     <p class="hw-ayuda hw-diag-estado" data-hw-diag-estado aria-live="polite"></p>
     <div class="hw-dlg-lienzo" data-hw-diag-lienzo></div>
   </dialog>
+  <HwImportar />
 
   <div class="sr-only" data-anuncio-lectura role="status" aria-live="polite" data-pagefind-ignore="all"></div>
 

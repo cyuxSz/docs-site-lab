@@ -1,0 +1,37 @@
+# App de escritorio (carpeta app/): prueba el proxy y comprueba que la app compila.
+# No publica nada: sin instalador, sin artefactos y sin credenciales.
+name: app
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/app.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/app.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  nucleo:
+    name: Tests del proxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: cargo test --manifest-path app/nucleo/Cargo.toml --locked
+
+  cascara:
+    name: Compilar la app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "26"
+      - run: npm ci --no-audit --no-fund
+        working-directory: app
+      - run: npx tauri build --no-bundle -- --locked
+        working-directory: app

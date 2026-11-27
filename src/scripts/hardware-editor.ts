@@ -42,7 +42,9 @@ import {
   type PaginaIndice,
 } from "../lib/hardware-editor";
 import { conectarInsertarModelo } from "./hardware-insertar-modelo";
+import { altoAviso } from "../lib/cabecera";
 import { archivosKicad, bloqueKicad, bloquePdf, bomDeArchivo, bloqueBom, insertarBloqueTexto, tituloDeArchivo } from "../lib/visores";
+import { conectarImportar } from "./hardware-importar";
 
 interface PaginaHw {
   slug: string;
@@ -143,6 +145,14 @@ async function iniciar(root: HTMLElement) {
   let generacionCarga = -1;
   const pestanasCaja = $(".hw-pestanas");
   const cuerpoEditor = $(".hw-editor-cuerpo");
+
+  // Alto del aviso de la vista de lector: el comentario enlazado deja ese espacio libre bajo la cabecera.
+  const avisoLector = document.querySelector<HTMLElement>("[data-hw-aviso-lector]");
+  if (avisoLector) {
+    const publicarAviso = () => document.documentElement.style.setProperty("--aviso-lector-alto", altoAviso(avisoLector.offsetHeight));
+    publicarAviso();
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(publicarAviso).observe(avisoLector);
+  }
 
   let indice: PaginaIndice[] = [];
   let editable = false;
@@ -1509,6 +1519,9 @@ async function iniciar(root: HTMLElement) {
   });
   escuchar(dlgPapelera.querySelector("[data-hw-no]")!, "click", () => dlgPapelera.close());
   escuchar(dlgPapelera, "close", () => btnPapelera.focus());
+
+  // ---------- importar páginas ----------
+  conectarImportar({ proyecto, disciplina, senal, slugs: () => indice.map((p) => p.slug), hayCambios, mostrarEstado, mostrarError, recargar: async () => (await cargarIndice()) && mostrar() });
 
   // ---------- arranque ----------
   void cargarRender().catch(() => {});

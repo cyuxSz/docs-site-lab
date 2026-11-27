@@ -1,0 +1,53 @@
+---
+// Importar páginas desde .md o .zip: selector de archivos oculto y diálogo de tres estados (revisión, progreso y
+// resultado), uno visible a la vez. Marcado estático: las filas y los textos los pone src/scripts/hardware-importar.ts.
+---
+<input type="file" class="hw-archivo" data-hw-importar-archivos accept=".md,.zip" multiple tabindex="-1" aria-hidden="true" />
+<dialog class="atajos-dialog hw-importar" id="hw-importar" aria-labelledby="hw-importar-titulo">
+  <div class="atajos-bar"><h2 id="hw-importar-titulo" tabindex="-1">Importar páginas</h2></div>
+
+  <div data-hw-imp="revision">
+    <div class="hw-importar-cuerpo">
+      <p data-hw-imp-resumen></p>
+      <ul class="hw-importar-lista" data-hw-imp-paginas aria-label="Páginas que se crearán"></ul>
+      <div data-hw-imp-avisos data-hw-imp-grupo hidden>
+        <h3 class="hw-ayuda" id="hw-importar-avisos">Avisos</h3>
+        <ul class="hw-importar-lista" data-hw-imp-avisos-lista aria-labelledby="hw-importar-avisos"></ul>
+      </div>
+    </div>
+    <div class="hw-acciones">
+      <button type="button" class="btn btn-primary" data-hw-imp-ok>Importar</button>
+      <button type="button" class="btn" data-hw-imp-cancelar>Cancelar</button>
+    </div>
+  </div>
+
+  <div data-hw-imp="progreso" hidden>
+    <div class="hw-importar-cuerpo">
+      <progress class="hw-progreso" data-hw-imp-barra max="1" value="0" aria-label="Progreso de la importación"></progress>
+      <p data-hw-imp-linea aria-live="polite"></p>
+      <p data-hw-imp-cuenta aria-hidden="true"></p>
+    </div>
+    <div class="hw-acciones">
+      <button type="button" class="btn" data-hw-imp-detener>Detener</button>
+    </div>
+  </div>
+
+  <div data-hw-imp="resultado" hidden>
+    <div class="hw-importar-cuerpo">
+      <p data-hw-imp-resultado></p>
+      <p class="hw-error" data-hw-imp-error role="alert" hidden></p>
+      <div data-hw-imp-grupo hidden>
+        <h3 class="hw-ayuda" id="hw-importar-pendientes">Sin importar</h3>
+        <ul class="hw-importar-lista" data-hw-imp-pendientes aria-labelledby="hw-importar-pendientes"></ul>
+      </div>
+      <div data-hw-imp-grupo hidden>
+        <h3 class="hw-ayuda" id="hw-importar-avisos-finales">Avisos</h3>
+        <ul class="hw-importar-lista" data-hw-imp-avisos-finales aria-labelledby="hw-importar-avisos-finales"></ul>
+      </div>
+    </div>
+    <div class="hw-acciones">
+      <button type="button" class="btn" data-hw-imp-reintentar hidden>Reintentar lo pendiente</button>
+      <button type="button" class="btn" data-hw-imp-cerrar>Cerrar</button>
+    </div>
+  </div>
+</dialog>

@@ -1,0 +1,9 @@
+integrado,pin,nombre,lado,tipo
+NE555,2,TRIG,izquierda,entrada
+NE555,6,THR,izquierda,entrada
+NE555,5,CTRL,izquierda,entrada
+NE555,3,OUT,derecha,salida
+NE555,7,DIS,derecha,
+NE555,4,RESET,derecha,entrada
+NE555,8,VCC,arriba,alimentacion
+NE555,1,GND,abajo,alimentacion
