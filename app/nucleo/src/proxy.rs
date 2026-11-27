@@ -6,9 +6,11 @@
 
 use std::io::Read;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use flate2::read::MultiGzDecoder;
 use http::header::{
     HeaderName, ACCEPT, ALLOW, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_SECURITY_POLICY,
     CONTENT_TYPE, LOCATION, ORIGIN, X_CONTENT_TYPE_OPTIONS,
@@ -122,6 +124,8 @@ impl Huecos {
     /// esté llena: entonces no espera. `None` si no cabe en la cola o si vence el plazo.
     fn tomar(&self, plazo: Duration) -> Option<Hueco<'_>> {
         let mut turnos = self.cerrojo();
+        // Primer intento: con un hueco libre la petición pasa, sea cual sea el plazo (también
+        // `Duration::ZERO`) y sin contar para la cola.
         if turnos.libres > 0 {
             turnos.libres -= 1;
             return Some(Hueco(self));
@@ -134,20 +138,41 @@ impl Huecos {
         turnos.esperando += 1;
         let inicio = Instant::now();
         let conseguido = loop {
+            // Tras esperar, el plazo se mira antes que los huecos: una espera vencida no toma
+            // hueco aunque haya uno libre, que queda para otra.
+            let resta = plazo.checked_sub(inicio.elapsed()).filter(|resta| !resta.is_zero());
+            let Some(resta) = resta else { break false };
             if turnos.libres > 0 {
                 turnos.libres -= 1;
                 break true;
             }
-            let resta = plazo.checked_sub(inicio.elapsed()).filter(|resta| !resta.is_zero());
-            let Some(resta) = resta else { break false };
             turnos = match self.aviso.wait_timeout(turnos, resta) {
                 Ok((guarda, _)) => guarda,
                 Err(envenenado) => envenenado.into_inner().0,
             };
         };
         turnos.esperando -= 1;
+        let sobra_hueco = !conseguido && turnos.libres > 0;
         drop(turnos);
+        if sobra_hueco {
+            // El aviso que despertó a esta petición no se pierde: otra que espera lo recoge.
+            self.aviso.notify_one();
+        }
         conseguido.then(|| Hueco(self))
+    }
+
+    /// Peticiones esperando un hueco en este momento.
+    fn en_cola(&self) -> usize {
+        self.cerrojo().esperando
+    }
+}
+
+/// Una petición pendiente de `atender_en_hilo`; se descuenta al soltarla, también si falla.
+struct Pendiente<'a>(&'a AtomicUsize);
+
+impl Drop for Pendiente<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -184,6 +209,8 @@ pub struct Proxy {
     huecos: Huecos,
     /// El último token que el servidor rechazó. No vuelve a salir.
     rechazado: Mutex<Option<Token>>,
+    /// Peticiones admitidas por `atender_en_hilo` y aún sin responder.
+    pendientes: AtomicUsize,
 }
 
 impl Proxy {
@@ -216,7 +243,16 @@ impl Proxy {
             .max_idle_connections_per_host(limites.simultaneas.max(1))
             .build();
         let huecos = Huecos::nuevo(limites.simultaneas, limites.en_espera);
-        Proxy { destino, fuente, inicios, limites, agente, huecos, rechazado: Mutex::new(None) }
+        Proxy {
+            destino,
+            fuente,
+            inicios,
+            limites,
+            agente,
+            huecos,
+            rechazado: Mutex::new(None),
+            pendientes: AtomicUsize::new(0),
+        }
     }
 
     /// Atiende una petición del webview. Nunca entra en pánico ni devuelve el token.
@@ -233,14 +269,56 @@ impl Proxy {
         if es_head {
             respuesta.body_mut().clear();
         }
-        // Lo último, sea cual sea la rama: las CSP propias van detrás de las que ya lleve la
-        // respuesta. Se añaden, no sustituyen: varias CSP se intersectan, así que solo restringen.
-        let cabeceras = respuesta.headers_mut();
-        cabeceras.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_MARCOS));
-        if aislado {
-            cabeceras.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_AISLADO));
+        con_csp_propias(respuesta, aislado)
+    }
+
+    /// Atiende la petición en un hilo propio y entrega la respuesta a `responder`. La cuenta
+    /// como pendiente desde que la admite, antes de crear el hilo. Si ya hay
+    /// `simultaneas + en_espera` pendientes, o el sistema no deja crear el hilo, entrega en el
+    /// acto, en el hilo que llama, el 503 local. Nunca entra en pánico.
+    pub fn atender_en_hilo<F>(self: &Arc<Self>, peticion: Request<Vec<u8>>, responder: F)
+    where
+        F: FnOnce(Response<Vec<u8>>) + Send + 'static,
+    {
+        let es_head = peticion.method() == Method::HEAD;
+        let tope = self.limites.simultaneas.max(1).saturating_add(self.limites.en_espera);
+        let admitida = self
+            .pendientes
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < tope).then(|| n + 1))
+            .is_ok();
+        if !admitida {
+            responder(ocupado(es_head));
+            return;
         }
-        respuesta
+        // El responder se comparte para poder usarlo aquí si el hilo no llega a crearse.
+        let responder = Arc::new(Mutex::new(Some(responder)));
+        let proxy = Arc::clone(self);
+        let del_hilo = Arc::clone(&responder);
+        let creado = std::thread::Builder::new().spawn(move || {
+            let _pendiente = Pendiente(&proxy.pendientes);
+            let respuesta = proxy.atender(peticion);
+            let responder = del_hilo.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(responder) = responder {
+                responder(respuesta);
+            }
+        });
+        if creado.is_err() {
+            self.pendientes.fetch_sub(1, Ordering::SeqCst);
+            let responder = responder.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(responder) = responder {
+                responder(ocupado(es_head));
+            }
+        }
+    }
+
+    /// Peticiones admitidas por `atender_en_hilo` cuya respuesta aún no se ha entregado.
+    pub fn pendientes(&self) -> usize {
+        self.pendientes.load(Ordering::SeqCst)
+    }
+
+    /// Peticiones esperando un hueco en este momento.
+    pub fn en_cola(&self) -> usize {
+        self.huecos.en_cola()
     }
 
     /// `true` desde que el servidor rechazó un token (401 con `WWW-Authenticate: Bearer`) y
@@ -398,6 +476,8 @@ impl Proxy {
             }
         }
         peticion = peticion.set("authorization", &format!("Bearer {}", token.exponer()));
+        // La descompresión la hace el proxy, para ver todos los `Content-Encoding` del servidor.
+        peticion = peticion.set("accept-encoding", "gzip");
 
         let sin_cuerpo = cuerpo.is_empty() && (metodo == "GET" || metodo == "HEAD");
         let resultado = if sin_cuerpo { peticion.call() } else { peticion.send_bytes(cuerpo) };
@@ -426,15 +506,13 @@ impl Proxy {
         };
 
         let mut nombres = respuesta.headers_names();
-        // Se mira lo que mandó el servidor, antes de cualquier filtro. El cliente oculta los
-        // valores que no son ASCII visible: una CSP así no se puede leer ni entregar, y cuenta
-        // como si trajera `sandbox`.
+        // Se mira lo que mandó el servidor, antes de cualquier filtro.
         let csp_recibidas = nombres.iter().filter(|n| n.as_str() == CSP).count();
         let csp_legibles = respuesta.all(CSP);
-        let con_sandbox = csp_legibles.len() < csp_recibidas
-            || csp_legibles
-                .iter()
-                .any(|valor| HeaderValue::from_str(valor).is_err() || trae_sandbox(valor));
+        let csp_ilegible = csp_legibles.len() < csp_recibidas
+            || csp_legibles.iter().any(|valor| HeaderValue::from_str(valor).is_err());
+        let con_sandbox = csp_legibles.iter().any(|valor| trae_sandbox(valor));
+        let ce_recibidas = nombres.iter().filter(|n| n.as_str() == "content-encoding").count();
         let mut vistos = Vec::new();
         nombres.retain(|n| !vistos.contains(n) && { vistos.push(n.clone()); true });
         let recibidas: Vec<(String, Vec<String>)> = nombres
@@ -448,9 +526,39 @@ impl Proxy {
             recibidas.iter().find(|(n, _)| n == nombre).map_or(&[], |(_, v)| v.as_slice())
         };
 
-        // El cliente ya descomprimió gzip y quitó la cabecera. Si queda una codificación, es
-        // una que no sabe abrir.
-        if !de("content-encoding").is_empty() {
+        // Un 401 con `Bearer` pierde la sesión ya, antes de cualquier comprobación que pueda
+        // acabar en 502: el token no vuelve a salir aunque esta respuesta no se entregue.
+        let token_rechazado = estado == StatusCode::UNAUTHORIZED
+            && de("www-authenticate").iter().any(|valor| desafia_con_bearer(valor));
+        if token_rechazado {
+            self.rechazar(rechazo.token);
+        }
+
+        // Ninguna codificación, o exactamente un campo con gzip. Cualquier otra cosa no se abre.
+        if de("content-encoding").len() < ce_recibidas {
+            return invalida();
+        }
+        let es_gzip = match de("content-encoding") {
+            [] => false,
+            [unica] => {
+                let valor = unica.trim();
+                if valor.eq_ignore_ascii_case("gzip") || valor.eq_ignore_ascii_case("x-gzip") {
+                    true
+                } else {
+                    return invalida();
+                }
+            }
+            _ => return invalida(),
+        };
+
+        let nombradas: Vec<String> = de("connection")
+            .iter()
+            .flat_map(|valor| valor.split(','))
+            .map(|n| n.trim().to_ascii_lowercase())
+            .collect();
+
+        // Una CSP que no llega intacta al webview: el documento no se entrega sin ella.
+        if csp_recibidas > 0 && (csp_ilegible || nombradas.iter().any(|n| n == CSP)) {
             return invalida();
         }
 
@@ -466,24 +574,23 @@ impl Proxy {
             }
         }
 
-        let token_rechazado = estado == StatusCode::UNAUTHORIZED
-            && de("www-authenticate").iter().any(|valor| desafia_con_bearer(valor));
         let largo_declarado = de("content-length").first().cloned();
-        let nombradas: Vec<String> = de("connection")
-            .iter()
-            .flat_map(|valor| valor.split(','))
-            .map(|n| n.trim().to_ascii_lowercase())
-            .collect();
 
-        // Como mucho el tope + 1 byte: basta para saber que se pasó.
+        // Sin cuerpo no se abre ninguno. Con él, como mucho el tope + 1 byte de lo ya abierto.
+        let sin_cuerpo =
+            es_head || estado == StatusCode::NO_CONTENT || estado == StatusCode::NOT_MODIFIED;
         let tope = self.limites.cuerpo_respuesta;
         let mut cuerpo = Vec::new();
-        let leido = respuesta
-            .into_reader()
-            .take((tope as u64).saturating_add(1))
-            .read_to_end(&mut cuerpo);
-        if leido.is_err() || cuerpo.len() > tope {
-            return invalida();
+        if !sin_cuerpo {
+            let limite = (tope as u64).saturating_add(1);
+            let leido = if es_gzip {
+                MultiGzDecoder::new(respuesta.into_reader()).take(limite).read_to_end(&mut cuerpo)
+            } else {
+                respuesta.into_reader().take(limite).read_to_end(&mut cuerpo)
+            };
+            if leido.is_err() || cuerpo.len() > tope {
+                return invalida();
+            }
         }
 
         let mut salida = Response::new(cuerpo);
@@ -492,6 +599,7 @@ impl Proxy {
             let n = nombre.as_str();
             if DE_SALTO.contains(&n)
                 || QUITADAS_DE_VUELTA.contains(&n)
+                || n == "content-encoding"
                 || nombradas.iter().any(|x| x == n)
                 || (n == "location" && location.is_some())
             {
@@ -511,10 +619,11 @@ impl Proxy {
             };
         }
 
-        let sin_cuerpo = estado == StatusCode::NO_CONTENT || estado == StatusCode::NOT_MODIFIED;
         if es_head {
-            // En un HEAD el tamaño es el que anuncia el servidor, no el del cuerpo (vacío).
+            // En un HEAD el tamaño es el que anuncia el servidor, no el del cuerpo (vacío);
+            // con gzip es el del comprimido y no se reenvía.
             let declarado = largo_declarado
+                .filter(|_| !es_gzip)
                 .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
                 .and_then(|v| HeaderValue::from_str(&v).ok());
             if let Some(valor) = declarado {
@@ -525,13 +634,10 @@ impl Proxy {
             salida.headers_mut().insert(CONTENT_LENGTH, largo);
         }
 
-        if token_rechazado {
-            self.rechazar(rechazo.token);
-            // Un `fetch` ve el 401 del servidor tal cual. Una navegación ve la pantalla de
-            // login en vez de ese JSON.
-            if rechazo.es_navegacion {
-                return self.sin_sesion(true);
-            }
+        // Un `fetch` ve el 401 del servidor tal cual. Una navegación ve la pantalla de login en
+        // vez de ese JSON. El token ya quedó rechazado arriba.
+        if token_rechazado && rechazo.es_navegacion {
+            return self.sin_sesion(true);
         }
         *aislado = con_sandbox;
         salida
@@ -700,6 +806,26 @@ fn trae_sandbox(csp: &str) -> bool {
             .find(|token| !token.is_empty())
             .is_some_and(|nombre| nombre.eq_ignore_ascii_case("sandbox"))
     })
+}
+
+/// Las CSP propias van detrás de las que ya lleve la respuesta. Se añaden, no sustituyen:
+/// varias CSP se intersectan, así que solo restringen.
+fn con_csp_propias(mut respuesta: Response<Vec<u8>>, aislado: bool) -> Response<Vec<u8>> {
+    let cabeceras = respuesta.headers_mut();
+    cabeceras.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_MARCOS));
+    if aislado {
+        cabeceras.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP_AISLADO));
+    }
+    respuesta
+}
+
+/// El 503 local de «Demasiadas peticiones a la vez», ya con la CSP de marcos.
+fn ocupado(es_head: bool) -> Response<Vec<u8>> {
+    let mut respuesta = error_local(StatusCode::SERVICE_UNAVAILABLE, MSG_OCUPADO);
+    if es_head {
+        respuesta.body_mut().clear();
+    }
+    con_csp_propias(respuesta, false)
 }
 
 /// Respuesta generada por la cáscara: `{"error":"<mensaje>"}` con un mensaje fijo.

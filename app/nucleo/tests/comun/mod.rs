@@ -55,6 +55,9 @@ pub struct Respuesta {
     pub cuerpo: Vec<u8>,
     pub demora: Duration,
     pub con_longitud: bool,
+    /// Cabeceras cuyo valor va en la red tal cual, byte a byte (puede no ser UTF-8). Se
+    /// escriben detrás de `cabeceras`.
+    pub crudas: Vec<(String, Vec<u8>)>,
 }
 
 impl Respuesta {
@@ -65,11 +68,18 @@ impl Respuesta {
             cuerpo: cuerpo.to_vec(),
             demora: Duration::ZERO,
             con_longitud: true,
+            crudas: Vec::new(),
         }
     }
 
     pub fn con(mut self, nombre: &str, valor: &str) -> Respuesta {
         self.cabeceras.push((nombre.to_string(), valor.to_string()));
+        self
+    }
+
+    /// Cabecera con un valor en bytes crudos, sin pasar por UTF-8.
+    pub fn con_bytes(mut self, nombre: &str, valor: &[u8]) -> Respuesta {
+        self.crudas.push((nombre.to_string(), valor.to_vec()));
         self
     }
 
@@ -183,6 +193,12 @@ fn atender_conexion(
     let mut salida = format!("HTTP/1.1 {} Prueba\r\n", respuesta.estado).into_bytes();
     for (n, v) in &respuesta.cabeceras {
         salida.extend_from_slice(format!("{n}: {v}\r\n").as_bytes());
+    }
+    for (n, v) in &respuesta.crudas {
+        salida.extend_from_slice(format!("{n}: ").as_bytes());
+        salida.extend_from_slice(v);
+        salida.extend_from_slice(b"
+");
     }
     if respuesta.con_longitud {
         salida.extend_from_slice(format!("Content-Length: {}\r\n", respuesta.cuerpo.len()).as_bytes());
@@ -434,3 +450,127 @@ pub const GZIP_3000_A: [u8; 39] = [
     0x00, 0xc2, 0xa0, 0xac, 0xeb, 0x5f, 0xc2, 0x1a, 0x1e, 0x40, 0x01, 0x00, 0x00, 0xef, 0x06, 0xc8,
     0x3c, 0xdc, 0x5e, 0xb8, 0x0b, 0x00, 0x00,
 ];
+
+// ---------- Sincronización sin esperas a ciegas (hilos 7 a 9 de CodeRabbit en el PR 72) ----------
+
+/// Plazo máximo para que ocurra algo que el test espera. Solo acota un test colgado: ningún
+/// resultado depende de que se agote.
+pub const PLAZO: Duration = Duration::from_secs(5);
+
+/// Espera, como mucho `PLAZO`, a que se cumpla `condicion`. Si no se cumple, el test falla con
+/// `que`. Sondea estado observable; no es una espera a ciegas.
+pub fn esperar_hasta(que: &str, mut condicion: impl FnMut() -> bool) {
+    let limite = std::time::Instant::now() + PLAZO;
+    while !condicion() {
+        assert!(std::time::Instant::now() < limite, "no ocurrió en {PLAZO:?}: {que}");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[derive(Default)]
+struct EstadoCompuerta {
+    llegadas: Vec<String>,
+    permisos: usize,
+    abierta: bool,
+}
+
+/// Retiene en el servidor falso cada petición que llega hasta que el test la suelta. Mientras
+/// una petición está retenida, el proxy tiene ocupado su hueco: es la ocupación observable que
+/// sustituye a «esperar 300 ms y suponer».
+#[derive(Clone, Default)]
+pub struct Compuerta(Arc<(Mutex<EstadoCompuerta>, std::sync::Condvar)>);
+
+impl Compuerta {
+    pub fn nueva() -> Compuerta {
+        Compuerta::default()
+    }
+
+    /// Para el servidor: anota la llegada y espera permiso. Como mucho 20 s, para que un test
+    /// que falla no deje hilos colgados para siempre.
+    fn retener(&self, destino: &str) {
+        let (estado, aviso) = &*self.0;
+        let mut estado = estado.lock().unwrap();
+        estado.llegadas.push(destino.to_string());
+        aviso.notify_all();
+        let limite = std::time::Instant::now() + Duration::from_secs(20);
+        while !estado.abierta && estado.permisos == 0 {
+            let ahora = std::time::Instant::now();
+            if ahora >= limite {
+                return;
+            }
+            estado = aviso.wait_timeout(estado, limite - ahora).unwrap().0;
+        }
+        if !estado.abierta {
+            estado.permisos -= 1;
+        }
+    }
+
+    /// Deja pasar `n` peticiones retenidas (o las próximas en llegar).
+    pub fn soltar(&self, n: usize) {
+        let (estado, aviso) = &*self.0;
+        estado.lock().unwrap().permisos += n;
+        aviso.notify_all();
+    }
+
+    /// Deja pasar todo, lo retenido y lo que llegue.
+    pub fn abrir(&self) {
+        let (estado, aviso) = &*self.0;
+        estado.lock().unwrap().abierta = true;
+        aviso.notify_all();
+    }
+
+    /// Vuelve a retener lo que llegue a partir de ahora.
+    pub fn cerrar(&self) {
+        let (estado, _) = &*self.0;
+        let mut estado = estado.lock().unwrap();
+        estado.abierta = false;
+        estado.permisos = 0;
+    }
+
+    /// Destinos (ruta y consulta) de las peticiones que han llegado, en orden de llegada.
+    pub fn llegadas(&self) -> Vec<String> {
+        self.0 .0.lock().unwrap().llegadas.clone()
+    }
+
+    /// Espera, como mucho `PLAZO`, a que hayan llegado al servidor `n` peticiones en total.
+    pub fn esperar_llegadas(&self, n: usize) -> Vec<String> {
+        let (estado, aviso) = &*self.0;
+        let limite = std::time::Instant::now() + PLAZO;
+        let mut estado = estado.lock().unwrap();
+        while estado.llegadas.len() < n {
+            let ahora = std::time::Instant::now();
+            if ahora >= limite {
+                // Se falla con el cerrojo ya suelto: un pánico con la guarda tomada envenena el
+                // mutex y `abrir_al_salir` haría un segundo pánico al soltarse (aborto).
+                let llegadas = estado.llegadas.len();
+                drop(estado);
+                panic!("llegaron {llegadas} peticiones al servidor y se esperaban {n}");
+            }
+            estado = aviso.wait_timeout(estado, limite - ahora).unwrap().0;
+        }
+        estado.llegadas.clone()
+    }
+
+    /// Abre la compuerta al soltar la guarda, también si el test falla: así ningún hilo del
+    /// proxy se queda retenido hasta su timeout.
+    pub fn abrir_al_salir(&self) -> AbrirAlSalir {
+        AbrirAlSalir(self.clone())
+    }
+}
+
+pub struct AbrirAlSalir(Compuerta);
+
+impl Drop for AbrirAlSalir {
+    fn drop(&mut self) {
+        self.0.abrir();
+    }
+}
+
+/// Servidor que contesta `respuesta` a todo, pero solo cuando la compuerta deja pasar.
+pub fn servidor_retenido(compuerta: &Compuerta, respuesta: Respuesta) -> Servidor {
+    let compuerta = compuerta.clone();
+    Servidor::nuevo(move |recibida| {
+        compuerta.retener(&recibida.destino);
+        respuesta.clone()
+    })
+}

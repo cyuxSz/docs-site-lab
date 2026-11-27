@@ -66,7 +66,8 @@ const paquetes = (lock) =>
 
 test("c10 · el núcleo añade ring, base64 y serde_json con versión exacta, y nada más", () => {
   const deps = toml(leer(CARGO_NUCLEO)).dependencies ?? {};
-  assert.deepEqual(Object.keys(deps).sort(), ["base64", "http", "ring", "serde_json", "ureq"], "dependencias directas del núcleo");
+  // flate2 viene de app-cascara (ureq va sin gzip y el núcleo descomprime); este lote no lo añade.
+  assert.deepEqual(Object.keys(deps).sort(), ["base64", "flate2", "http", "ring", "serde_json", "ureq"], "dependencias directas del núcleo");
   assert.equal(version(deps.ring), "=0.17.14", "ring: SHA-256 y aleatoriedad del sistema (ya estaba en el lock, por rustls)");
   assert.equal(version(deps.base64), "=0.22.1", "base64: ya estaba en el lock, por ureq");
   assert.equal(version(deps.serde_json), "=1.0.154", "serde_json: la misma versión que ya compila la app");

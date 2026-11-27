@@ -108,9 +108,8 @@ fn main() -> ExitCode {
             });
         }))
         .register_asynchronous_uri_scheme_protocol(ESQUEMA, move |_contexto, peticion, respuesta| {
-            // Un hilo por petición: el proxy bloquea mientras espera al servidor.
-            let proxy = Arc::clone(&proxy);
-            std::thread::spawn(move || respuesta.respond(proxy.atender(peticion)));
+            // El núcleo admite la petición (con tope) y la atiende en un hilo propio.
+            proxy.atender_en_hilo(peticion, move |r| respuesta.respond(r));
         })
         .setup(|app| {
             // Un fallo al registrar el esquema no impide arrancar.
