@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  GENERADOR, PYTHON, RAIZ, SIN_PYTHON, archivos, carpetaTemporal, correr, existsSync, generar, join, leerBiblioteca, leerSvg,
+  GENERADOR, PYTHON, RAIZ, SIN_PYTHON, analizar, archivos, carpetaTemporal, correr, existsSync, generar, join, leerBiblioteca, leerSvg,
   readFileSync, writeFileSync,
 } from "./fixtures/integrados.mjs";
 
@@ -98,31 +98,15 @@ test("errores de entrada: archivo que no existe, extensión desconocida y carpet
 });
 
 // ── Criterio 9: solo biblioteca estándar ────────────────────────────────────────────────────────────────────────────
-const ANALISIS = `
-import ast, sys
-arbol = ast.parse(open(sys.argv[1], encoding="utf-8").read())
-mods, llamadas = set(), set()
-for n in ast.walk(arbol):
-    if isinstance(n, ast.Import):
-        mods.update(a.name.split(".")[0] for a in n.names)
-    elif isinstance(n, ast.ImportFrom):
-        mods.add("." * n.level + (n.module or "").split(".")[0])
-    elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
-        llamadas.add(n.func.id)
-print("AJENOS=" + ",".join(sorted(m for m in mods if m not in sys.stdlib_module_names)))
-print("MODULOS=" + ",".join(sorted(mods)))
-print("LLAMADAS=" + ",".join(sorted(llamadas)))
-`;
-
+// El detector (imports, nombres sueltos y accesos por atributo) vive en tests/fixtures/integrados.mjs; el lote e-seguimiento lo
+// prueba además contra fragmentos sintéticos en tests/e-seguimiento.test.mjs.
 test("solo biblioteca estándar: ningún import de terceros ni relativo, y nada de red, procesos, eval o pickle", SIN_PYTHON, () => {
   assert.ok(existsSync(GENERADOR), "falta tools/integrados.py (el generador todavía no existe)");
-  const r = spawnSync(PYTHON, ["-I", "-c", ANALISIS, GENERADOR], { encoding: "utf8", timeout: 60_000, windowsHide: true });
-  assert.equal(r.status, 0, r.stderr);
-  const campo = (k) => (new RegExp(`^${k}=(.*)$`, "m").exec(r.stdout)?.[1] || "").trim().split(",").filter(Boolean);
-  assert.deepEqual(campo("AJENOS"), [], "imports fuera de la biblioteca estándar");
+  const r = analizar(readFileSync(GENERADOR, "utf8"));
+  assert.deepEqual(r.ajenos, [], "imports fuera de la biblioteca estándar");
   const prohibidos = ["subprocess", "socket", "urllib", "http", "ssl", "ftplib", "pickle", "marshal", "shelve", "ctypes"];
-  assert.deepEqual(campo("MODULOS").filter((m) => prohibidos.includes(m)), [], "módulos que el generador no necesita");
-  assert.deepEqual(campo("LLAMADAS").filter((f) => ["eval", "exec", "__import__"].includes(f)), []);
+  assert.deepEqual(r.modulos.filter((m) => prohibidos.includes(m)), [], "módulos que el generador no necesita");
+  assert.deepEqual(r.prohibido, [], "procesos, ejecución dinámica o acceso indirecto a módulos (por nombre, por atributo o por import)");
 });
 
 test("solo biblioteca estándar: corre aislado (-I -S), sin site-packages", SIN_PYTHON, () => {
