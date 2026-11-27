@@ -11,7 +11,6 @@
 mod comun;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use comun::*;
 use nucleo::{pantalla_sin_sesion, Destino, Limites, Proxy, CSP_PANTALLA};
@@ -135,17 +134,48 @@ fn c10_la_palabra_sandbox_fuera_del_nombre_de_una_directiva_no_cuenta() {
 }
 
 #[test]
-fn c10_una_csp_del_servidor_que_no_se_puede_leer_cuenta_como_sandbox() {
-    // Un valor con bytes que no son ASCII no se puede entregar al webview tal cual. No se sabe
-    // si traía `sandbox`: se trata como si la trajera.
+fn c15_una_csp_del_servidor_que_no_se_puede_leer_es_502() {
+    // Hilo 5 de CodeRabbit en el PR 72. Un valor con bytes que no son ASCII no se puede
+    // entregar al webview tal cual, y no se sabe si traía `sandbox`. `CSP_AISLADO` no sustituye
+    // a `sandbox` (el documento correría en el origen de la app), así que no se entrega: 502
+    // local, con solo la CSP de marcos. Sustituye a la decisión 19 anterior.
     for ilegible in ["sandbox allow-scripts; report-uri /informe-é", "default-src 'self'; report-uri /informe-é"] {
-        let llegan = csps_de(html(&[ilegible]));
-        assert!(llegan.ends_with(&[MARCOS.to_string(), AISLADO.to_string()]), "{ilegible:?}: {llegan:?}");
-
-        let llegan = csps_de(html(&[DEL_PORTAL, ilegible]));
-        assert_eq!(llegan.first().map(String::as_str), Some(DEL_PORTAL), "la legible se conserva: {llegan:?}");
-        assert!(llegan.ends_with(&[MARCOS.to_string(), AISLADO.to_string()]), "{ilegible:?}: {llegan:?}");
+        for servidor in [html(&[ilegible]), html(&[DEL_PORTAL, ilegible]), html(&[ilegible, DE_ARCH])] {
+            let servidor = Servidor::fijo(servidor);
+            let respuesta = pedir(&proxy(&servidor), navegar("/uuv/arch/a.html"));
+            es_error_local(&respuesta, 502);
+            assert_eq!(csps(&respuesta), [MARCOS], "{ilegible:?}");
+            assert!(!texto(&respuesta).contains("hola"), "el documento no llega al webview");
+        }
     }
+    // También en HEAD: la respuesta se decide igual, sin cuerpo.
+    let servidor = Servidor::fijo(html(&["sandbox; report-uri /é"]));
+    let cabeza = pedir(&proxy(&servidor), peticion("HEAD", "/uuv/arch/a.html").body(Vec::new()).unwrap());
+    assert_eq!(cabeza.status().as_u16(), 502);
+    assert_eq!(csps(&cabeza), [MARCOS]);
+}
+
+#[test]
+fn c15_si_el_servidor_nombra_su_csp_en_connection_es_502() {
+    // Hilo 5 de CodeRabbit en el PR 72. El proxy quita lo que `Connection` nombra (cabeceras de
+    // salto). Si nombra la CSP, la política del servidor (con o sin `sandbox`) no llegaría
+    // intacta: 502 local en lugar de entregar el documento sin ella.
+    for (csp, connection) in [
+        (DE_ARCH, "content-security-policy"),
+        (DE_ARCH, "Content-Security-Policy"),
+        (DE_ARCH, "close, Content-Security-Policy"),
+        (DEL_PORTAL, "Content-Security-Policy"),
+    ] {
+        let servidor = Servidor::fijo(html(&[csp]).con("Connection", connection));
+        let respuesta = pedir(&proxy(&servidor), navegar("/uuv/arch/a.html"));
+        es_error_local(&respuesta, 502);
+        assert_eq!(csps(&respuesta), [MARCOS], "{csp:?} con Connection: {connection}");
+    }
+    // Sin CSP del servidor no hay nada que perder: nombrarla en `Connection` no cambia nada.
+    let servidor = Servidor::fijo(html(&[]).con("Connection", "Content-Security-Policy"));
+    let respuesta = pedir(&proxy(&servidor), navegar("/uuv/"));
+    assert_eq!(respuesta.status().as_u16(), 200);
+    assert_eq!(csps(&respuesta), [MARCOS]);
 }
 
 #[test]
@@ -236,14 +266,20 @@ fn c10_los_errores_locales_llevan_la_csp_de_marcos_y_ninguna_mas() {
     let fuera = Servidor::fijo(Respuesta::nueva(302, b"").con("Location", "https://ejemplo.test/"));
     local(pedir(&comun::proxy(&fuera), navegar("/uuv")), 502);
 
-    // 503: sin hueco libre y sin sitio en la cola.
-    let lento = Servidor::fijo(Respuesta::nueva(200, b"ok").tras(Duration::from_millis(900)));
+    // 503: sin hueco libre y sin sitio en la cola. A se queda retenida en el servidor hasta
+    // que el test la suelta, así que el hueco está ocupado cuando pide B (hilo 8 de CodeRabbit).
+    let compuerta = Compuerta::nueva();
+    let lento = servidor_retenido(&compuerta, Respuesta::nueva(200, b"ok"));
     let limites = Limites { simultaneas: 1, en_espera: 0, ..limites() };
     let ocupado = Arc::new(Proxy::nuevo(lento.destino(), con_token(), limites));
     std::thread::scope(|ambito| {
+        // Dentro del ámbito: si el test falla, abre antes de esperar a los hilos.
+        let _abrir = compuerta.abrir_al_salir();
         let a = ambito.spawn(|| pedir(&ocupado, get("/api/x?n=a")).status().as_u16());
-        std::thread::sleep(Duration::from_millis(300));
+        compuerta.esperar_llegadas(1);
         local(pedir(&ocupado, get("/api/x?n=b")), 503);
+        assert_eq!(compuerta.llegadas(), ["/api/x?n=a"], "A seguía ocupando el hueco");
+        compuerta.abrir();
         assert_eq!(a.join().unwrap(), 200);
     });
 }
@@ -280,10 +316,12 @@ fn c10_el_servidor_no_puede_suprimir_ni_sustituir_la_csp_anadida() {
         assert_eq!(csps_de(html(&[laxa])), [laxa, MARCOS], "{laxa:?}");
     }
 
-    // `Connection` puede nombrar cabeceras que el proxy quita por ser de salto. La añadida se
-    // pone después de ese filtro, y `sandbox` se busca en lo que el servidor mandó, antes de él.
-    assert_eq!(csps_de(html(&[DEL_PORTAL]).con("Connection", "Content-Security-Policy")), [MARCOS]);
-    assert_eq!(csps_de(html(&[DE_ARCH]).con("Connection", "content-security-policy")), [MARCOS, AISLADO]);
+    // `Connection` puede nombrar cabeceras que el proxy quita por ser de salto. Si nombra la
+    // CSP, la política del servidor no puede llegar intacta: eso es el criterio 15 (502 local),
+    // en `c15_si_el_servidor_nombra_su_csp_en_connection_es_502`. Nombrar otra cabecera no
+    // cambia las CSP.
+    assert_eq!(csps_de(html(&[DEL_PORTAL]).con("Connection", "X-Algo")), [DEL_PORTAL, MARCOS]);
+    assert_eq!(csps_de(html(&[DE_ARCH]).con("Connection", "x-algo")), [DE_ARCH, MARCOS, AISLADO]);
 
     // El nombre de la cabecera no distingue mayúsculas.
     let gritona = Respuesta::nueva(200, b"<p>x</p>")
