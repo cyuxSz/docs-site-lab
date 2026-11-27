@@ -48,6 +48,7 @@ import {
   conConsola,
   texto,
 } from "./fixtures/subida-2.mjs";
+import { csrfToken } from "../lib/dispositivos-paginas.mjs";
 
 const realFetch = globalThis.fetch;
 beforeEach(() => {
@@ -342,9 +343,17 @@ test("protecciones: login reciente — con la sesión de hace más de 10 minutos
   // La sesión sigue valiendo para el resto del portal.
   assert.equal((await pedir(PAGINA, { env, cookie })).status, 200);
 
-  // Una cookie sin `iat` (anterior a 1B-2) tampoco crea, se envíe lo que se envíe.
-  const sinIat = await enviarCrear(env, { cookie: sesionSinIat(EDITOR), campos });
-  assert.ok([401, 403].includes(sinIat.status), `cookie sin iat: ${sinIat.status}`);
+  // Una cookie sin `iat` (anterior a 1B-2) tampoco crea. El anti-CSRF va antes que el login reciente: con el csrf
+  // pintado para otra cookie responde el 403 del formulario caducado; con un csrf válido para esa misma cookie llega
+  // al login reciente y responde el mismo 401 que una sesión antigua (como /auth/app/autorizar en 1B-2).
+  const cookieSinIat = sesionSinIat(EDITOR);
+  await esRechazo(await enviarCrear(env, { cookie: cookieSinIat, campos }), 403, "cookie sin iat con el csrf de otra cookie");
+  const valorSinIat = decodeURIComponent(cookieSinIat.slice("docs_session=".length));
+  const camposSinIat = { ...campos, csrf: await csrfToken(SECRET, valorSinIat, campos.id) };
+  const sinIat = await enviarCrear(env, { cookie: cookieSinIat, campos: camposSinIat });
+  const htmlSinIat = await esRechazo(sinIat.clone(), 401, "cookie sin iat con su propio csrf");
+  assert.ok(htmlSinIat.includes(`href="${LOGIN_DE_NUEVO}"`), "cookie sin iat: el mismo enlace al login");
+  assert.equal(sinIat.headers.get("location"), null);
   assert.equal(filasSubida(env).length, 0);
 
   // En el borde exacto de la ventana todavía crea.
