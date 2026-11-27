@@ -9,7 +9,7 @@ worker/index.mjs             Worker de Cloudflare: login, cabeceras, redireccion
 wrangler.jsonc               Worker `docs`: assets de dist/, D1 `DB`, R2 `ARCHIVOS`
 lib/                         login-core.mjs (login con GitHub), almacen-d1.mjs y almacen-r2.mjs (D1 y R2),
                              y el núcleo de las APIs de comentarios, hardware y archivos
-migrations/                  esquema de D1 (0001_almacen.sql)
+migrations/                  esquema de D1 (0001_almacen.sql, 0002_tokens.sql)
 plantillas/                  plantillas de Electrónica y Mecánica
 tools/fetch.mjs              paso 1: clona solo openwiki/ y docs/arch/ de cada repo y deja todo en .content/
 src/                         paso 2: sitio Astro estático (páginas ya renderizadas, sin fetch en el navegador)
@@ -39,7 +39,7 @@ Todo pasa por el login del Worker (`lib/login-core.mjs`); los contenidos nunca s
 2. Guarda `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SESSION_SECRET`, `ALLOWED_ORG` y `ALLOWED_USERS` como **Secrets** del Worker (`npx wrangler secret put <NOMBRE> --name docs`), no como Variables: `wrangler deploy` borra las Variables que no están en `wrangler.jsonc`.
 3. **Abrir el acceso a la org:** `npx wrangler secret put ALLOWED_ORG --name docs` (valor: la org, p. ej. `vanttec`). Si la org restringe apps de terceros, solo se ven los miembros con membresía pública; el aviso de «Sin acceso» explica cómo cambiarla, o la org aprueba la OAuth App.
 4. **Cerrar el acceso a la org:** `npx wrangler secret delete ALLOWED_ORG --name docs`. Quedan solo los logins de `ALLOWED_USERS`.
-   Las sesiones ya iniciadas siguen valiendo hasta que caduca su cookie firmada (7 días), porque `isAllowed` solo se comprueba en el login. Para cortarlas ya, rota `SESSION_SECRET` con un valor aleatorio nuevo: `npx wrangler secret put SESSION_SECRET --name docs`. Esto cierra **todas** las sesiones; los de `ALLOWED_USERS` vuelven a entrar con login.
+   Las sesiones ya iniciadas siguen valiendo hasta que caduca su cookie firmada (7 días), porque `isAllowed` solo se comprueba en el login. Para cortarlas ya, rota `SESSION_SECRET` con un valor aleatorio nuevo: `npx wrangler secret put SESSION_SECRET --name docs`. Esto cierra todas las sesiones de navegador (las cookies); los de `ALLOWED_USERS` vuelven a entrar con login. No afecta a los tokens de dispositivo: ver «Tokens de dispositivo».
 
 `ALLOWED_USERS` son logins de GitHub separados por coma (sin distinguir mayúsculas). Hoy solo está `ALLOWED_USERS`; `ALLOWED_ORG` se añade cuando la org apruebe la OAuth App.
 
@@ -48,7 +48,7 @@ El Worker `docs` (`worker/index.mjs`, `wrangler.jsonc`) sirve los assets de `dis
 
 | Binding | Qué es |
 |---|---|
-| `DB` | D1 `docs-site`: comentarios, páginas de hardware y metadatos de archivos (`migrations/0001_almacen.sql`, adaptador `lib/almacen-d1.mjs`) |
+| `DB` | D1 `docs-site`: comentarios, páginas de hardware y metadatos de archivos (`migrations/0001_almacen.sql`, adaptador `lib/almacen-d1.mjs`) y tokens de dispositivo (`migrations/0002_tokens.sql`, `lib/dispositivos-core.mjs`) |
 | `ARCHIVOS` | R2 `docs-hardware`, privado: archivos de hardware (`lib/almacen-r2.mjs`) |
 | `ASSETS` | Static assets de `dist/` |
 
@@ -70,6 +70,13 @@ El Worker `docs` (`worker/index.mjs`, `wrangler.jsonc`) sirve los assets de `dis
 | `DOCS_GITHUB_TOKEN` | Token *fine-grained* de solo lectura (Contents: Read) sobre los repos privados de `projects.json`; también lo usa `build.yml` en push a `main` |
 
 La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `database_id` está en `d1_databases` de `wrangler.jsonc` (no es un secreto). El workflow aplica las migraciones (`d1 migrations apply docs-site --remote`) antes de cada deploy. Para probar en local, `npm run cf:dev` con `.dev.vars` (ver «CI y probar en local»). En local, antes de `wrangler dev`: `npx wrangler d1 migrations apply docs-site --local`.
+
+**Tokens de dispositivo** (para clientes que no son un navegador, como la app de escritorio). La migración `0002_tokens.sql` crea las tablas `tokens` y `codigos_app`; solo guardan el SHA-256 del token y del código.
+
+- `POST /auth/app/canje` con JSON `{ code, verifier }` es la única ruta pública: cambia un código de un solo uso (60 s, ligado a un challenge PKCE S256) por `{ token, expira, login }`. Límite de 10 peticiones por minuto por IP (`CF-Connecting-IP`). Todavía no hay ruta que emita códigos; llega con el consentimiento en el navegador.
+- El token (`vtd_…`) va en `Authorization: Bearer <token>`, dura 30 días sin renovación y se consulta en D1 en cada petición, así que borrar su fila lo revoca al momento. Con Bearer los errores son JSON (401, nunca una redirección al login), las escrituras no exigen `Origin` y no hay CORS.
+- Una petición lleva una sola credencial: con la cookie `docs_session` y un Bearer a la vez responde 400.
+- Quitar un login de `ALLOWED_USERS`/`ALLOWED_ORG` o rotar `SESSION_SECRET` no invalida sus tokens, porque el permiso solo se evalúa en el login con GitHub. Para cortar su acceso hay que borrar sus filas: `npx wrangler d1 execute docs-site --remote --command "DELETE FROM tokens WHERE lower(login) = '<login>'"` (el login va en minúsculas; la columna guarda el que devolvió GitHub, con sus mayúsculas).
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
 
