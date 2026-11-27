@@ -84,6 +84,7 @@ interface ElementoFoco {
   removeAttribute(n: string): void;
   addEventListener(t: string, f: () => void, o?: { once: boolean }): void;
   scrollIntoView?: (o: { block: "start" }) => void;
+  querySelector(s: string): { textContent: string | null } | null;
   focus(o?: { preventScroll: boolean }): void;
 }
 export function enfocarComentario(doc: { getElementById(id: string): ElementoFoco | null }, id: string | null | undefined): boolean {
@@ -91,7 +92,10 @@ export function enfocarComentario(doc: { getElementById(id: string): ElementoFoc
   const el = doc.getElementById(`comentario-${id}`);
   if (!el) return false;
   el.setAttribute("tabindex", "-1");
-  el.addEventListener("blur", () => el.removeAttribute("tabindex"), { once: true });
+  const autor = el.querySelector(":scope > .comentario-cab .comentario-autor")?.textContent?.trim();
+  const fecha = el.querySelector(":scope > .comentario-cab time")?.textContent?.trim();
+  el.setAttribute("aria-label", autor ? `Comentario de ${autor}${fecha ? `, ${fecha}` : ""}` : "Comentario borrado");
+  el.addEventListener("blur", () => { el.removeAttribute("tabindex"); el.removeAttribute("aria-label"); }, { once: true });
   el.scrollIntoView?.({ block: "start" });
   el.focus({ preventScroll: true });
   return true;
