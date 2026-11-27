@@ -1,6 +1,8 @@
 //! Servidor HTTP falso y ayudas compartidas por los tests del proxy.
 #![allow(dead_code)]
 
+pub mod login;
+
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};

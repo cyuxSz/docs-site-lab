@@ -3,12 +3,41 @@
 Una ventana Tauri 2 que muestra el portal. El webview no habla con el servidor: todo lo que
 pide pasa por un proxy en Rust que añade el token de dispositivo. El token no sale de Rust.
 
-- `nucleo/`: el proxy, la pantalla «sin sesión» y la regla de navegación. No depende de la
-  ventana, así que sus tests corren en cualquier sistema.
+- `nucleo/`: el proxy, el inicio de sesión, la pantalla de login y la regla de navegación. No
+  depende de la ventana, así que sus tests corren en cualquier sistema.
 - `src-tauri/`: la ventana. Registra el protocolo `portal` y entrega cada petición al proxy.
-  No tiene comandos, permisos ni plugins.
+  No tiene comandos ni permisos. Su único plugin es `single-instance`, que no añade comandos.
 
-Esta versión todavía no inicia sesión: sin token, la app muestra «No has iniciado sesión».
+## Iniciar sesión
+
+Sin sesión, la app muestra un botón: «Iniciar sesión».
+
+1. Pulsa el botón. Se abre el navegador del sistema en la página de permiso del portal.
+2. Entra con GitHub si hace falta y pulsa «Autorizar».
+3. El navegador abre un enlace `vanttec-docs://`. Windows se lo entrega a la app.
+4. La app canjea el código del enlace por un token y muestra el portal. No hay que reiniciar.
+
+Cosas que conviene saber:
+
+- La app tiene que estar abierta y hay que empezar desde el botón. Un enlace
+  `vanttec-docs://` que llega sin haber pulsado el botón se ignora.
+- Un intento dura 10 minutos. Después hay que pulsar el botón otra vez.
+- Entre dos aperturas del navegador pasan al menos 5 segundos.
+- El token vive en memoria. Al cerrar la app, la sesión se pierde.
+- Solo hay una instancia de la app. Abrirla otra vez trae al frente la ventana que ya existe.
+- El código, el `verifier` y el token no llegan a la ventana ni a la consola.
+
+### El esquema `vanttec-docs://`
+
+Windows necesita saber qué programa abre los enlaces `vanttec-docs://`. Hoy el esquema se
+registra solo en el binario de depuración. Al arrancar, ese binario escribe en
+`HKEY_CURRENT_USER\Software\Classes\vanttec-docs` la ruta de su propio ejecutable. No toca
+claves de toda la máquina y no necesita permisos de administrador.
+
+El binario release no registra nada: lo hará el instalador. Hasta entonces, un binario release
+abre el navegador, pero el enlace no vuelve a la app y el login no termina.
+
+Para quitar el registro, borra esa clave con `regedit`.
 
 El editor de diagrams.net no funciona dentro de la app: el proxy añade a toda respuesta la
 cabecera `Content-Security-Policy: frame-src 'self'`, que impide los marcos de otro origen, así

@@ -1,18 +1,44 @@
 // Cáscara de la app VantTec Docs: una ventana cuyo origen lo sirve el proxy de `nucleo`.
 //
-// El webview no tiene ningún comando, permiso ni plugin: el origen del protocolo propio cuenta
-// como local para el IPC de Tauri, así que cualquier cosa que se le diera a la ventana la
-// recibiría también el contenido del portal. El token vive solo en el proxy.
+// El webview no tiene ningún comando ni permiso: el origen del protocolo propio cuenta como
+// local para el IPC de Tauri, así que cualquier cosa que se le diera a la ventana la recibiría
+// también el contenido del portal. El único plugin, el de instancia única, no registra comandos.
+// El token, el código y el `verifier` viven solo en `nucleo`: aquí no se leen ni se escriben.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Instant;
 
 use nucleo::{
-    config_de_arranque, decidir_ventana_nueva, navegacion_permitida, Limites, Proxy, TokenFijo,
-    VentanaNueva, ESQUEMA, VAR_DESTINO_DEV, VAR_TOKEN_DEV,
+    config_de_arranque, decidir_ventana_nueva, navegacion_permitida, Limites, Login, Navegador,
+    Proxy, Recibido, VentanaNueva, ESQUEMA, VAR_DESTINO_DEV, VAR_NOMBRE_EQUIPO, VAR_TOKEN_DEV,
 };
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+/// Abre la URL en el navegador del sistema, tal como llega. La construye y la pasa el núcleo.
+struct NavegadorDelSistema;
+
+impl Navegador for NavegadorDelSistema {
+    fn abrir(&self, url: &str) -> bool { open::that_detached(url).is_ok() }
+}
+
+/// Apunta el esquema del enlace de login a este ejecutable, para el usuario actual. Solo en el
+/// binario de depuración: en release lo hará el instalador.
+#[cfg(all(windows, debug_assertions))]
+fn registrar_esquema() -> Option<()> {
+    use nucleo::ESQUEMA_ENLACE;
+    use windows_registry::CURRENT_USER;
+    let exe = std::env::current_exe().ok()?;
+    let exe = exe.to_str()?;
+    let base = format!("Software\\Classes\\{ESQUEMA_ENLACE}");
+    let clave = CURRENT_USER.create(&base).ok()?;
+    clave.set_string("", "URL:VantTec Docs").ok()?;
+    clave.set_string("URL Protocol", "").ok()?;
+    let orden = CURRENT_USER.create(format!("{base}\\shell\\open\\command")).ok()?;
+    orden.set_string("", format!("\"{exe}\" \"%1\"")).ok()?;
+    Some(())
+}
 
 fn main() -> ExitCode {
     // Las variables de desarrollo solo se leen en builds de depuración, y aun así
@@ -34,18 +60,44 @@ fn main() -> ExitCode {
         }
     };
 
-    let proxy = Arc::new(Proxy::nuevo(
-        arranque.destino,
-        Arc::new(TokenFijo(arranque.token)),
+    // El nombre del equipo es el nombre del dispositivo. Lo limpia el núcleo.
+    let equipo = std::env::var(VAR_NOMBRE_EQUIPO).ok();
+    let login = Arc::new(Login::nuevo(arranque.destino, equipo.as_deref(), arranque.token));
+    let proxy = Arc::new(Proxy::con_login(
+        Arc::clone(&login),
+        Arc::new(NavegadorDelSistema),
         Limites::default(),
     ));
 
     let resultado = tauri::Builder::default()
+        // Va el primero: una segunda instancia entrega sus argumentos a la primera y termina
+        // aquí, sin abrir ventana ni llegar a `setup`.
+        .plugin(tauri_plugin_single_instance::init(move |app, args, _cwd| {
+            // Este cierre corre en el hilo de la ventana y el canje bloquea: va en otro hilo.
+            let (login, app) = (Arc::clone(&login), app.clone());
+            std::thread::spawn(move || {
+                // Solo cuenta una segunda instancia con un único argumento: el enlace. El
+                // núcleo decide si lo es; aquí no se mira ni se escribe en ningún sitio.
+                let cambio = args.len() == 2
+                    && login.recibir(&args[1], Instant::now()) != Recibido::Ignorado;
+                if let Some(principal) = app.get_webview_window("main") {
+                    if cambio {
+                        let _ = principal.reload();
+                    }
+                    let _ = principal.unminimize();
+                    let _ = principal.set_focus();
+                }
+            });
+        }))
         .register_asynchronous_uri_scheme_protocol(ESQUEMA, move |_contexto, peticion, respuesta| {
             // El núcleo admite la petición (con tope) y la atiende en un hilo propio.
             proxy.atender_en_hilo(peticion, move |r| respuesta.respond(r));
         })
         .setup(|app| {
+            // Un fallo al registrar el esquema no impide arrancar.
+            #[cfg(all(windows, debug_assertions))]
+            let _ = registrar_esquema();
+
             let inicio = format!("{ESQUEMA}://localhost/").parse()?;
             let manejador = app.handle().clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::CustomProtocol(inicio))

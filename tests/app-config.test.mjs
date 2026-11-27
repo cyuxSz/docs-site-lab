@@ -3,6 +3,9 @@
 // configuración: superficie de IPC nula (criterio 7), la parte fija de la ventana (6), el
 // arranque sin variables en release (1), nada de disco ni consola en el núcleo (5), los restos
 // del prototipo y el workflow de CI (8).
+// El lote app-login (tests/app-login.test.mjs) relajó cuatro comprobaciones de este archivo: ahora se admite el
+// plugin single-instance, una recarga de la ventana main, abrir el navegador con open::that_detached y leer el
+// nombre del equipo. Cada una está marcada con «app-login».
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -103,7 +106,8 @@ test("c7 · Cargo.toml de la app: sin devtools, sin plugins y con versiones fija
   assert.match(deps.nucleo ?? "", /path\s*=\s*"\.\.\/nucleo"/, "usa el crate nucleo por ruta");
   for (const tabla of ["dependencies", "build-dependencies"]) {
     for (const [nombre, crudo] of Object.entries(cargo[tabla] ?? {})) {
-      assert.doesNotMatch(nombre, /^tauri-plugin-/, `sin plugins de Tauri en este lote (${nombre})`);
+      // app-login: el único plugin admitido es single-instance (no añade comandos de IPC).
+      if (/^tauri-plugin-/.test(nombre)) assert.equal(nombre, "tauri-plugin-single-instance", `plugin de Tauri no previsto: ${nombre}`);
       assert.notEqual(nombre, "sha2", "sha2 era del prototipo");
       if (/path\s*=/.test(crudo)) continue;
       assert.match(version(crudo) ?? "", /^=\d+\.\d+\.\d+$/, `${tabla}.${nombre} debe fijar la versión exacta (=x.y.z)`);
@@ -119,7 +123,8 @@ test("c7 · main.rs no registra comandos ni plugins", () => {
     [/invoke_handler/, "sin invoke_handler"],
     [/generate_handler/, "sin generate_handler"],
     [/tauri::command|#\[command\]/, "sin comandos"],
-    [/\.plugin\s*\(/, "sin plugins"],
+    // app-login: solo se registra single-instance.
+    [/\.plugin\s*\(\s*(?!tauri_plugin_single_instance::)/, "sin más plugins que single-instance"],
     [/\.manage\s*\(/, "sin estado gestionado expuesto a comandos"],
     [/add_capability|\.permission\s*\(/, "sin capacidades añadidas en tiempo de ejecución"],
     [/\.eval\s*\(|initialization_script/, "sin JavaScript inyectado en el portal"],
@@ -175,9 +180,14 @@ test("c6 · main.rs decide las ventanas nuevas con nucleo::decidir_ventana_nueva
   assert.doesNotMatch(cierre, /navegacion_permitida/, "la regla vive en el núcleo, no se repite en el cierre");
   assert.equal((todo.match(/decidir_ventana_nueva\s*\(/g) ?? []).length, 1, "una sola llamada a decidir_ventana_nueva");
   assert.equal((todo.match(/\.navigate\s*\(/g) ?? []).length, 1, "la cáscara no navega en ningún otro sitio");
-  assert.equal((todo.match(/get_webview_window\s*\(/g) ?? []).length, 1, "la cáscara no busca ventanas en ningún otro sitio");
-  assert.doesNotMatch(todo, /\.load_url\s*\(|\.reload\s*\(|with_webview\s*\(|\.eval\w*\s*\(/, "sin otras formas de mover o tocar el webview");
-  assert.doesNotMatch(todo, /tauri_plugin_|\bopen::that|Command::new|ShellExecute/, "abrir en el navegador del sistema es del lote A3");
+  // app-login: tras un enlace de login la cáscara recarga la ventana main (una búsqueda y una recarga más).
+  const busquedas = todo.match(/get_webview_window\s*\([^)]*\)/g) ?? [];
+  assert.ok(busquedas.length >= 1 && busquedas.length <= 2, "la cáscara solo busca la ventana en on_new_window y al recibir un enlace");
+  for (const b of busquedas) assert.match(b, /^get_webview_window\s*\(\s*"main"\s*\)$/, "la única ventana que se busca es main");
+  assert.ok((todo.match(/\.reload\s*\(/g) ?? []).length <= 1, "como mucho una recarga: la del login");
+  assert.doesNotMatch(todo, /\.load_url\s*\(|with_webview\s*\(|\.eval\w*\s*\(/, "sin otras formas de mover o tocar el webview");
+  // app-login: el navegador del sistema solo se abre con open::that_detached; los enlaces externos siguen siendo de A3.
+  assert.doesNotMatch(todo, /tauri_plugin_(?!single_instance\b)|\bopen::(?!that_detached\b)\w+|Command::new|ShellExecute/, "sin otros plugins ni otras formas de lanzar programas");
   assert.match(rs, /NewWindowResponse::Deny\b/, "la respuesta a WebView2 sigue siendo Deny");
 });
 
@@ -209,7 +219,8 @@ test("c1 · main.rs decide el arranque con nucleo::config_de_arranque(cfg!(debug
   assert.doesNotMatch(todo, /Destino::(nuevo|produccion)|TokenFijo\s*\(\s*Some|Token::nuevo/, "el destino y el token salen solo de config_de_arranque");
   const variables = [...todo.matchAll(/\benv::var(?:_os)?\s*\(\s*([^)]*)\)/g)].map((m) => m[1].trim());
   for (const v of variables) {
-    assert.match(v, /^(nucleo::)?VAR_(DESTINO|TOKEN)_DEV$/, `variable de entorno no prevista: ${v}`);
+    // app-login: también el nombre del equipo, para el nombre del dispositivo.
+    assert.match(v, /^(nucleo::)?VAR_((DESTINO|TOKEN)_DEV|NOMBRE_EQUIPO)$/, `variable de entorno no prevista: ${v}`);
   }
   assert.doesNotMatch(todo, /env::vars|option_env!|\benv!\s*\(/, "sin más lecturas del entorno");
   assert.doesNotMatch(todo, /std::env::args|env::args/, "sin argumentos de línea de comandos");
@@ -342,7 +353,16 @@ test("c12 · main.rs entrega cada petición con Proxy::atender_en_hilo y no crea
   const manejador = rs.slice(inicio, fin);
   assert.match(manejador, /\.atender_en_hilo\s*\(/, "el manejador entrega la petición con Proxy::atender_en_hilo");
   assert.equal((todo.match(/\.atender_en_hilo\s*\(/g) ?? []).length, 1, "una sola llamada a atender_en_hilo");
-  assert.doesNotMatch(todo, /\bthread::(spawn|Builder)\b|\bspawn\s*\(/, "la cáscara no crea hilos: lo hace el núcleo tras admitir la petición");
+  const hilo = /\bthread::(spawn|Builder)\b|\bspawn\s*\(/;
+  assert.doesNotMatch(manejador, hilo, "el manejador del protocolo no crea hilos: lo hace el núcleo tras admitir la petición");
+  // app-login: el cierre de single-instance no atiende peticiones del protocolo; corre en el
+  // hilo de la ventana y el canje bloquea, así que lanza un único hilo (spec de app-login).
+  // Fuera de ese cierre, la cáscara sigue sin crear hilos.
+  const ini = rs.search(/tauri_plugin_single_instance::init\s*\(/);
+  const instancia = ini >= 0 && ini < inicio ? rs.slice(ini, inicio) : "";
+  assert.ok((instancia.match(/\bthread::(spawn|Builder)\b|\bspawn\s*\(/g) ?? []).length <= 1, "como mucho un hilo en el cierre de single-instance");
+  assert.doesNotMatch(instancia, /\.atender(_en_hilo)?\s*\(/, "el cierre de single-instance no atiende peticiones del protocolo");
+  assert.doesNotMatch(todo.replace(instancia, ""), hilo, "la cáscara no crea hilos fuera del cierre de single-instance");
   assert.doesNotMatch(todo, /\.atender\s*\(/, "la cáscara no llama a Proxy::atender directamente");
 });
 
