@@ -95,7 +95,8 @@ test("c10 · ningún crate de llavero ni plugin nuevo, y los locks no ganan paqu
   // Medido en el lote: windows-sys 0.61.2 ya estaba en el lock, así que no se añade ni se quita nada.
   assert.equal(app.length, 498, "el lock de la app sigue con 498 paquetes");
   const deps = toml(leer(CARGO_NUCLEO)).dependencies ?? {};
-  assert.deepEqual(Object.keys(deps).sort(), ["base64", "http", "ring", "serde_json", "ureq"], "el núcleo no añade dependencias");
+  // flate2 viene de app-cascara (ureq va sin gzip y el núcleo descomprime); este lote no lo añade.
+  assert.deepEqual(Object.keys(deps).sort(), ["base64", "flate2", "http", "ring", "serde_json", "ureq"], "el núcleo no añade dependencias");
 });
 
 // ---------- Criterio 9: el llavero real ----------
