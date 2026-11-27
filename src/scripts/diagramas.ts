@@ -230,6 +230,7 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
       // Los avisos (texto en español, vía textContent) van en la línea de estado del diálogo; no bloquean el editor.
       const textoAvisos = avisos.length ? ` ${avisos.join(" ")}` : "";
       anunciar(`Cargando ${NOMBRES[o.editor]}…${textoAvisos}`);
+      let configurado = false;
       const marco = document.createElement("iframe");
       marco.title = "Editor diagrams.net";
       marco.className = "hw-diag-marco";
