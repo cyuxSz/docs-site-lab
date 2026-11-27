@@ -41,7 +41,7 @@ Todo pasa por el login del Worker (`lib/login-core.mjs`); los contenidos nunca s
 4. **Cerrar el acceso a la org:** `npx wrangler secret delete ALLOWED_ORG --name docs`. Quedan solo los logins de `ALLOWED_USERS`.
    Las sesiones ya iniciadas siguen valiendo hasta que caduca su cookie firmada (7 días), porque `isAllowed` solo se comprueba en el login. Para cortarlas ya, rota `SESSION_SECRET` con un valor aleatorio nuevo: `npx wrangler secret put SESSION_SECRET --name docs`. Esto cierra todas las sesiones de navegador (las cookies); los de `ALLOWED_USERS` vuelven a entrar con login. No afecta a los tokens de dispositivo: ver «Tokens de dispositivo».
 
-`ALLOWED_USERS` son logins de GitHub separados por coma (sin distinguir mayúsculas). Hoy solo está `ALLOWED_USERS`; `ALLOWED_ORG` se añade cuando la org apruebe la OAuth App.
+`ALLOWED_USERS` son logins de GitHub separados por coma (sin distinguir mayúsculas). La org `vanttec` aprobó la OAuth App el 26 de noviembre de 2026, así que ya se puede configurar `ALLOWED_ORG`. Pon en `ALLOWED_ORG` solo una org que tenga la OAuth App aprobada: si la org la restringe, GitHub puede contestar 404 a un miembro con membresía privada, y el callback lo tomaría como «no es miembro» y borraría sus tokens.
 
 ## Cloudflare: Worker, secrets y bindings
 El Worker `docs` (`worker/index.mjs`, `wrangler.jsonc`) sirve los assets de `dist/` con `run_worker_first`: primero el login, luego los archivos o `/api/*`.
@@ -76,7 +76,19 @@ La base D1 ya existe (se creó con `npx wrangler d1 create docs-site`) y su `dat
 - `POST /auth/app/canje` con JSON `{ code, verifier }` es la única ruta pública: cambia un código de un solo uso (60 s, ligado a un challenge PKCE S256) por `{ token, expira, login }`. Límite de 10 peticiones por minuto por IP (`CF-Connecting-IP`). Todavía no hay ruta que emita códigos; llega con el consentimiento en el navegador.
 - El token (`vtd_…`) va en `Authorization: Bearer <token>`, dura 30 días sin renovación y se consulta en D1 en cada petición, así que borrar su fila lo revoca al momento. Con Bearer los errores son JSON (401, nunca una redirección al login), las escrituras no exigen `Origin` y no hay CORS.
 - Una petición lleva una sola credencial: con la cookie `docs_session` y un Bearer a la vez responde 400.
-- Quitar un login de `ALLOWED_USERS`/`ALLOWED_ORG` o rotar `SESSION_SECRET` no invalida sus tokens, porque el permiso solo se evalúa en el login con GitHub. Para cortar su acceso hay que borrar sus filas: `npx wrangler d1 execute docs-site --remote --command "DELETE FROM tokens WHERE lower(login) = '<login>'"` (el login va en minúsculas; la columna guarda el que devolvió GitHub, con sus mayúsculas).
+- `GET /auth/app/dispositivos` (solo Bearer) devuelve `{ login, dispositivos: [{ id, nombre, plataforma, creado, ultimoUso, expira, actual }] }` con los dispositivos del login del token. `POST /auth/app/revocar` (solo Bearer) borra el token de la propia petición y responde `{ "ok": true }` (también si el token ya estaba revocado), o 503 si no pudo identificar el token de la petición; no lee cuerpo ni query, así que un token no puede revocar otro dispositivo. Sin Bearer las dos responden 401 JSON `Token requerido`.
+- `/auth/dispositivos` (solo con la cookie de sesión) es la página donde cada persona ve sus dispositivos y los revoca. La pinta el Worker, sin JavaScript: cada fila es un formulario que envía `POST /auth/dispositivos/revocar` con el `id` público y un token anti-CSRF ligado a la sesión (HMAC de la cookie con `SESSION_SECRET`); exige `Origin` propio y responde 303 de vuelta a la página.
+- Las rutas de navegador (`/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/signed-out`, `/auth/dispositivos` y `/auth/dispositivos/revocar`) responden 400 JSON `Ruta solo para navegador` a una petición con un Bearer válido. `/auth/logout` no revoca un token: para eso está `POST /auth/app/revocar`.
+- Cuando alguien intenta entrar y GitHub confirma que ya no tiene acceso, `/auth/callback` borra todos sus tokens antes de responder el 403. Se borran solo cuando GitHub contesta que no es miembro (membresía 404 o no activa, y miembro público 404). Además hace falta el binding `DB` y que D1 no falle: si falta `DB` o D1 falla, no se borra nada y el callback no avisa (responde el mismo 403). No se borra nada con un 403 de GitHub (una restricción de la OAuth App puede darlo), con un error o límite de tasa, ni cuando falta `ALLOWED_ORG`. Por ejemplo, sin `ALLOWED_ORG`, quien se quita de `ALLOWED_USERS` conserva sus tokens. Con `ALLOWED_ORG`, quien se quita de `ALLOWED_USERS` y GitHub confirma que no es miembro de la org sí los pierde. En todos los casos en que no se borra nada, la revocación es a mano con el comando de abajo. Quien pierde el acceso y no vuelve a intentar entrar conserva su token hasta que caduque; para revocarlo a mano (login en minúsculas):
+
+  ```bash
+  npx wrangler d1 execute docs-site --remote --command "DELETE FROM tokens WHERE lower(login) = 'login-en-minusculas'"
+  ```
+
+  Ojo: si una restricción de la OAuth App hace que GitHub responda 404 a un miembro con membresía privada, el callback sí borra sus tokens (ver «Acceso»).
+
+- Los códigos caducados de `codigos_app` se purgan al crear un código nuevo (como mucho 50 por creación).
+- Rotar `SESSION_SECRET` no invalida los tokens de dispositivo: solo cierra las sesiones de navegador.
 
 El Markdown de hardware se renderiza en el navegador con marked + DOMPurify (carga diferida, solo en Electrónica y Mecánica); el servidor devuelve el Markdown tal cual.
 
