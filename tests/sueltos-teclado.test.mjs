@@ -295,7 +295,8 @@ const HILOS = `<div class="hw-aviso-lector" data-hw-aviso-lector role="status"><
   </ol>`;
 
 // ---------- C5. El aviso de la vista de lector no tapa el comentario enlazado ----------
-const SCROLL_PADDING = 96; // html { scroll-padding-top: 96px }: no se toca en este lote
+// html { scroll-padding-top }: desde el lote «sueltos-ui» sale de --cabecera-fondo (96 px con la cabecera de 67 px).
+const scrollPadding = (r, vars) => enPx(declarado(r, docHtml("", "").documentElement, "scroll-padding-top"), vars);
 const ANILLO = 4; // outline 2px + outline-offset 2px
 
 test("C5 altoAviso(alto): alto del aviso de lector en px enteros, con respaldo de 57px si está oculto o no es un número", () => {
@@ -305,12 +306,16 @@ test("C5 altoAviso(alto): alto del aviso de lector en px enteros, con respaldo d
   for (const a of [0, -1, NaN, Infinity, undefined]) assert.equal(altoAviso(a), "57px", `respaldo con ${a} (display: none mide 0)`);
 });
 
-test("C5 CSS: :root declara --aviso-lector-alto: 57px y el scroll-padding-top global sigue en 96px", () => {
+test("C5 CSS: :root declara --aviso-lector-alto: 57px y el scroll-padding-top global no cambia con la vista de lector", () => {
   const r = reglasPlanas();
   const d = docHtml("", HILOS);
   assert.equal(declarado(r, d.documentElement, "--aviso-lector-alto"), "57px", "respaldo en :root (lo ajusta el script)");
-  assert.equal(declarado(r, d.documentElement, "scroll-padding-top"), "96px", "las demás anclas no cambian");
-  assert.equal(declarado(r, docHtml("data-vista-lector", HILOS).documentElement, "scroll-padding-top"), "96px", "tampoco con la vista de lector");
+  assert.equal(scrollPadding(r, { "--cabecera-fondo": 67 }), 96, "con la cabecera de escritorio, las demás anclas no cambian");
+  assert.equal(
+    declarado(r, docHtml("data-vista-lector", HILOS).documentElement, "scroll-padding-top"),
+    declarado(r, d.documentElement, "scroll-padding-top"),
+    "tampoco con la vista de lector",
+  );
 });
 
 test("C5 CSS: con la vista de lector, el comentario enlazado (hilo o respuesta) queda entero bajo el aviso, anillo incluido, con un hueco pequeño", () => {
@@ -325,7 +330,7 @@ test("C5 CSS: con la vista de lector, el comentario enlazado (hilo o respuesta) 
     for (const id of ["hilo", "respuesta", "abierto"]) {
       const margen = declarado(r, d.getElementById(id), "scroll-margin-top");
       assert.ok(margen, `#${id}: falta scroll-margin-top en .comentario con :root[data-vista-lector]`);
-      const hueco = SCROLL_PADDING + enPx(margen, vars) - ANILLO - fondoAviso;
+      const hueco = scrollPadding(r, vars) + enPx(margen, vars) - ANILLO - fondoAviso;
       assert.ok(hueco >= 4, `#${id} con cabecera ${fondo} y aviso ${alto}: el aviso (hasta y=${fondoAviso}) tapa el anillo (hueco ${hueco} px)`);
       assert.ok(hueco <= 16, `#${id} con cabecera ${fondo} y aviso ${alto}: hueco de ${hueco} px, demasiado grande`);
     }

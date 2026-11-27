@@ -187,14 +187,14 @@ test("hardware-editor.ts: solo importa el pegamento y lo conecta; la lógica de 
 
 // ---------- estilos ----------
 
-test("global.css: solo maquetación para el diálogo; la lista tiene altura máxima y scroll propio; sin colores nuevos", () => {
+test("global.css: solo maquetación para el diálogo; la lista no tiene scroll propio (lote «sueltos-ui»: un solo scroll, el del diálogo); sin colores nuevos", () => {
   const css = leer("src/styles/global.css");
   const reglas = css.match(/[^{}]*hw-importar[^{}]*\{[^{}]*\}/g) ?? [];
   assert.ok(reglas.length >= 1, "faltan las reglas .hw-importar-*");
   assert.ok(reglas.length <= 8, `CSS mínimo: ${reglas.length} reglas`);
-  const lista = reglas.find((r) => /\.hw-importar-lista\b[^{]*\{/.test(r) && /max-height/.test(r));
-  assert.ok(lista, ".hw-importar-lista con max-height");
-  assert.match(lista, /overflow(-y)?\s*:\s*auto/);
+  const lista = reglas.filter((r) => /\.hw-importar-lista\s*\{/.test(r));
+  assert.ok(lista.length >= 1, "sigue habiendo una regla para .hw-importar-lista");
+  for (const r of lista) assert.doesNotMatch(r, /max-height|overflow(-[xy])?\s*:/, `.hw-importar-lista sin altura máxima ni scroll propio: ${r.trim().slice(0, 80)}`);
   for (const r of reglas) assert.doesNotMatch(r, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\(|font-family/, r.trim().slice(0, 60));
 });
 
