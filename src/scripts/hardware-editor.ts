@@ -527,6 +527,8 @@ async function iniciar(root: HTMLElement) {
         editor,
         fuente,
         titulo,
+        proyecto,
+        disciplina,
         disparador,
         alGuardar: (r) => guardarDiagrama(ctx, r),
         confirmarDescartar: () => preguntar(dlgDescartar),

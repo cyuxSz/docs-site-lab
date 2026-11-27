@@ -2,16 +2,19 @@
 // o diagrams.net (iframe + postMessage). Este módulo solo se carga al pulsar "Insertar diagrama" o "Editar diagrama".
 // No sube nada: entrega la fuente y el SVG a `alGuardar` (src/scripts/hardware-editor.ts) y cierra si responde ok.
 import {
+  cargarBibliotecasConTope,
   confirmarCierre,
   enviarDrawio,
   ESTADO_INICIAL,
   estadoEditor,
   esSvg,
   mensajeDrawio,
+  respuestaConfigure,
   RUTA_ASSETS_EXCALIDRAW,
   fuentesSoloDeOrigen,
   svgDeExport,
   urlDrawio,
+  type BibliotecaCargada,
   type EditorDiagrama,
   type EstadoEditor,
 } from "../lib/diagramas";
@@ -20,6 +23,8 @@ export interface OpcionesEditor {
   editor: EditorDiagrama;
   fuente: string | null; // texto de la fuente existente (null: diagrama nuevo)
   titulo: string;
+  proyecto: string; // para listar y descargar las bibliotecas de integrados
+  disciplina: string;
   disparador: HTMLElement | null; // botón que lo abrió: recibe el foco al cerrar
   alGuardar: (r: { fuente: string; svg: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
   confirmarDescartar: () => Promise<boolean>;
@@ -191,95 +196,136 @@ export function abrirEditorDiagrama(o: OpcionesEditor): Promise<void> {
     }
 
     // diagrams.net: init → load, save → export (svg) → export, exit.
-    const marco = document.createElement("iframe");
-    marco.title = "Editor diagrams.net";
-    marco.className = "hw-diag-marco";
-    marco.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals");
-    marco.src = urlDrawio();
-    let xml = o.fuente ?? "";
-    let xmlConocido = o.fuente === null ? false : true;
-    let temporizador: ReturnType<typeof setTimeout> | undefined;
-    let peticion = 0; // contador de exportaciones pedidas
-    let activa = 0; // la que espera respuesta (0: ninguna; una vencida queda invalidada)
-    const quitarSpinner = () => enviarDrawio(marco.contentWindow, { action: "spinner", show: false });
-    // Solo `export` con spinKey: diagrams.net muestra su propio spinner. Un {action:"spinner"} previo lo deja ocupado e ignora el export.
-    const pedirExport = () => {
-      evento("guardando");
-      const mia = (activa = ++peticion);
-      enviarDrawio(marco.contentWindow, { action: "export", format: "svg", spinKey: "saving", peticion: mia });
-      clearTimeout(temporizador);
-      temporizador = setTimeout(() => {
-        if (cerrado || activa !== mia || !estado.guardando) return;
-        activa = 0;
-        quitarSpinner();
-        evento("error");
-        fallo("diagrams.net no respondió al guardar: no se guardó nada. Inténtalo de nuevo.");
-      }, 20000);
-    };
-    guardarActual = () => {
-      if (!listo || estado.guardando) return;
-      pedirExport();
-    };
-    window.addEventListener(
-      "message",
-      (e) => {
-        const msg = mensajeDrawio(e, marco.contentWindow);
-        if (!msg) return;
-        switch (msg.event) {
-          case "init":
-            enviarDrawio(marco.contentWindow, { action: "load", xml: o.fuente ?? "", autosave: 1 });
-            break;
-          case "load":
-            listo = true;
-            btnGuardar.disabled = estado.guardando;
-            anunciar("Editor listo");
-            break;
-          case "autosave":
-            if (typeof msg.xml === "string") {
-              xml = msg.xml;
-              xmlConocido = true;
-            }
-            evento("cambio");
-            break;
-          case "save":
-            if (typeof msg.xml === "string") {
-              xml = msg.xml;
-              xmlConocido = true;
-            }
-            if (!estado.guardando) pedirExport();
-            break;
-          case "export": {
-            // diagrams.net devuelve la petición en `message`: una respuesta de una exportación vencida o ajena se ignora.
-            const eco = (msg.message as { peticion?: unknown } | undefined)?.peticion;
-            if (activa === 0 || (typeof eco === "number" && eco !== activa)) break;
-            activa = 0;
-            clearTimeout(temporizador);
-            if (typeof msg.xml === "string") {
-              xml = msg.xml;
-              xmlConocido = true;
-            }
-            const svg = svgDeExport(msg.data);
-            if (svg === null || !xmlConocido) {
-              quitarSpinner();
-              evento("error");
-              fallo("diagrams.net no devolvió un SVG válido: no se guardó nada.");
+    // Sin proyecto o disciplina no hay de dónde listar bibliotecas: se abre directo, sin red ni tope.
+    if (!o.proyecto || !o.disciplina) {
+      montarDrawio([], []);
+      return;
+    }
+    // Primero las bibliotecas (con tope) y después el iframe: configure=1 solo se pide si hay alguna y ya están en memoria.
+    void (async () => {
+      anunciar("Cargando bibliotecas…");
+      const { bibliotecas, avisos } = await cargarBibliotecasConTope({
+        disciplina: o.disciplina,
+        listar: async () => {
+          const r = await fetch(`/api/archivos/?${new URLSearchParams({ proyecto: o.proyecto, disciplina: o.disciplina, lista: "1" })}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+            signal,
+          });
+          if (!r.ok) throw new Error("lista");
+          return ((await r.json()) as { archivos?: unknown }).archivos;
+        },
+        descargar: async (id) => {
+          const r = await fetch(`/api/archivos/?${new URLSearchParams({ proyecto: o.proyecto, id })}`, { credentials: "same-origin", cache: "no-store", signal });
+          if (!r.ok) throw new Error("descarga");
+          return r.text();
+        },
+      });
+      if (cerrado) return;
+      montarDrawio(bibliotecas, avisos);
+    })();
+
+    function montarDrawio(bibliotecas: readonly BibliotecaCargada[], avisos: string[]): void {
+      const conBibliotecas = bibliotecas.length > 0;
+      // Los avisos (texto en español, vía textContent) van en la línea de estado del diálogo; no bloquean el editor.
+      const textoAvisos = avisos.length ? ` ${avisos.join(" ")}` : "";
+      anunciar(`Cargando ${NOMBRES[o.editor]}…${textoAvisos}`);
+      let configurado = false;
+      const marco = document.createElement("iframe");
+      marco.title = "Editor diagrams.net";
+      marco.className = "hw-diag-marco";
+      marco.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals");
+      marco.src = urlDrawio(conBibliotecas);
+      let xml = o.fuente ?? "";
+      let xmlConocido = o.fuente === null ? false : true;
+      let temporizador: ReturnType<typeof setTimeout> | undefined;
+      let peticion = 0; // contador de exportaciones pedidas
+      let activa = 0; // la que espera respuesta (0: ninguna; una vencida queda invalidada)
+      const quitarSpinner = () => enviarDrawio(marco.contentWindow, { action: "spinner", show: false });
+      // Solo `export` con spinKey: diagrams.net muestra su propio spinner. Un {action:"spinner"} previo lo deja ocupado e ignora el export.
+      const pedirExport = () => {
+        evento("guardando");
+        const mia = (activa = ++peticion);
+        enviarDrawio(marco.contentWindow, { action: "export", format: "svg", spinKey: "saving", peticion: mia });
+        clearTimeout(temporizador);
+        temporizador = setTimeout(() => {
+          if (cerrado || activa !== mia || !estado.guardando) return;
+          activa = 0;
+          quitarSpinner();
+          evento("error");
+          fallo("diagrams.net no respondió al guardar: no se guardó nada. Inténtalo de nuevo.");
+        }, 20000);
+      };
+      guardarActual = () => {
+        if (!listo || estado.guardando) return;
+        pedirExport();
+      };
+      window.addEventListener(
+        "message",
+        (e) => {
+          const msg = mensajeDrawio(e, marco.contentWindow);
+          if (!msg) return;
+          switch (msg.event) {
+            case "configure":
+              if (configurado) break;
+              configurado = true;
+              enviarDrawio(marco.contentWindow, respuestaConfigure(conBibliotecas ? bibliotecas : null));
+              break;
+            case "init":
+              enviarDrawio(marco.contentWindow, { action: "load", xml: o.fuente ?? "", autosave: 1 });
+              break;
+            case "load":
+              listo = true;
+              btnGuardar.disabled = estado.guardando;
+              anunciar(`Editor listo.${textoAvisos}`);
+              break;
+            case "autosave":
+              if (typeof msg.xml === "string") {
+                xml = msg.xml;
+                xmlConocido = true;
+              }
+              evento("cambio");
+              break;
+            case "save":
+              if (typeof msg.xml === "string") {
+                xml = msg.xml;
+                xmlConocido = true;
+              }
+              if (!estado.guardando) pedirExport();
+              break;
+            case "export": {
+              // diagrams.net devuelve la petición en `message`: una respuesta de una exportación vencida o ajena se ignora.
+              const eco = (msg.message as { peticion?: unknown } | undefined)?.peticion;
+              if (activa === 0 || (typeof eco === "number" && eco !== activa)) break;
+              activa = 0;
+              clearTimeout(temporizador);
+              if (typeof msg.xml === "string") {
+                xml = msg.xml;
+                xmlConocido = true;
+              }
+              const svg = svgDeExport(msg.data);
+              if (svg === null || !xmlConocido) {
+                quitarSpinner();
+                evento("error");
+                fallo("diagrams.net no devolvió un SVG válido: no se guardó nada.");
+                break;
+              }
+              void entregar({ fuente: xml, svg }, quitarSpinner).then(() => (cerrado ? undefined : quitarSpinner()));
               break;
             }
-            void entregar({ fuente: xml, svg }, quitarSpinner).then(() => (cerrado ? undefined : quitarSpinner()));
-            break;
+            case "exit":
+              if (msg.modified === true && !estado.sucio) evento("cambio");
+              void pedirCierre();
+              break;
           }
-          case "exit":
-            if (msg.modified === true && !estado.sucio) evento("cambio");
-            void pedirCierre();
-            break;
-        }
-      },
-      { signal },
-    );
-    limpiarEditor = () => {
-      clearTimeout(temporizador);
-      marco.remove();
-    };
-    lienzo.append(marco);
+        },
+        { signal },
+      );
+      limpiarEditor = () => {
+        clearTimeout(temporizador);
+        marco.remove();
+      };
+      lienzo.append(marco);
+    }
   });
 }

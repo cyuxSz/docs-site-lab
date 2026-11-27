@@ -83,8 +83,12 @@ export function nombresArchivos({ editor, titulo }: { editor: string; titulo?: s
 export const ORIGEN_DRAWIO = "https://embed.diagrams.net";
 const EVENTOS_DRAWIO = new Set(["init", "load", "save", "export", "exit", "autosave", "configure"]);
 
-export function urlDrawio(): string {
-  return `${ORIGEN_DRAWIO}/?embed=1&proto=json&spin=1&lang=es&saveAndExit=0&noExitBtn=0&libraries=1&libs=general;electrical`;
+export const ID_BIBLIOTECAS = "integrados";
+
+// Sin bibliotecas es la URL de siempre. Con ellas se añade la sección y configure=1, a mano: diagrams.net no decodifica la URL.
+export function urlDrawio(conBibliotecas = false): string {
+  const base = `${ORIGEN_DRAWIO}/?embed=1&proto=json&spin=1&lang=es&saveAndExit=0&noExitBtn=0&libraries=1&libs=general;electrical`;
+  return conBibliotecas === true ? `${base};${ID_BIBLIOTECAS}&configure=1` : base;
 }
 
 // Mensaje de diagrams.net ya validado, o null. Exige origen exacto, que venga del iframe abierto y un JSON en texto con un `event` conocido.
@@ -176,3 +180,209 @@ export const huellaDibujo = (elementos: readonly { id: string; version: number }
   elementos.map((e) => `${e.id}:${e.version}`).join(",") + "|" + String(appState?.viewBackgroundColor ?? "");
 
 export const confirmarCierre = (e: EstadoEditor): boolean => e.sucio || e.guardando;
+
+// ---------- Biblioteca de integrados (E2) ----------
+export const LIMITES_BIBLIOTECA = { bytes: 1048576, porDisciplina: 10, formas: 1000 };
+// Tope de la carga antes de crear el iframe: si se supera, el editor abre sin bibliotecas.
+export const ESPERA_BIBLIOTECAS_MS = 5000;
+
+export interface FormaBiblioteca {
+  xml: string;
+  w: number;
+  h: number;
+  aspect?: "fixed";
+  title: string;
+}
+export interface BibliotecaCargada {
+  titulo: string;
+  formas: FormaBiblioteca[];
+}
+export interface ResultadoBibliotecas {
+  bibliotecas: BibliotecaCargada[];
+  avisos: string[];
+}
+export interface OpcionesBibliotecas {
+  disciplina: string;
+  listar: () => Promise<unknown> | unknown;
+  descargar: (id: string) => Promise<string> | string;
+}
+
+// Decodifica entidades (básicas y numéricas) hasta que el texto no cambie (máx. 5 pasadas): lo que acabaría viendo el navegador.
+function decodificarEntidades(t: string): string {
+  const una = (s: string) =>
+    s.replace(/&(?:#x([0-9a-f]+)|#(\d+)|(lt|gt|amp|quot|apos));/gi, (_m, hex, dec, nombre) => {
+      if (nombre) return { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" }[String(nombre).toLowerCase() as "lt"];
+      const n = hex ? parseInt(hex, 16) : parseInt(dec, 10);
+      return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "";
+    });
+  let actual = t;
+  for (let i = 0; i < 5; i++) {
+    const sig = una(actual);
+    if (sig === actual) break;
+    actual = sig;
+  }
+  return actual;
+}
+
+// ¿Es seguro meter este mxGraphModel en la paleta? Descarta imágenes, enlaces, objetos con metadatos, javascript: y HTML en las etiquetas.
+export function formaSegura(xml: unknown): boolean {
+  if (typeof xml !== "string") return false;
+  const decodificado = decodificarEntidades(xml);
+  for (const t of [xml, decodificado]) {
+    if (/<\s*(UserObject|object)\b/i.test(t)) return false;
+    if (/(^|[\s"';])(image|link)\s*=/i.test(t)) return false;
+    if (/[\s"']\s*(href|src|xlink:href)\s*=/i.test(t)) return false;
+  }
+  if (/javascript:/i.test(decodificado.replace(/[\u0000- \u007f-\u009f]+/g, ""))) return false;
+  const html = /(^|[\s";])html\s*=\s*1/i.test(decodificado);
+  for (const m of xml.matchAll(/\bvalue\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    const v = decodificarEntidades(m[1] ?? m[2] ?? "");
+    if (/<[a-z/!?]/i.test(v)) return false;
+    if (html && v.includes("<")) return false;
+  }
+  return true;
+}
+
+const medida = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 40);
+
+// <mxlibrary> -> formas saneadas (lista blanca de campos) y cuántas se quitaron; null si no es exactamente una biblioteca.
+export function leerBiblioteca(texto: unknown): { formas: FormaBiblioteca[]; descartadas: number } | null {
+  if (typeof texto !== "string") return null;
+  const m = /^\s*<mxlibrary>([\s\S]*)<\/mxlibrary>\s*$/.exec(texto);
+  if (!m) return null;
+  let lista: unknown;
+  try {
+    lista = JSON.parse(m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(lista)) return null;
+  const formas: FormaBiblioteca[] = [];
+  let descartadas = 0;
+  for (const e of lista) {
+    const x = e && typeof e === "object" && !Array.isArray(e) ? (e as Record<string, unknown>) : null;
+    if (!x || typeof x.xml !== "string" || !x.xml.startsWith("<mxGraphModel") || !formaSegura(x.xml)) {
+      descartadas++;
+      continue;
+    }
+    const f: FormaBiblioteca = { xml: x.xml, w: medida(x.w), h: medida(x.h), title: limpiarTitulo((typeof x.title === "string" ? x.title : "").replace(/[<>]/g, "")) };
+    if (x.aspect === "fixed") f.aspect = "fixed";
+    formas.push(f);
+  }
+  return { formas, descartadas };
+}
+
+export function formasDeBiblioteca(texto: unknown): FormaBiblioteca[] | null {
+  return leerBiblioteca(texto)?.formas ?? null;
+}
+
+// Solo la clave `libraries`; de cada biblioteca solo entran título y formas.
+export function configDrawio(bibliotecas: readonly BibliotecaCargada[] | null | undefined): Record<string, unknown> {
+  if (!bibliotecas || bibliotecas.length === 0) return {};
+  return {
+    libraries: [
+      {
+        title: { main: "Proyecto" },
+        entries: [
+          {
+            id: ID_BIBLIOTECAS,
+            title: { main: "Integrados" },
+            libs: bibliotecas.map((b) => ({ title: { main: b.titulo }, data: b.formas, expand: true })),
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function respuestaConfigure(bibliotecas: readonly BibliotecaCargada[] | null | undefined): { action: "configure"; config: Record<string, unknown> } {
+  return { action: "configure", config: configDrawio(bibliotecas ?? []) };
+}
+
+const bytesUtf8 = (t: string) => new TextEncoder().encode(t).length;
+
+// Descarga y sanea las bibliotecas .xml de la disciplina. Nunca lanza: lo que falla se omite y se avisa.
+export async function cargarBibliotecas(o: OpcionesBibliotecas): Promise<ResultadoBibliotecas> {
+  const avisos: string[] = [];
+  const bibliotecas: BibliotecaCargada[] = [];
+  try {
+    let lista: unknown;
+    try {
+      lista = await o.listar();
+    } catch {
+      lista = null;
+    }
+    if (!Array.isArray(lista)) {
+      return { bibliotecas, avisos: ["No se pudo consultar la lista de bibliotecas de integrados: el editor abre sin ellas."] };
+    }
+    const entradas = lista.filter(
+      (e): e is { id: string; nombre: string; tamano?: unknown } =>
+        !!e && typeof e === "object" && (e as any).tipo === "xml" && (e as any).disciplina === o.disciplina && typeof (e as any).id === "string" && typeof (e as any).nombre === "string",
+    );
+    const aptas = entradas.filter((e) => {
+      if (typeof e.tamano === "number" && e.tamano > LIMITES_BIBLIOTECA.bytes) {
+        avisos.push(`La biblioteca «${limpiarTitulo(e.nombre.replace(/[<>]/g, ""))}» pesa más de 1 MB y no se cargó.`);
+        return false;
+      }
+      return true;
+    });
+    const usadas = aptas.slice(0, LIMITES_BIBLIOTECA.porDisciplina);
+    if (aptas.length > usadas.length) {
+      avisos.push(`Solo se cargan ${LIMITES_BIBLIOTECA.porDisciplina} bibliotecas por disciplina; se omitieron: ${aptas.slice(usadas.length).map((e) => limpiarTitulo(e.nombre.replace(/[<>]/g, ""))).join(", ")}.`);
+    }
+    const textos = await Promise.all(
+      usadas.map(async (e) => {
+        try {
+          const t = await o.descargar(e.id);
+          return typeof t === "string" ? t : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    usadas.forEach((e, i) => {
+      const nombre = limpiarTitulo(e.nombre.replace(/[<>]/g, ""));
+      const titulo = limpiarTitulo(e.nombre.replace(/[<>]/g, "").replace(/\.xml$/i, ""));
+      const texto = textos[i];
+      if (texto === null) {
+        avisos.push(`No se pudo descargar la biblioteca «${nombre}».`);
+        return;
+      }
+      if (bytesUtf8(texto) > LIMITES_BIBLIOTECA.bytes) {
+        avisos.push(`La biblioteca «${nombre}» pesa más de 1 MB y no se cargó.`);
+        return;
+      }
+      const r = leerBiblioteca(texto);
+      if (!r) return; // un .xml que no es biblioteca se ignora sin aviso
+      let formas = r.formas;
+      if (formas.length > LIMITES_BIBLIOTECA.formas) {
+        avisos.push(`La biblioteca «${nombre}» tiene más de ${LIMITES_BIBLIOTECA.formas} formas: se recortó.`);
+        formas = formas.slice(0, LIMITES_BIBLIOTECA.formas);
+      }
+      if (r.descartadas > 0) avisos.push(`De la biblioteca «${nombre}» se descartaron ${r.descartadas} formas por no ser seguras o no ser válidas.`);
+      if (formas.length === 0) {
+        avisos.push(`La biblioteca «${nombre}» no tiene formas válidas y no se cargó.`);
+        return;
+      }
+      bibliotecas.push({ titulo, formas });
+    });
+  } catch {
+    avisos.push("No se pudieron cargar las bibliotecas de integrados.");
+  }
+  return { bibliotecas, avisos };
+}
+
+// Igual que cargarBibliotecas, pero si pasa `ms` devuelve sin bibliotecas y con aviso (el editor no espera más).
+export async function cargarBibliotecasConTope(o: OpcionesBibliotecas, ms: number = ESPERA_BIBLIOTECAS_MS): Promise<ResultadoBibliotecas> {
+  let temporizador: ReturnType<typeof setTimeout> | undefined;
+  const tope = new Promise<ResultadoBibliotecas>((res) => {
+    temporizador = setTimeout(() => res({ bibliotecas: [], avisos: ["Las bibliotecas de integrados tardaron demasiado: el editor abre sin ellas."] }), ms);
+  });
+  try {
+    return await Promise.race([cargarBibliotecas(o), tope]);
+  } catch {
+    return { bibliotecas: [], avisos: ["No se pudieron cargar las bibliotecas de integrados."] };
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
