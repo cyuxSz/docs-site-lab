@@ -3,7 +3,7 @@
 use http::header::{CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS};
 use http::{HeaderValue, Response};
 
-use crate::login::EstadoLogin;
+use crate::login::{EstadoLogin, Fin};
 use crate::{CSP_PANTALLA, ORIGENES_APP, RUTA_INICIAR};
 
 /// Mismo aspecto que las páginas de login del portal (`page()` de `lib/login-core.mjs`), con el
@@ -50,6 +50,11 @@ pub fn pantalla_de_login(estado: EstadoLogin) -> Response<Vec<u8>> {
         ),
         EstadoLogin::Fallo(aviso) => {
             (format!("<p role=\"alert\">{}</p>", aviso.texto()), BOTON_INICIAR)
+        }
+        EstadoLogin::Terminada(fin) => {
+            // Un cierre normal es una noticia; los otros dos son avisos.
+            let rol = if fin == Fin::Cerrada { "status" } else { "alert" };
+            (format!("<p role=\"{rol}\">{}</p>", fin.texto()), BOTON_INICIAR)
         }
     };
     let html = format!(

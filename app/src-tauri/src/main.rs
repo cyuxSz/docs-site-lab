@@ -14,7 +14,13 @@ use nucleo::{
     config_de_arranque, decidir_ventana_nueva, navegacion_permitida, Limites, Login, Navegador,
     Proxy, Recibido, VentanaNueva, ESQUEMA, VAR_DESTINO_DEV, VAR_NOMBRE_EQUIPO, VAR_TOKEN_DEV,
 };
+use nucleo::Llavero;
+#[cfg(windows)]
+use nucleo::{nombre_de_llavero, LLAVERO_CUENTA};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+#[cfg(windows)]
+mod llavero;
 
 /// Abre la URL en el navegador del sistema, tal como llega. La construye y la pasa el núcleo.
 struct NavegadorDelSistema;
@@ -62,7 +68,19 @@ fn main() -> ExitCode {
 
     // El nombre del equipo es el nombre del dispositivo. Lo limpia el núcleo.
     let equipo = std::env::var(VAR_NOMBRE_EQUIPO).ok();
-    let login = Arc::new(Login::nuevo(arranque.destino, equipo.as_deref(), arranque.token));
+    #[cfg(windows)]
+    let llavero: Arc<dyn Llavero> = Arc::new(llavero::LlaveroDelSistema::nuevo(
+        nombre_de_llavero(cfg!(debug_assertions)),
+        LLAVERO_CUENTA,
+    ));
+    #[cfg(not(windows))]
+    let llavero: Arc<dyn Llavero> = Arc::new(nucleo::SinLlavero);
+    let login = Arc::new(Login::con_llavero(
+        arranque.destino,
+        equipo.as_deref(),
+        arranque.token,
+        llavero,
+    ));
     let proxy = Arc::new(Proxy::con_login(
         Arc::clone(&login),
         Arc::new(NavegadorDelSistema),

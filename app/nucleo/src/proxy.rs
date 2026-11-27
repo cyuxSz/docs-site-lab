@@ -21,7 +21,7 @@ use crate::destino::{decodificar_una_vez, solo_ruta, Destino};
 use crate::login::{Inicio, Login};
 use crate::pantalla::{pantalla_de_login, pantalla_sin_sesion};
 use crate::token::{FuenteDeToken, Token};
-use crate::{CSP_AISLADO, CSP_MARCOS, ORIGENES_APP, RUTA_INICIAR, TOPE_CUERPO};
+use crate::{CSP_AISLADO, CSP_MARCOS, ORIGENES_APP, RUTA_INICIAR, RUTA_SALIR, TOPE_CUERPO};
 
 const METODOS: [&str; 6] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 const METODOS_ALLOW: &str = "GET, HEAD, POST, PUT, PATCH, DELETE";
@@ -379,13 +379,7 @@ impl Proxy {
             }
         }
         // Siempre lo mismo, se haya abierto o no: de vuelta a la raíz, que pinta el estado.
-        let mut respuesta = Response::new(Vec::new());
-        *respuesta.status_mut() = StatusCode::SEE_OTHER;
-        let salida = respuesta.headers_mut();
-        salida.insert(LOCATION, HeaderValue::from_static("/"));
-        salida.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
-        salida.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
-        respuesta
+        vuelta_a_la_raiz()
     }
 
     /// Las comprobaciones, en el orden de la spec. Solo la última toca la red. `aislado` queda a
@@ -418,6 +412,13 @@ impl Proxy {
         let ruta = solo_ruta(ruta_y_consulta);
         if es_ruta_local(ruta) {
             return self.atender_local(metodo, ruta, &partes.headers);
+        }
+
+        if let Some(inicios) = &self.inicios {
+            if es_salir(metodo, ruta, &partes.headers) {
+                inicios.login.cerrar_sesion();
+                return vuelta_a_la_raiz();
+            }
         }
 
         let es_lectura = metodo == "GET" || metodo == "HEAD";
@@ -680,6 +681,45 @@ struct Rechazo<'a> {
 /// `true` si el valor de un `Origin` es, byte a byte, uno de los de la app.
 fn es_origen_de_la_app(valor: &HeaderValue) -> bool {
     ORIGENES_APP.iter().any(|origen| valor.as_bytes() == origen.as_bytes())
+}
+
+/// 303 a la raíz, sin cuerpo: la raíz pinta el estado del login.
+fn vuelta_a_la_raiz() -> Response<Vec<u8>> {
+    let mut respuesta = Response::new(Vec::new());
+    *respuesta.status_mut() = StatusCode::SEE_OTHER;
+    let salida = respuesta.headers_mut();
+    salida.insert(LOCATION, HeaderValue::from_static("/"));
+    salida.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    salida.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
+    respuesta
+}
+
+/// `true` solo para la navegación GET del marco principal a la ruta literal de «Salir». Un
+/// `fetch`, una imagen, una precarga o un marco no cierran la sesión.
+fn es_salir(metodo: &str, ruta: &str, cabeceras: &HeaderMap) -> bool {
+    if metodo != "GET" || ruta != RUTA_SALIR || !acepta_html(cabeceras) {
+        return false;
+    }
+    if cabeceras.contains_key(ORIGIN)
+        || cabeceras.contains_key("sec-purpose")
+        || cabeceras.contains_key("purpose")
+    {
+        return false;
+    }
+    // Si vienen, una sola vez cada una y con el valor de una navegación propia.
+    let una_vez = |nombre: &str, vale: &dyn Fn(&[u8]) -> bool| {
+        let mut valores = cabeceras.get_all(nombre).iter();
+        match (valores.next(), valores.next()) {
+            (None, _) => true,
+            (Some(valor), None) => vale(valor.as_bytes()),
+            _ => false,
+        }
+    };
+    una_vez(SEC_FETCH_SITE, &|v| {
+        let v = v.trim_ascii();
+        v.eq_ignore_ascii_case(b"same-origin") || v.eq_ignore_ascii_case(b"none")
+    }) && una_vez(SEC_FETCH_MODE, &|v| v == b"navigate")
+        && una_vez(SEC_FETCH_DEST, &|v| v == b"document")
 }
 
 /// `/__app` y `/__app/*`, comparando la ruta decodificada una vez y en minúsculas, como `/auth`.

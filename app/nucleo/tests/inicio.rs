@@ -10,7 +10,7 @@ use comun::login::*;
 use comun::*;
 use http::{Request, Response};
 use nucleo::{
-    pantalla_de_login, Aviso, EstadoLogin, FuenteDeToken, Limites, Login, Proxy, Recibido, Token,
+    pantalla_de_login, Aviso, EstadoLogin, Fin, FuenteDeToken, Limites, Login, Proxy, Recibido, Token,
     CSP_MARCOS, CSP_PANTALLA, RUTA_INICIAR,
 };
 
@@ -297,9 +297,12 @@ fn c7_la_pantalla_llega_con_referrer_policy_same_origin_por_todos_los_caminos() 
     es_pantalla_con_same_origin(&pedir(&proxy, navegar("/")), fallo, "con_login, canje fallido");
 
     // `Proxy::con_login`: 401 del servidor en una navegación, y la siguiente ya sin token.
-    let (_login, proxy) = app(&rechaza, Some(token()), NavegadorFalso::nuevo());
-    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "con_login, 401 de navegación");
-    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), sin, "con_login, sesión ya perdida");
+    // app-sesion: tras el 401 con `Bearer` el estado es `Terminada(Caducada)`, no `SinSesion`.
+    let caducada = EstadoLogin::Terminada(Fin::Caducada);
+    let (login, proxy) = app(&rechaza, Some(token()), NavegadorFalso::nuevo());
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), caducada, "con_login, 401 de navegación");
+    assert_eq!(login.estado(Instant::now()), caducada);
+    es_pantalla_con_same_origin(&pedir(&proxy, navegar("/uuv/")), caducada, "con_login, sesión ya perdida");
 }
 
 // ---------- Criterio 6: la sesión vuelve sin reiniciar ----------
@@ -338,11 +341,13 @@ fn c6_tras_perder_la_sesion_un_login_nuevo_la_devuelve_sin_reiniciar() {
     assert_eq!(rechazo.status().as_u16(), 401, "un fetch sigue viendo el 401 del servidor");
     assert!(proxy.sesion_perdida());
     assert!(login.token().is_none(), "el token rechazado no se guarda");
-    assert_eq!(login.estado(Instant::now()), EstadoLogin::SinSesion);
+    // app-sesion: tras un rechazo el estado es `Terminada(Caducada)`, no `SinSesion`: la pantalla
+    // dice por qué. Lo mismo en el test del 401 en una navegación, más abajo.
+    assert_eq!(login.estado(Instant::now()), EstadoLogin::Terminada(Fin::Caducada));
 
     // 2. La navegación pinta la pantalla, sin red.
     let pantalla = pedir(&proxy, navegar("/uuv/"));
-    assert_eq!(pantalla.body(), pantalla_de_login(EstadoLogin::SinSesion).body());
+    assert_eq!(pantalla.body(), pantalla_de_login(EstadoLogin::Terminada(Fin::Caducada)).body());
     assert_eq!(servidor.recibidas().len(), 1);
 
     // 3. Botón, navegador y enlace de vuelta.
@@ -403,7 +408,7 @@ fn c6_un_401_del_servidor_en_una_navegacion_pinta_la_pantalla_de_login() {
 
     let pantalla = pedir(&proxy, navegar("/uuv/"));
     assert_eq!(pantalla.status().as_u16(), 200, "la navegación no ve el JSON del 401");
-    assert_eq!(pantalla.body(), pantalla_de_login(EstadoLogin::SinSesion).body());
+    assert_eq!(pantalla.body(), pantalla_de_login(EstadoLogin::Terminada(Fin::Caducada)).body());
     assert_eq!(cabecera(&pantalla, "content-type").as_deref(), Some("text/html; charset=utf-8"));
     assert_eq!(csps(&pantalla), [CSP_PANTALLA, CSP_MARCOS]);
     assert!(!pantalla.headers().contains_key("www-authenticate"));

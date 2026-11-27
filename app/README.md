@@ -23,9 +23,45 @@ Cosas que conviene saber:
   `vanttec-docs://` que llega sin haber pulsado el botón se ignora.
 - Un intento dura 10 minutos. Después hay que pulsar el botón otra vez.
 - Entre dos aperturas del navegador pasan al menos 5 segundos.
-- El token vive en memoria. Al cerrar la app, la sesión se pierde.
+- La sesión se guarda al terminar el login y sobrevive al cierre de la app (ver abajo).
 - Solo hay una instancia de la app. Abrirla otra vez trae al frente la ventana que ya existe.
 - El código, el `verifier` y el token no llegan a la ventana ni a la consola.
+
+## Dónde se guarda la sesión
+
+El token se guarda en el Administrador de credenciales de Windows, como credencial genérica del
+usuario actual y de este equipo. Al arrancar, la app lo lee una vez; si tiene la forma de un
+token, abre el portal sin pedir login. Lo que no tiene esa forma se borra. Si el llavero no
+funciona, la app sigue y la sesión vive solo en memoria.
+
+| Binario | Nombre de la credencial |
+|---|---|
+| Release | `VantTec Docs` |
+| Depuración | `VantTec Docs (desarrollo)` |
+
+El usuario de la credencial es `token-de-dispositivo`. Para verla o borrarla a mano:
+
+```
+cmdkey /list:"VantTec Docs"
+cmdkey /delete:"VantTec Docs"
+```
+
+(`cmdkey /list` no muestra el valor.) En el binario de depuración hay una sola credencial para
+cualquier destino de `VANTTEC_DOCS_DESTINO_DEV`. Con `VANTTEC_DOCS_TOKEN_DEV` el llavero no se lee.
+
+Fuera de Windows no hay llavero: la sesión vive en memoria y se pierde al cerrar la app.
+
+## Salir
+
+El enlace «Salir» del portal es una navegación a `/auth/logout`. La app no la reenvía: borra el
+token de la memoria y del llavero, pide al servidor que lo revoque (`POST /auth/app/revocar`, hasta
+10 segundos) y vuelve a la pantalla de login con «Se cerró la sesión.». Si el servidor no
+confirma, la sesión se cierra igual en este equipo y la pantalla lo dice; el dispositivo se puede
+quitar entonces en «Dispositivos» del portal.
+
+Si el servidor rechaza el token (caducó o se revocó desde otro sitio), la app lo borra y la
+siguiente navegación muestra «La sesión caducó. Inicia sesión de nuevo.». Una página ya abierta
+no se entera hasta esa navegación.
 
 ### El esquema `vanttec-docs://`
 
