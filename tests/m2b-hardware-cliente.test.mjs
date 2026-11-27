@@ -31,6 +31,7 @@ const UUID = "0b7c8f2e-4d1a-4c3b-9e8f-1a2b3c4d5e6f";
 function grafoImports(rel) {
   const vistos = new Set();
   const externos = new Set();
+  const origenes = new Map(); // paquete externo → archivos (relativos a la raíz) que lo importan
   const pila = [resolve(raiz, rel)];
   while (pila.length) {
     const f = pila.pop();
@@ -42,10 +43,14 @@ function grafoImports(rel) {
       if (spec.startsWith(".")) {
         const destino = resolve(dirname(f), spec);
         if (!/\.json$/.test(destino)) pila.push(destino);
-      } else externos.add(spec);
+      } else {
+        externos.add(spec);
+        const rel = f.slice(raiz.length).replace(/\\/g, "/");
+        origenes.set(spec, [...(origenes.get(spec) ?? []), rel]);
+      }
     }
   }
-  return { archivos: [...vistos].map((f) => f.slice(raiz.length).replace(/\\/g, "/")), externos: [...externos] };
+  return { archivos: [...vistos].map((f) => f.slice(raiz.length).replace(/\\/g, "/")), externos: [...externos], origenes };
 }
 
 test("core: hardware-core ya no exporta renderizarMd ni importa satteri, tools/neutralizar.mjs ni node:*", async () => {
@@ -59,9 +64,13 @@ test("core: hardware-core ya no exporta renderizarMd ni importa satteri, tools/n
   assert.equal(typeof mod.crearHandler, "function");
 });
 
-test("core: el grafo de imports de hardware-core no arrastra paquetes ni módulos de Node (apto para workerd)", () => {
-  const { archivos, externos } = grafoImports("lib/hardware-core.mjs");
-  assert.deepEqual(externos, [], `dependencias externas en el grafo: ${externos.join(", ")} (archivos: ${archivos.join(", ")})`);
+// G3: el Worker localiza bloques con la misma semántica que la web (src/lib/bloques-md.ts, solo el lexer de marked).
+// Excepción mínima: se permite exactamente el paquete `marked`, y solo importado desde src/lib/bloques-md.ts.
+test("core: el grafo de imports de hardware-core no arrastra paquetes ni módulos de Node (apto para workerd), salvo marked vía bloques-md.ts", () => {
+  const { archivos, externos, origenes } = grafoImports("lib/hardware-core.mjs");
+  const otros = externos.filter((e) => e !== "marked");
+  assert.deepEqual(otros, [], `dependencias externas en el grafo: ${otros.join(", ")} (archivos: ${archivos.join(", ")})`);
+  assert.deepEqual(origenes.get("marked") ?? [], externos.includes("marked") ? ["src/lib/bloques-md.ts"] : [], "marked solo entra al grafo a través de src/lib/bloques-md.ts");
   assert.ok(!archivos.some((f) => /tools\/neutralizar/.test(f)), "neutralizar.mjs no entra en el grafo");
   for (const f of archivos) assert.doesNotMatch(readFileSync(join(raiz, f), "utf8"), /process\.env\.(?!SESSION_SECRET\b)/, `${f}: sin process.env (salvo el valor por defecto de sesion.mjs)`);
 });
@@ -462,6 +471,15 @@ test("cliente: el HTML entra al DOM por un único punto (pintarMd) y la vista pr
   assert.doesNotMatch(js.match(/interface PaginaHw\s*\{[^}]*\}/)?.[0] ?? "", /\bhtml\b/, "PaginaHw sin html");
 });
 
+test("bloques-md.ts: no importa dompurify ni usa el DOM (también corre en el Worker)", () => {
+  const codigo = leer("src/lib/bloques-md.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(codigo, /["']dompurify["']/, "sin dompurify");
+  assert.doesNotMatch(codigo, /\b(window|document|DOMParser|HTMLElement|innerHTML|outerHTML|customElements)\b/, "sin APIs del DOM");
+  const { externos } = grafoImports("src/lib/bloques-md.ts");
+  assert.deepEqual(externos.filter((e) => e !== "marked"), [], "su grafo solo admite marked como paquete externo");
+  for (const f of grafoImports("src/lib/bloques-md.ts").archivos) assert.doesNotMatch(readFileSync(join(raiz, f), "utf8"), /["']dompurify["']/, `${f}: sin dompurify`);
+});
+
 function archivosSrc(dir) {
   const out = [];
   for (const n of readdirSync(join(raiz, dir))) {
@@ -475,7 +493,9 @@ test("cliente: solo hardware-editor.ts importa hardware-md, y nadie más en src/
   for (const f of archivosSrc("src")) {
     const src = readFileSync(join(raiz, f), "utf8");
     if (f !== "src/scripts/hardware-editor.ts") assert.doesNotMatch(src, /lib\/hardware-md/, `${f} no debe importar hardware-md`);
-    if (f !== "src/lib/hardware-md.ts") assert.doesNotMatch(src, /from\s+["'](marked|dompurify)["']|import\(\s*["'](marked|dompurify)["']/, `${f} no debe importar marked/dompurify`);
+    if (f !== "src/lib/hardware-md.ts") assert.doesNotMatch(src, /from\s+["']dompurify["']|import\(\s*["']dompurify["']/, `${f} no debe importar dompurify`);
+    // G3: bloques-md.ts usa el lexer de marked para que el Worker localice bloques igual que la web.
+    if (f !== "src/lib/hardware-md.ts" && f !== "src/lib/bloques-md.ts") assert.doesNotMatch(src, /from\s+["']marked["']|import\(\s*["']marked["']/, `${f} no debe importar marked`);
   }
   const quien = archivosSrc("src").filter((f) => /["'](?:\.\.?\/)+scripts\/hardware-editor(?:\.ts)?["']/.test(readFileSync(join(raiz, f), "utf8")));
   assert.deepEqual(quien, ["src/pages/[project]/[disciplina].astro"], "el script solo se carga en la página de disciplina");

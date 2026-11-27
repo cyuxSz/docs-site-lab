@@ -23,10 +23,14 @@ afterEach(() => {
 const JSON_CT = { "content-type": "application/json" };
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
 const BIN = { "content-type": "application/octet-stream", "content-length": String(PNG.length) };
+// Desde G3 el token de subida solo sube drawio, svg, kicad_sch y kicad_pcb con contenido que cuadre: las subidas que
+// tienen que salir bien usan un .drawio real. Las que la puerta corta siguen con el PNG.
+const DRAWIO = new TextEncoder().encode('<mxfile host="test"><diagram id="a"/></mxfile>');
+const SUBE = { "content-type": "application/octet-stream", "content-length": String(DRAWIO.length) };
 const ID = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a90";
 const uuid = (n) => `3f2b8c1e-9a4d-4e7f-8b21-${String(n).padStart(12, "0")}`;
 const qs = (o) => new URLSearchParams(o).toString();
-const subir = (env, bearer, extra = {}) => pedir(`/api/archivos/?${qs({ proyecto: "uuv", disciplina: "electronica", id: ID, nombre: "placa.png", ...extra })}`, { env, bearer, method: "POST", headers: BIN, body: PNG });
+const subir = (env, bearer, extra = {}) => pedir(`/api/archivos/?${qs({ proyecto: "uuv", disciplina: "electronica", id: ID, nombre: "placa.drawio", ...extra })}`, { env, bearer, method: "POST", headers: SUBE, body: DRAWIO });
 const HW = "/api/hardware/?proyecto=uuv&disciplina=electronica";
 
 // Páginas de hardware de uuv/electronica creadas por un editor con su sesión de navegador.
@@ -55,7 +59,7 @@ test("permitido: /auth/me, capacidades, subida, lista y descarga de adjuntos, í
 
   const sube = await subir(env, token);
   assert.equal(sube.status, 201, "un editor sube sin Origin");
-  assert.deepEqual(await sube.json(), { id: ID, nombre: "placa.png", tipo: "png" });
+  assert.deepEqual(await sube.json(), { id: ID, nombre: "placa.drawio", tipo: "drawio" });
 
   for (const lista of ["/api/archivos/?lista=1&proyecto=uuv", "/api/archivos/?lista=1&proyecto=uuv&disciplina=electronica"]) {
     const res = await pedir(lista, { env, bearer: token });
@@ -65,7 +69,7 @@ test("permitido: /auth/me, capacidades, subida, lista y descarga de adjuntos, í
   }
   const baja = await pedir(`/api/archivos/?proyecto=uuv&id=${ID}`, { env, bearer: token });
   assert.equal(baja.status, 200);
-  assert.deepEqual(new Uint8Array(await baja.arrayBuffer()), PNG);
+  assert.deepEqual(new Uint8Array(await baja.arrayBuffer()), DRAWIO);
 
   const indice = await pedir(HW, { env, bearer: token });
   assert.equal(indice.status, 200);
