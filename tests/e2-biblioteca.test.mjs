@@ -78,7 +78,9 @@ test("2. hostil.xml: solo pasan las formas seguras y solo con los campos xml, w,
   const r = leerBiblioteca(fixture("hostil.xml"));
   assert.ok(r);
   const titulos = r.formas.map((f) => f.title);
-  const largo = limpiarTitulo('<img src=x onerror="alert(1)">\u0007Hostil\u2028' + "x".repeat(200));
+  // Defensa en profundidad: el t\u00edtulo pierde < y > antes de limpiarTitulo.
+  const largo = limpiarTitulo('img src=x onerror="alert(1)"\u0007Hostil\u2028' + "x".repeat(200));
+  assert.doesNotMatch(largo, /[<>]/);
   assert.deepEqual(titulos, ["Bueno", "ClavesExtra", "HtmlPlano", "MenorQue", largo, "MedidasRaras"]);
   assert.equal(r.descartadas, 9);
   for (const f of r.formas) {
@@ -87,6 +89,7 @@ test("2. hostil.xml: solo pasan las formas seguras y solo con los campos xml, w,
     assert.ok(f.xml.startsWith("<mxGraphModel"));
     assert.ok(f.title.length <= MAX_TITULO);
     assert.doesNotMatch(f.title, /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/, "título sin caracteres de control");
+    assert.doesNotMatch(f.title, /[<>]/, "título sin < ni >");
     assert.equal(typeof f.w, "number");
     assert.equal(typeof f.h, "number");
   }
@@ -238,6 +241,16 @@ test("5. cargarBibliotecas: solo .xml de la disciplina actual que sean <mxlibrar
   assert.deepEqual(r.bibliotecas[0].formas, formasDeBiblioteca(fixture("ne555.xml")));
   assert.equal(r.bibliotecas[1].formas.length, 11);
   assert.deepEqual(r.avisos, [], "un .xml que no es biblioteca se ignora sin aviso");
+});
+
+test("5. cargarBibliotecas: el título de la biblioteca pierde < y >", async () => {
+  const { cargarBibliotecas } = await diag();
+  const r = await cargarBibliotecas({
+    disciplina: "elec",
+    listar: async () => [adj("<b>ne555</b>.xml")],
+    descargar: async () => fixture("ne555.xml"),
+  });
+  assert.deepEqual(r.bibliotecas.map((b) => b.titulo), ["bne555/b"]);
 });
 
 test("5. cargarBibliotecas: límites de 1 MB por biblioteca, 10 por disciplina y 1000 formas, con aviso", async () => {

@@ -265,7 +265,7 @@ export function leerBiblioteca(texto: unknown): { formas: FormaBiblioteca[]; des
       descartadas++;
       continue;
     }
-    const f: FormaBiblioteca = { xml: x.xml, w: medida(x.w), h: medida(x.h), title: limpiarTitulo(typeof x.title === "string" ? x.title : "") };
+    const f: FormaBiblioteca = { xml: x.xml, w: medida(x.w), h: medida(x.h), title: limpiarTitulo((typeof x.title === "string" ? x.title : "").replace(/[<>]/g, "")) };
     if (x.aspect === "fixed") f.aspect = "fixed";
     formas.push(f);
   }
@@ -321,14 +321,14 @@ export async function cargarBibliotecas(o: OpcionesBibliotecas): Promise<Resulta
     );
     const aptas = entradas.filter((e) => {
       if (typeof e.tamano === "number" && e.tamano > LIMITES_BIBLIOTECA.bytes) {
-        avisos.push(`La biblioteca «${limpiarTitulo(e.nombre)}» pesa más de 1 MB y no se cargó.`);
+        avisos.push(`La biblioteca «${limpiarTitulo(e.nombre.replace(/[<>]/g, ""))}» pesa más de 1 MB y no se cargó.`);
         return false;
       }
       return true;
     });
     const usadas = aptas.slice(0, LIMITES_BIBLIOTECA.porDisciplina);
     if (aptas.length > usadas.length) {
-      avisos.push(`Solo se cargan ${LIMITES_BIBLIOTECA.porDisciplina} bibliotecas por disciplina; se omitieron: ${aptas.slice(usadas.length).map((e) => limpiarTitulo(e.nombre)).join(", ")}.`);
+      avisos.push(`Solo se cargan ${LIMITES_BIBLIOTECA.porDisciplina} bibliotecas por disciplina; se omitieron: ${aptas.slice(usadas.length).map((e) => limpiarTitulo(e.nombre.replace(/[<>]/g, ""))).join(", ")}.`);
     }
     const textos = await Promise.all(
       usadas.map(async (e) => {
@@ -341,8 +341,8 @@ export async function cargarBibliotecas(o: OpcionesBibliotecas): Promise<Resulta
       }),
     );
     usadas.forEach((e, i) => {
-      const nombre = limpiarTitulo(e.nombre);
-      const titulo = limpiarTitulo(e.nombre.replace(/\.xml$/i, ""));
+      const nombre = limpiarTitulo(e.nombre.replace(/[<>]/g, ""));
+      const titulo = limpiarTitulo(e.nombre.replace(/[<>]/g, "").replace(/\.xml$/i, ""));
       const texto = textos[i];
       if (texto === null) {
         avisos.push(`No se pudo descargar la biblioteca «${nombre}».`);
