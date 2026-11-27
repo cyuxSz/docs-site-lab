@@ -59,13 +59,14 @@ function intercalarLecturas(db, esperar = 2) {
   return db;
 }
 
-// Deja `n` códigos vivos de `login` pasando por autorizar, un segundo entre cada uno.
+// Añade `n` códigos vivos de `login` pasando por autorizar, un segundo entre cada uno (se suman a los que ya tenga).
 async function llenar(env, login, n) {
+  const previos = filasCodigos(env).filter((f) => f.login === login).length;
   for (let i = 0; i < n; i++) {
     await autorizar(env, sesion(login), peticionApp().params);
     mock.timers.tick(1000);
   }
-  assert.equal(filasCodigos(env).filter((f) => f.login === login).length, n);
+  assert.equal(filasCodigos(env).filter((f) => f.login === login).length, previos + n);
 }
 
 const datos = () => ({ login: "ana", challenge: pkce().challenge, nombre: "PC de Ana", plataforma: "windows" });
