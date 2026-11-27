@@ -1,4 +1,5 @@
 :root {
+  --cabecera-fondo: 67px;
   --hw-h1-size: 2.625em;
   --hw-h2-size: 2.25em;
   --hw-h3-size: 2em;
@@ -239,7 +240,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 /* Resumen del proyecto: sin aside de metadatos, así que el contenido ocupa el resto y queda centrado. */
 .doc.doc-2 { grid-template-columns: 240px minmax(0, 1fr); }
 .doc-2 > main { width: 100%; max-width: 1040px; margin-inline: auto; min-width: 0; }
-.sidenav { position: sticky; top: 92px; max-height: calc(100vh - 108px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
+.sidenav { position: sticky; top: calc(var(--cabecera-fondo) + 25px); max-height: calc(100vh - var(--cabecera-fondo) - 41px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
 .sidenav-toggle { display: none; }
 .sidenav h2 { margin: 18px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sidenav ul { list-style: none; margin: 0; padding: 0; }
@@ -250,7 +251,7 @@ a.card:hover { border-color: var(--accent); background: var(--glass-strong); tra
 .nav-contador { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; pointer-events: none; }
 .sidenav .extra { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
 
-.meta { position: sticky; top: 92px; font-size: 13px; color: var(--muted); }
+.meta { position: sticky; top: calc(var(--cabecera-fondo) + 25px); font-size: 13px; color: var(--muted); }
 .meta dl { margin: 0; display: grid; gap: 10px; }
 .meta dt { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
 .meta dd { margin: 0; color: var(--text); }
@@ -667,7 +668,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .barras-movil { display: none; }
 @media screen and (min-width: 900px) {
   .doc-wiki { transition: grid-template-columns .2s ease; }
-  .doc-wiki > .barra-caja { position: sticky; top: 92px; display: flex; flex-direction: column; max-height: calc(100vh - 108px); overflow: hidden; }
+  .doc-wiki > .barra-caja { position: sticky; top: calc(var(--cabecera-fondo) + 25px); display: flex; flex-direction: column; max-height: calc(100vh - var(--cabecera-fondo) - 41px); overflow: hidden; }
   .barra-caja-izq .barra-btn { align-self: flex-start; }
   .barra-caja-der .barra-btn { align-self: flex-end; }
   .barra-caja .barra-btn { flex: none; }
@@ -706,6 +707,8 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
   .doc-wiki .sidenav:not(.open) .sidenav-list { display: block; }
   .barras-velo { position: fixed; inset: 0; z-index: 39; display: block; background: color-mix(in srgb, var(--bg) 65%, transparent); }
   .barras-velo[hidden] { display: none; }
+  .doc-wiki .meta .toc-box { display: none; }
+  .doc-wiki:not(:has(.meta dl > *)) .barras-movil [data-barra="der"] { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .doc-wiki, .doc-wiki .sidenav, .doc-wiki .meta { transition: none !important; } }
 
@@ -713,6 +716,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 @media print {
   :root, :root[data-theme="light"] { --bg: #fff; --surface: #fff; --glass: #fff; --text: #000; --muted: #222; --line: #888; --accent: #000; --shadow: none; }
   .topbar, .ptabs, .sidenav, .migas, .toc-box, .prevnext, .to-top, .copy-btn, .anchor, .favorito-btn, .aviso-cambio, .ruta-paso, .lectura-ajustes, .resaltado-barra, .continuar, .favoritos, .search-dialog, .atajos-dialog, .comentarios, .barra-btn, .barras-movil, .barras-velo, .toc-movil, .popover, .pagina-menu, .pagina-menu-btn { display: none !important; }
+  html:not([data-js]) .pagina-menu, html:not([data-js]) .pagina-menu[hidden] { display: none !important; } /* gana a la regla de pantalla sin JS por orden */
   html, body { background: #fff; color: #000; box-shadow: none; background-image: none; }
   .doc, .doc.doc-2 { display: block; padding-top: 0; }
   .doc, main, .prose { max-width: none; width: auto; margin: 0; }
@@ -902,6 +906,7 @@ main.caratula { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 .nav-grupo summary::-webkit-details-marker { display: none; }
 .nav-grupo summary::before { content: "▸"; font-size: 10px; }
 .nav-grupo[open] > summary::before { content: "▾"; }
+.nav-grupo[open] { padding-bottom: 10px; }
 .nav-grupo summary:hover { color: var(--text); }
 .nav-grupo summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
@@ -1009,4 +1014,4 @@ figure.hw-kicad [role="status"] { margin: 0 0 8px; color: var(--muted); }
 /* C17: vista de lector */
 .hw-aviso-lector { display: none; }
 :root[data-vista-lector] :is([data-hw-solo-editor], .hw-mover, .hw-restaurar, [data-hw-inicializar], .hw-diagrama-editar) { display: none !important; }
-:root[data-vista-lector] .hw-aviso-lector { display: flex; position: sticky; top: 92px; z-index: 20; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--text); }
+:root[data-vista-lector] .hw-aviso-lector { display: flex; position: sticky; top: calc(var(--cabecera-fondo) + 8px); z-index: 20; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--text); }
