@@ -41,6 +41,7 @@ import {
   validarArchivo,
   type PaginaIndice,
 } from "../lib/hardware-editor";
+import { conectarInsertarModelo } from "./hardware-insertar-modelo";
 import { altoAviso } from "../lib/cabecera";
 import { archivosKicad, bloqueKicad, bloquePdf, bomDeArchivo, bloqueBom, insertarBloqueTexto, tituloDeArchivo } from "../lib/visores";
 import { conectarImportar } from "./hardware-importar";
@@ -129,6 +130,8 @@ async function iniciar(root: HTMLElement) {
   const btnInsertarBom = $<HTMLButtonElement>("[data-hw-insertar-bom]");
   const btnInsertarKicad = $<HTMLButtonElement>("[data-hw-insertar-kicad]");
   const inputKicad = $<HTMLInputElement>("[data-hw-archivo-kicad]");
+  const btnInsertarModelo = $<HTMLButtonElement>("[data-hw-insertar-modelo]");
+  const inputModelo = $<HTMLInputElement>("[data-hw-archivo-modelo]");
   const inputPdf = $<HTMLInputElement>("[data-hw-archivo-pdf]");
   const inputBom = $<HTMLInputElement>("[data-hw-archivo-bom]");
   const dlgDiagramaNuevo = $<HTMLDialogElement>("#hw-diagrama-nuevo");
@@ -195,6 +198,7 @@ async function iniciar(root: HTMLElement) {
     btnInsertarPdf.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnInsertarBom.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnInsertarKicad.disabled = insercionBloqueada(guardando, cargandoVisual);
+    btnInsertarModelo.disabled = insercionBloqueada(guardando, cargandoVisual);
     btnMenuInsertar.disabled = insercionBloqueada(guardando, cargandoVisual);
     if (btnMenuInsertar.disabled) menuInsertarCtl.cerrar();
     btnGuardar.title = e.aviso;
@@ -752,6 +756,7 @@ async function iniciar(root: HTMLElement) {
     btnInsertarPdf.hidden = !lado && modo !== "escribir";
     btnInsertarBom.hidden = !lado && modo !== "escribir";
     btnInsertarKicad.hidden = !lado && modo !== "escribir";
+    btnInsertarModelo.hidden = !lado && modo !== "escribir";
     previa.hidden = !lado && modo !== "previa";
   }
 
@@ -793,7 +798,7 @@ async function iniciar(root: HTMLElement) {
       modoEditor("escribir");
       if (mqLado.matches) void pintarMd(previa, textarea.value, pagina?.titulo);
     } else {
-      for (const x of [btnInsertarDiagrama, btnInsertarPdf, btnInsertarBom, btnInsertarKicad]) x.hidden = false;
+      for (const x of [btnInsertarDiagrama, btnInsertarPdf, btnInsertarBom, btnInsertarKicad, btnInsertarModelo]) x.hidden = false;
       previaViva.cancelar();
     }
     actualizarSinGuardar();
@@ -1346,6 +1351,28 @@ async function iniciar(root: HTMLElement) {
       actualizarGuardar();
     }
     enfocarActivo();
+  });
+  // Modelo 3D: la validación y el bloque viven en hardware-insertar-modelo. Como con KiCad, si al terminar la subida el
+  // editor se cerró o es otra sesión, el bloque no se inserta.
+  conectarInsertarModelo({
+    boton: btnInsertarModelo,
+    input: inputModelo,
+    escuchar,
+    guardando: () => guardando,
+    subir: (archivo, bloque) => {
+      const sesion = sesionEdicion;
+      const alSubir = (id: string) => {
+        if (sesion === sesionEdicion && editando) bloque.alSubir(id);
+      };
+      return subir(archivo as File, undefined, { tipos: bloque.tipos, alSubir });
+    },
+    insertar: insertarBloqueEnTexto,
+    error: errorEditor,
+    subidas: (delta) => {
+      subidasActivas += delta;
+      actualizarGuardar();
+    },
+    enfocar: enfocarActivo,
   });
   escuchar(btnInsertarBom, "click", () => {
     if (!guardando) inputBom.click();

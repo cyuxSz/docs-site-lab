@@ -2,7 +2,8 @@ import { Marked } from "marked";
 import createDOMPurify from "dompurify";
 import { aplicarTemaVisorKicad, esperarVisorKicad, guardarFondoKicad, leerFondoKicad, temaKicad, visorInternoKicad, type FondoKicad } from "./kicad-fondo.ts";
 import { bloqueDiagrama, parsearBloque, type Diagrama } from "./diagramas.ts";
-import { csvBom, formatoCantidad, formatoCosto, formatoUnitario, nombreCsvBom, parsearBom, parsearKicad, parsearPdf, tipoKicad, MAX_KICAD_VISOR, type Bom, type DatosKicad, type DatosPdf } from "./visores.ts";
+import { csvBom, formatoCantidad, formatoCosto, formatoUnitario, nombreCsvBom, parsearBom, parsearKicad, parsearModelo, parsearPdf, tipoKicad, MAX_KICAD_VISOR, type Bom, type DatosKicad, type DatosModelo, type DatosPdf } from "./visores.ts";
+import { cargarThree, leerArchivoModelo, liberarModelos, montarModelo, soportaWebgl, type OpcionesModelo } from "./modelo-visor.ts";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const esc2 = (s: string) => esc(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const cp = (n: number) => (n >= 0xd800 && n <= 0xdfff ? "" : String.fromCodePoint(Math.min(n, 0x10ffff)));
@@ -26,16 +27,17 @@ const TAGS = ["a","p","br","hr","h1","h2","h3","h4","h5","h6","strong","em","del
 const ATTR = ["href","src","alt","title","align","start","type","checked","disabled","class"];
 const PROYECTO = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
-// Bloques ```diagrama, ```pdf y ```bom válidos de primer nivel (los de citas o listas siguen siendo código), con su posición en el texto.
+// Bloques ```diagrama, ```pdf, ```kicad, ```modelo y ```bom válidos de primer nivel (los de citas o listas siguen siendo código), con su posición en el texto.
 // Marked normaliza los saltos de línea a LF: las posiciones se calculan sobre ese texto y se devuelven sobre el original.
 // Cada bloque lleva además su token, que es la clave para el render (sin depender de posiciones). Marked puede consumir
 // sin token definiciones de enlace repetidas: ese tramo se salta, sin descartar el resto de la página.
-type TipoBloque = "diagrama" | "pdf" | "kicad" | "bom";
+type TipoBloque = "diagrama" | "pdf" | "kicad" | "modelo" | "bom";
 type Hallado = { inicio: number; fin: number; tipo: TipoBloque; datos: any; token: any };
 function datosDe(lang: string, texto: string): any {
   if (lang === "diagrama") return parsearBloque(texto);
   if (lang === "pdf") return parsearPdf(texto);
   if (lang === "kicad") return parsearKicad(texto);
+  if (lang === "modelo") return parsearModelo(texto);
   const r = parsearBom(texto);
   return r.ok ? r.bom : null;
 }
@@ -52,7 +54,7 @@ function localizarBloques(md: string, tokens?: any[]): Hallado[] {
     const raw = String(t.raw ?? "");
     const idx = normalizado.indexOf(raw, pos);
     if (idx < 0 || (idx > pos && !/^\s*\[/.test(normalizado.slice(pos, idx)))) continue; // no se puede situar: se ignora este token
-    if (t.type === "code" && (t.lang === "diagrama" || t.lang === "pdf" || t.lang === "kicad" || t.lang === "bom") && t.codeBlockStyle !== "indented") {
+    if (t.type === "code" && (t.lang === "diagrama" || t.lang === "pdf" || t.lang === "kicad" || t.lang === "modelo" || t.lang === "bom") && t.codeBlockStyle !== "indented") {
       const datos = datosDe(t.lang, t.text);
       if (datos) salida.push({ inicio: aOrig(idx), fin: aOrig(idx + raw.replace(/\n+$/, "").length), tipo: t.lang, datos, token: t });
     }
@@ -63,7 +65,7 @@ function localizarBloques(md: string, tokens?: any[]): Hallado[] {
 
 export const diagramasDe = (md: string): Diagrama[] => localizarBloques(md).filter((x) => x.tipo === "diagrama").map((x) => x.datos as Diagrama);
 
-export type Visor = { tipo: "pdf"; datos: DatosPdf } | { tipo: "kicad"; datos: DatosKicad } | { tipo: "bom"; datos: Bom };
+export type Visor = { tipo: "pdf"; datos: DatosPdf } | { tipo: "kicad"; datos: DatosKicad } | { tipo: "modelo"; datos: DatosModelo } | { tipo: "bom"; datos: Bom };
 export const visoresDe = (md: string): Visor[] => localizarBloques(md).filter((x) => x.tipo !== "diagrama").map((x) => ({ tipo: x.tipo, datos: x.datos }) as Visor);
 
 // Cambia solo el bloque cuya fuente es `fuenteAnterior`; null si no está o aparece más de una vez (otra persona editó la página).
@@ -121,8 +123,16 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
       return `<figure class="hw-kicad"><a href="${esc2(urlArchivo(proyecto, d.archivo))}">Descargar archivo de KiCad</a>${respaldo}${d.titulo ? `<figcaption>${esc(d.titulo)}</figcaption>` : ""}</figure>\n`;
     },
   };
+  // Solo el enlace de descarga: el lienzo lo añade montarVisores (src/lib/modelo-visor.ts).
+  const modelo = {
+    name: "modelo",
+    renderer(t: any) {
+      const d = t.datos as DatosModelo;
+      return `<figure class="hw-modelo"><a href="${esc2(urlArchivo(proyecto, d.archivo))}">Descargar modelo 3D</a>${d.titulo ? `<figcaption>${esc(d.titulo)}</figcaption>` : ""}</figure>\n`;
+    },
+  };
   const bom = { name: "bom", renderer: (t: any) => tablaBom(t.datos as Bom) };
-  const marked = new Marked({ gfm: true, renderer: { html({ text }: any) { return esc(text); } }, extensions: [figura, pdf, kicad, bom] as any });
+  const marked = new Marked({ gfm: true, renderer: { html({ text }: any) { return esc(text); } }, extensions: [figura, pdf, kicad, modelo, bom] as any });
   // Solo bloques de primer nivel y con proyecto: el resto de bloques ```diagrama sigue siendo código.
   const analizar = (md: string) => {
     const tokens = marked.lexer(String(md));
@@ -140,7 +150,7 @@ export function crearRenderizador(win: any, opciones: { proyecto?: string } = {}
     for (const a of ["href", "src"]) if (el.hasAttribute(a)) { const s = urlSegura(el.getAttribute(a), a as any); if (s === null) el.removeAttribute(a); }
     if (el.tagName === "A" && /^https?:/i.test(el.getAttribute("href") ?? "")) el.setAttribute("rel", "noopener noreferrer");
     if (el.tagName === "INPUT") { if (el.getAttribute("type") !== "checkbox") el.remove(); else el.setAttribute("disabled", ""); }
-    if (el.hasAttribute("class") && !(el.tagName === "CODE" && /^language-[\w+#-]+$/.test(el.getAttribute("class"))) && !(el.tagName === "FIGURE" && ["hw-diagrama", "hw-pdf", "hw-kicad", "hw-bom"].includes(el.getAttribute("class")))) el.removeAttribute("class");
+    if (el.hasAttribute("class") && !(el.tagName === "CODE" && /^language-[\w+#-]+$/.test(el.getAttribute("class"))) && !(el.tagName === "FIGURE" && ["hw-diagrama", "hw-pdf", "hw-kicad", "hw-modelo", "hw-bom"].includes(el.getAttribute("class")))) el.removeAttribute("class");
   });
   const conf = { ALLOWED_TAGS: TAGS, ALLOWED_ATTR: ATTR, ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false };
   return {
@@ -282,11 +292,14 @@ async function montarKicad(doc: any, fig: any, d: DatosKicad, proyecto: string, 
 export function montarVisores(
   raiz: any,
   md: string,
-  { proyecto, slug, vistaPrevia, descargar, kicad }: { proyecto: string; slug: string; vistaPrevia: boolean; descargar: (nombre: string, csv: string) => void; kicad?: OpcionesKicad },
+  { proyecto, slug, vistaPrevia, descargar, kicad, modelo }: { proyecto: string; slug: string; vistaPrevia: boolean; descargar: (nombre: string, csv: string) => void; kicad?: OpcionesKicad; modelo?: OpcionesModelo },
 ): Promise<void> {
-  if (!raiz || !PROYECTO.test(String(proyecto ?? ""))) return Promise.resolve();
+  if (!raiz) return Promise.resolve();
+  // Los visores 3D de figuras que ya no están en el documento (repintado, otra página) sueltan su contexto WebGL.
+  liberarModelos(raiz.ownerDocument ?? raiz);
+  if (!PROYECTO.test(String(proyecto ?? ""))) return Promise.resolve();
   const visores = visoresDe(md);
-  const figuras: any[] = [...raiz.querySelectorAll("figure.hw-pdf, figure.hw-kicad, figure.hw-bom")];
+  const figuras: any[] = [...raiz.querySelectorAll("figure.hw-pdf, figure.hw-kicad, figure.hw-modelo, figure.hw-bom")];
   if (figuras.length !== visores.length) return Promise.resolve();
   if (figuras.some((f, i) => !f.classList.contains(`hw-${visores[i].tipo}`))) return Promise.resolve();
   const doc = raiz.ownerDocument ?? raiz;
@@ -294,10 +307,15 @@ export function montarVisores(
   let n = 0;
   const montajes: Promise<void>[] = [];
   const opcKicad: OpcionesKicad = kicad ?? { cargarScript: () => cargarKicanvas(doc), leer: (url) => leerArchivoKicad(doc, url), webgl2: () => soportaWebgl2(doc) };
+  const opcModelo: OpcionesModelo = modelo ?? { cargarThree: () => cargarThree(doc), leer: (url) => leerArchivoModelo(doc, url), webgl: () => soportaWebgl(doc) };
   visores.forEach((v, i) => {
     const fig = figuras[i];
     if (v.tipo === "kicad") {
       if (!vistaPrevia) montajes.push(montarKicad(doc, fig, v.datos, proyecto, opcKicad));
+      return;
+    }
+    if (v.tipo === "modelo") {
+      if (!vistaPrevia) montajes.push(montarModelo(doc, fig, v.datos, urlArchivo(proyecto, v.datos.archivo), opcModelo));
       return;
     }
     if (v.tipo === "pdf") {
