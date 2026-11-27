@@ -1,4 +1,4 @@
-// Visores de hardware (D1a): lógica pura de los bloques ```pdf y ```bom, sin dependencias (la usan el navegador, el renderizador y los tests).
+// Visores de hardware (D1a): lógica pura de los bloques ```pdf, ```kicad, ```modelo y ```bom, sin dependencias (la usan el navegador, el renderizador y los tests).
 //   ```pdf                            ```bom
 //   archivo: <uuid>                   referencia,descripcion,cantidad,costo_unitario[,proveedor][,enlace]
 //   titulo: Manual (opcional)         R1,Resistencia 10k,10,0.0032
@@ -97,6 +97,117 @@ export function archivosKicad(
   if (respaldo.length > 1) return { ok: false, error: "Como respaldo elige como máximo un PDF o SVG" };
   if (kicad.length + respaldo.length !== archivos.length) return { ok: false, error: "Solo se admiten un .kicad_sch o .kicad_pcb y, opcionalmente, un PDF o SVG de respaldo" };
   return respaldo.length ? { ok: true, kicad: kicad[0], respaldo: respaldo[0] } : { ok: true, kicad: kicad[0] };
+}
+
+// ---------- Modelo 3D ----------
+// Bloque ```modelo: mismas claves que ```pdf (archivo, titulo). El archivo es un STL o un GLB ya subido como adjunto.
+export interface DatosModelo {
+  archivo: string;
+  titulo: string;
+}
+
+export const MAX_MODELO_VISOR = 20 * 1024 * 1024;
+// Tope del chunk JSON de un GLB: por encima no se decodifica ni se parsea.
+export const MAX_JSON_GLB = 4 * 1024 * 1024;
+// Topes de complejidad: por encima el modelo no se muestra (queda el enlace de descarga). Los triángulos son la suma de todo
+// lo que se dibuja; las texturas, el lado mayor de cada imagen y la suma de píxeles de las imágenes distintas.
+export const MAX_TRIANGULOS_MODELO = 500_000;
+export const MAX_LADO_TEXTURA_MODELO = 4096;
+export const MAX_PIXELES_TEXTURAS_MODELO = 4 * 4096 * 4096;
+// Presupuesto de memoria de un GLB: suma de los bytes que declaran todos sus accessors (count × componentes × bytes).
+export const MAX_BYTES_ACCESSORS_GLB = 64 * 1024 * 1024;
+
+export const parsearModelo = (cuerpo: string): DatosModelo | null => parsearPdf(cuerpo);
+
+export function bloqueModelo(d: { archivo: string; titulo?: string }): string {
+  const archivo = String(d?.archivo ?? "").toLowerCase();
+  if (!UUID.test(archivo)) throw new Error("Identificador de modelo no válido");
+  const titulo = limpiarTitulo(d.titulo ?? "");
+  return `\`\`\`modelo\narchivo: ${archivo}\n${titulo ? `titulo: ${titulo}\n` : ""}\`\`\`\n`;
+}
+
+// Validación previa a la subida desde el menú «Insertar»: un solo .stl o .glb que el visor pueda cargar.
+export function archivoModelo(lista: ArchivoLista[]): { ok: true; archivo: ArchivoLista } | { ok: false; error: string } {
+  const archivos = Array.from(lista ?? []);
+  if (archivos.length !== 1 || !/\.(stl|glb)$/i.test(String(archivos[0]?.name ?? ""))) return { ok: false, error: "Elige exactamente un archivo .stl o .glb" };
+  const archivo = archivos[0];
+  if (!Number.isFinite(archivo.size) || archivo.size > MAX_MODELO_VISOR) return { ok: false, error: 'El visor muestra modelos de hasta 20 MB. Súbelo con "Adjuntar archivo".' };
+  return { ok: true, archivo };
+}
+
+const MAGIA_GLB = 0x46546c67; // "glTF"
+const CHUNK_JSON = 0x4e4f534a; // "JSON"
+
+// Tipo por contenido, no por extensión: magia glTF, STL binario (84 + 50·n bytes exactos) o STL ASCII (empieza por «solid»).
+export function tipoModelo(bytes: ArrayBuffer): "glb" | "stl" | null {
+  const largo = bytes?.byteLength ?? 0;
+  if (largo < 5) return null;
+  const v = new DataView(bytes);
+  if (v.getUint32(0, true) === MAGIA_GLB) return "glb";
+  if (largo >= 84 && 84 + 50 * v.getUint32(80, true) === largo) return "stl";
+  const inicio = new TextDecoder().decode(new Uint8Array(bytes, 0, Math.min(largo, 512))).replace(/^[﻿\s]+/, "");
+  return /^solid(?:\s|$)/.test(inicio) ? "stl" : null;
+}
+
+const COMPRESION_GLB = new Set(["KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_meshopt_compression", "KHR_texture_basisu"]);
+// Las dos tablas de glTF 2 (las mismas que usa GLTFLoader). Map, para que «constructor» o «__proto__» no pasen por válidos.
+const COMPONENTES_ACCESSOR = new Map<unknown, number>([["SCALAR", 1], ["VEC2", 2], ["VEC3", 3], ["VEC4", 4], ["MAT2", 4], ["MAT3", 9], ["MAT4", 16]]);
+const BYTES_COMPONENTE = new Map<unknown, number>([[5120, 1], [5121, 1], [5122, 2], [5123, 2], [5125, 4], [5126, 4]]);
+export type InspeccionGlb = { ok: true } | { ok: false; motivo: "formato" | "externo" | "comprimido" | "complejo" };
+
+// Un GLB es contenido no confiable: se revisa antes de dárselo a GLTFLoader. Debe ser glTF 2 autocontenido (ninguna uri en
+// buffers ni images: una relativa haría un GET con cookies al portal) y sin compresión que necesite decodificadores aparte.
+export function inspeccionarGlb(bytes: ArrayBuffer): InspeccionGlb {
+  const formato: InspeccionGlb = { ok: false, motivo: "formato" };
+  const largo = bytes?.byteLength ?? 0;
+  if (largo < 20) return formato;
+  const v = new DataView(bytes);
+  if (v.getUint32(0, true) !== MAGIA_GLB || v.getUint32(4, true) !== 2 || v.getUint32(8, true) !== largo) return formato;
+  const largoJson = v.getUint32(12, true);
+  if (v.getUint32(16, true) !== CHUNK_JSON || largoJson > MAX_JSON_GLB || 20 + largoJson > largo) return formato;
+  // GLTFLoader recorre todos los chunks y se queda con el último JSON: aquí se admite uno solo, el primero, y el resto
+  // (BIN o desconocidos) tiene que cubrir exactamente el archivo.
+  for (let o = 20 + largoJson; o < largo; ) {
+    if (largo - o < 8) return formato;
+    const largoChunk = v.getUint32(o, true);
+    if (v.getUint32(o + 4, true) === CHUNK_JSON || largoChunk > largo - o - 8) return formato;
+    o += 8 + largoChunk;
+  }
+  let json: any;
+  try {
+    json = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes, 20, largoJson)));
+  } catch {
+    return formato;
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) return formato;
+  for (const clave of ["buffers", "images", "extensionsUsed", "extensionsRequired"]) {
+    if (json[clave] !== undefined && !Array.isArray(json[clave])) return formato;
+  }
+  for (const clave of ["buffers", "images"]) {
+    for (const x of json[clave] ?? []) {
+      if (!x || typeof x !== "object") return formato;
+      if ("uri" in x) return { ok: false, motivo: "externo" };
+    }
+  }
+  for (const clave of ["extensionsUsed", "extensionsRequired"]) {
+    if ((json[clave] ?? []).some((e: unknown) => COMPRESION_GLB.has(e as string))) return { ok: false, motivo: "comprimido" };
+  }
+  // Tamaño declarado, lo último: GLTFLoader reserva `count` elementos por accessor (sin bufferView, un arreglo a ceros; si es
+  // disperso, una copia), así que un JSON de pocos bytes puede pedir gigas antes de que se pueda medir nada. Dos topes: los
+  // elementos de cada accessor y los bytes de todos juntos. Se recorren todos antes de decidir: uno mal formado gana.
+  if (json.accessors !== undefined && !Array.isArray(json.accessors)) return formato;
+  let complejo = false;
+  let declarados = 0;
+  for (const a of json.accessors ?? []) {
+    if (!a || typeof a !== "object" || Array.isArray(a) || !Number.isInteger(a.count) || a.count < 0) return formato;
+    const componentes = COMPONENTES_ACCESSOR.get(a.type);
+    const porComponente = BYTES_COMPONENTE.get(a.componentType);
+    if (componentes === undefined || porComponente === undefined) return formato;
+    if (a.count > 3 * MAX_TRIANGULOS_MODELO) complejo = true;
+    declarados += a.count * componentes * porComponente;
+  }
+  if (complejo || !(declarados <= MAX_BYTES_ACCESSORS_GLB)) return { ok: false, motivo: "complejo" };
+  return { ok: true };
 }
 
 // ---------- BOM ----------

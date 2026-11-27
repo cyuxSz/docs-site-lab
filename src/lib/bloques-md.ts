@@ -1,18 +1,19 @@
-// Localización de bloques ```diagrama, ```pdf, ```kicad y ```bom en Markdown, sin DOM: la usan el editor (hardware-md.ts) y el Worker.
+// Localización de bloques ```diagrama, ```pdf, ```kicad, ```modelo y ```bom en Markdown, sin DOM: la usan el editor (hardware-md.ts) y el Worker.
 import { Marked } from "marked";
 import { bloqueDiagrama, parsearBloque } from "./diagramas.ts";
-import { parsearBom, parsearKicad, parsearPdf } from "./visores.ts";
+import { parsearBom, parsearKicad, parsearModelo, parsearPdf } from "./visores.ts";
 
-// Bloques ```diagrama, ```pdf y ```bom válidos de primer nivel (los de citas o listas siguen siendo código), con su posición en el texto.
+// Bloques ```diagrama, ```pdf, ```kicad, ```modelo y ```bom válidos de primer nivel (los de citas o listas siguen siendo código), con su posición en el texto.
 // Marked normaliza los saltos de línea a LF: las posiciones se calculan sobre ese texto y se devuelven sobre el original.
 // Cada bloque lleva además su token, que es la clave para el render (sin depender de posiciones). Marked puede consumir
 // sin token definiciones de enlace repetidas: ese tramo se salta, sin descartar el resto de la página.
-export type TipoBloque = "diagrama" | "pdf" | "kicad" | "bom";
+export type TipoBloque = "diagrama" | "pdf" | "kicad" | "modelo" | "bom";
 export type Hallado = { inicio: number; fin: number; tipo: TipoBloque; datos: any; token: any };
 function datosDe(lang: string, texto: string): any {
   if (lang === "diagrama") return parsearBloque(texto);
   if (lang === "pdf") return parsearPdf(texto);
   if (lang === "kicad") return parsearKicad(texto);
+  if (lang === "modelo") return parsearModelo(texto);
   const r = parsearBom(texto);
   return r.ok ? r.bom : null;
 }
@@ -29,7 +30,7 @@ export function localizarBloques(md: string, tokens?: any[]): Hallado[] {
     const raw = String(t.raw ?? "");
     const idx = normalizado.indexOf(raw, pos);
     if (idx < 0 || (idx > pos && !/^\s*\[/.test(normalizado.slice(pos, idx)))) continue; // no se puede situar: se ignora este token
-    if (t.type === "code" && (t.lang === "diagrama" || t.lang === "pdf" || t.lang === "kicad" || t.lang === "bom") && t.codeBlockStyle !== "indented") {
+    if (t.type === "code" && (t.lang === "diagrama" || t.lang === "pdf" || t.lang === "kicad" || t.lang === "modelo" || t.lang === "bom") && t.codeBlockStyle !== "indented") {
       const datos = datosDe(t.lang, t.text);
       if (datos) salida.push({ inicio: aOrig(idx), fin: aOrig(idx + raw.replace(/\n+$/, "").length), tipo: t.lang, datos, token: t });
     }

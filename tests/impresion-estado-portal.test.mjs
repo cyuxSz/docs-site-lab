@@ -175,7 +175,7 @@ test(".to-top sube cuando la barra de resaltado está visible", () => {
 test("Diálogo de atajos: avisa que se pausan con un diálogo abierto", () => {
   const s = read("src/layouts/Base.astro");
   const dlg = s.slice(s.indexOf('id="atajos"'), s.indexOf("</dialog>", s.indexOf('id="atajos"')));
-  assert.match(dlg, /<p class="atajos-nota">Los atajos se pausan mientras hay un diálogo abierto\.<\/p>/);
+  assert.match(dlg, /<p class="atajos-nota">Con un diálogo abierto los atajos se pausan\. Esta ayuda se cierra con \? o Esc\.<\/p>/);
   assert.ok(reglasCon(css, ".atajos-nota"), "estilo de .atajos-nota");
 });
 

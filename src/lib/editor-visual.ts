@@ -55,7 +55,7 @@ export function markdownParaGuardar({ actual, inicialEditor, origen }: { actual:
 
 // Tarjeta HTML de un bloque del portal, a partir del renderizador de la lectura (marked + DOMPurify). null = se ve como código.
 export function vistaBloque(html: (md: string) => string, lenguaje: string, contenido: string, { editable }: { editable: boolean }): string | null {
-  if (lenguaje !== "pdf" && lenguaje !== "kicad" && lenguaje !== "bom" && lenguaje !== "diagrama") return null;
+  if (lenguaje !== "pdf" && lenguaje !== "kicad" && lenguaje !== "modelo" && lenguaje !== "bom" && lenguaje !== "diagrama") return null;
   // Un título con marcas HTML no se pinta como tarjeta (se ve como código): el saneado lo escaparía, pero así no entra ni como texto.
   if (lenguaje !== "bom" && /^\s*titulo\s*:.*[<>]/im.test(contenido)) return null;
   const corridas = String(contenido).match(/`+/g) ?? [];
@@ -67,7 +67,7 @@ export function vistaBloque(html: (md: string) => string, lenguaje: string, cont
   } catch {
     return null;
   }
-  const clase = lenguaje === "pdf" ? "hw-pdf" : lenguaje === "kicad" ? "hw-kicad" : lenguaje === "bom" ? "hw-bom" : "hw-diagrama";
+  const clase = lenguaje === "pdf" ? "hw-pdf" : lenguaje === "kicad" ? "hw-kicad" : lenguaje === "modelo" ? "hw-modelo" : lenguaje === "bom" ? "hw-bom" : "hw-diagrama";
   if (!salida.startsWith(`<figure class="${clase}">`)) return null; // no parsea: se queda como código
   if (lenguaje === "diagrama" && editable) {
     const d = diagramasDe(md)[0];

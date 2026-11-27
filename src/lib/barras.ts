@@ -8,7 +8,7 @@ export interface EstadoBarras {
   cajon: Lado | null;
 }
 export type EventoBarras =
-  | { tipo: "alternar"; lado: Lado; movil: boolean }
+  | { tipo: "alternar"; lado: Lado; movil: boolean; vacio?: boolean }
   | { tipo: "escape" }
   | { tipo: "fuera" }
   | { tipo: "enfoque" };
@@ -26,6 +26,8 @@ export function barras(e: EstadoBarras, ev: EventoBarras): EstadoBarras {
   switch (ev.tipo) {
     case "alternar": {
       if (e.enfoque) return { ...e, enfoque: false };
+      // Un cajón vacío y cerrado no se abre (el estado no cambia); uno abierto sí se cierra.
+      if (ev.movil && ev.vacio && e.cajon !== ev.lado) return e;
       if (ev.movil) return { ...e, cajon: e.cajon === ev.lado ? null : ev.lado };
       return ev.lado === "izq" ? { ...e, izqPlegada: !e.izqPlegada } : { ...e, derPlegada: !e.derPlegada };
     }
@@ -49,7 +51,7 @@ export function anuncioLectura(antes: EstadoBarras, despues: EstadoBarras): stri
 
 // Etiqueta (aria-label y title) del botón de ese lado: lo que haría al pulsarlo.
 export function etiquetaBarra(e: EstadoBarras, lado: Lado, movil: boolean): string {
-  return `${visible(e, lado, movil) ? "Ocultar" : "Mostrar"} ${lado === "izq" ? "navegación" : "índice"}`;
+  return `${visible(e, lado, movil) ? "Ocultar" : "Mostrar"} ${lado === "izq" ? "navegación" : movil ? "datos de la página" : "índice"}`;
 }
 
 // Valor de aria-expanded del botón de ese lado.

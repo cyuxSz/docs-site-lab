@@ -90,7 +90,8 @@ test("etiquetaBarra (lote 9a): 'Ocultar'/'Mostrar' + 'navegación'/'índice' seg
   assert.equal(etiquetaBarra(base({ enfoque: true }), "izq", false), "Mostrar navegación", "en enfoque los dos son rieles");
   assert.equal(etiquetaBarra(base({ enfoque: true }), "der", false), "Mostrar índice");
   assert.equal(etiquetaBarra(base(), "izq", true), "Mostrar navegación", "en móvil el cajón arranca cerrado");
-  assert.equal(etiquetaBarra(base({ cajon: "der" }), "der", true), "Ocultar índice");
+  // Lote «movil-impresion»: en móvil el cajón derecho ya no repite el índice; se llama «datos de la página».
+  assert.equal(etiquetaBarra(base({ cajon: "der" }), "der", true), "Ocultar datos de la página");
 });
 
 test("visible: qué barra se ve (para aria-expanded) en escritorio, móvil y enfoque", () => {

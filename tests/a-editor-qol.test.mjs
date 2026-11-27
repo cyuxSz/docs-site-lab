@@ -72,7 +72,7 @@ afterEach(() => {
   win?.close();
 });
 
-// Menú de prueba: botón, menú con 5 acciones (algunas pueden ocultarse o deshabilitarse) y un botón fuera.
+// Menú de prueba: botón, menú con 6 acciones (algunas pueden ocultarse o deshabilitarse) y un botón fuera.
 function montarMenu({ ocultar = [], deshabilitar = [] } = {}) {
   const d = win.document;
   d.body.innerHTML = `
@@ -85,6 +85,7 @@ function montarMenu({ ocultar = [], deshabilitar = [] } = {}) {
           <button type="button" class="btn" data-hw-insertar-pdf role="menuitem" tabindex="-1">PDF</button>
           <button type="button" class="btn" data-hw-insertar-bom role="menuitem" tabindex="-1">BOM (CSV)</button>
           <button type="button" class="btn" data-hw-insertar-kicad role="menuitem" tabindex="-1">Esquemático o PCB de KiCad</button>
+          <button type="button" class="btn" data-hw-insertar-modelo role="menuitem" tabindex="-1">Modelo 3D (STL o GLB)</button>
         </div>
       </div>
     </div>
@@ -159,7 +160,7 @@ test("C2a página: .hw-subida tiene un solo botón visible «Insertar» (aria-ha
   assert.deepEqual(sueltos.map((e) => e.outerHTML), [], "las acciones sueltas pasan al menú");
 });
 
-test("C2b página: el menú tiene las 5 acciones en orden, como menuitem, y conservan sus data-hw-*", () => {
+test("C2b página: el menú tiene las 6 acciones en orden, como menuitem, y conservan sus data-hw-*", () => {
   const d = formulario();
   const menu = d.querySelector(".hw-subida [role=menu]");
   assert.ok(menu, "falta [role=menu] en .hw-subida");
@@ -171,13 +172,15 @@ test("C2b página: el menú tiene las 5 acciones en orden, como menuitem, y cons
     ["data-hw-insertar-bom", "BOM (CSV)"],
     // Texto y atributos iniciales fijados por tests/d1b-kicanvas.test.mjs (lote b-kicanvas-claro en paralelo).
     ["data-hw-insertar-kicad", "Esquemático o PCB de KiCad"],
+    // Lote d-modelo-3d: sexto ítem (su marcado lo fija tests/d-modelo-portal.test.mjs).
+    ["data-hw-insertar-modelo", "Modelo 3D (STL o GLB)"],
   ];
-  assert.equal(items.length, 5, "5 acciones");
+  assert.equal(items.length, 6, "6 acciones");
   esperado.forEach(([attr, texto], i) => {
     const it = items[i];
     assert.equal(it.tagName, "BUTTON", `${texto}: es <button>`);
     assert.equal(it.getAttribute("type"), "button");
-    assert.ok(it.classList.contains("btn"), `${texto}: conserva class="btn" (las 5 acciones, igual marcado)`);
+    assert.ok(it.classList.contains("btn"), `${texto}: conserva class="btn" (las 6 acciones, igual marcado)`);
     assert.ok(it.hasAttribute(attr), `${texto}: conserva ${attr}`);
     assert.equal(it.textContent.trim(), texto);
     assert.equal(it.getAttribute("tabindex"), "-1", `${texto}: fuera del orden de tabulación (roving)`);
@@ -191,9 +194,9 @@ test("C2c página: los input file siguen igual (ocultos, sin foco, con sus accep
   const archivo = d.getElementById("hw-archivo");
   assert.ok(archivo && archivo.type === "file", "#hw-archivo sigue siendo input file");
   assert.equal(d.querySelector('label[for="hw-archivo"]'), null, "Adjuntar pasa a ser un menuitem <button>");
-  const inputs = [archivo, ...["pdf", "bom", "kicad"].map((t) => d.querySelector(`[data-hw-archivo-${t}]`))];
+  const inputs = [archivo, ...["pdf", "bom", "kicad", "modelo"].map((t) => d.querySelector(`[data-hw-archivo-${t}]`))];
   for (const i of inputs) {
-    assert.ok(i, "existen los 4 input file");
+    assert.ok(i, "existen los 5 input file");
     assert.ok(subida.contains(i), "siguen en .hw-subida");
     assert.ok(i.classList.contains("hw-archivo"));
     assert.equal(i.getAttribute("tabindex"), "-1");
@@ -204,6 +207,8 @@ test("C2c página: los input file siguen igual (ocultos, sin foco, con sus accep
   assert.equal(d.querySelector("[data-hw-archivo-bom]").getAttribute("accept"), ".csv,text/csv");
   assert.equal(d.querySelector("[data-hw-archivo-kicad]").getAttribute("accept"), ".kicad_sch,.kicad_pcb,.pdf,.svg");
   assert.ok(d.querySelector("[data-hw-archivo-kicad]").hasAttribute("multiple"));
+  assert.equal(d.querySelector("[data-hw-archivo-modelo]").getAttribute("accept"), ".stl,.glb,model/stl,model/gltf-binary");
+  assert.equal(d.querySelector("[data-hw-archivo-modelo]").hasAttribute("multiple"), false, "el modelo es un solo archivo");
 });
 
 test("C2d página: la barra de progreso y el texto «subiendo» quedan en .hw-subida fuera del menú", () => {
@@ -276,17 +281,19 @@ test("C2f teclado: ↓/↑ en el botón abren en la primera/última; ↓, ↑, I
   tecla(m.d.activeElement, "ArrowDown");
   assert.equal(m.d.activeElement, m.items[4], "salta la oculta y la deshabilitada");
   tecla(m.d.activeElement, "ArrowDown");
+  assert.equal(m.d.activeElement, m.items[5], "sexta acción: Modelo 3D");
+  tecla(m.d.activeElement, "ArrowDown");
   assert.equal(m.d.activeElement, m.items[0], "da la vuelta");
   tecla(m.d.activeElement, "ArrowUp");
-  assert.equal(m.d.activeElement, m.items[4]);
+  assert.equal(m.d.activeElement, m.items[5]);
   tecla(m.d.activeElement, "Home");
   assert.equal(m.d.activeElement, m.items[0]);
   tecla(m.d.activeElement, "End");
-  assert.equal(m.d.activeElement, m.items[4]);
+  assert.equal(m.d.activeElement, m.items[5]);
   tecla(m.d.activeElement, "Escape");
   m.boton.focus();
   tecla(m.boton, "ArrowUp");
-  assert.equal(m.d.activeElement, m.items[4], "↑ en el botón abre en la última disponible");
+  assert.equal(m.d.activeElement, m.items[5], "↑ en el botón abre en la última disponible");
 });
 
 test("C2f Esc cierra, devuelve el foco al botón y no se propaga a otros manejadores de Esc", () => {

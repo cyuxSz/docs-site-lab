@@ -1,0 +1,17 @@
+[package]
+name = "vanttec-docs"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "App de escritorio de VantTec Docs: una ventana cuyo origen sirve el proxy de nucleo."
+
+[build-dependencies]
+tauri-build = { version = "=2.7.6", features = [] }
+
+[dependencies]
+nucleo = { path = "../nucleo" }
+open = { version = "=5.4.5", features = ["shellexecute-on-windows"] }
+tauri = { version = "=2.12.7", features = [] }
+tauri-plugin-single-instance = "=2.5.5"
+windows-registry = "=0.6.1"
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials"] }

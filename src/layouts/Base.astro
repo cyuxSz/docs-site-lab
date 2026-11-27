@@ -114,7 +114,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
           <li><span class="atajos-teclas">{a.teclas.map((t) => <kbd>{t}</kbd>)}</span><span>{a.descripcion}</span></li>
         ))}
       </ul>
-      <p class="atajos-nota">Los atajos se pausan mientras hay un diálogo abierto.</p>
+      <p class="atajos-nota">Con un diálogo abierto los atajos se pausan. Esta ayuda se cierra con ? o Esc.</p>
     </dialog>
 
     <script>
@@ -122,6 +122,7 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
       // Buscador (Pagefind UI, recientes y ?q=): carga diferida, Ctrl/Cmd+K y "/".
       import "../scripts/busqueda";
       import { pestanaActiva } from "../lib/caratula.ts";
+      import { fondoCabecera } from "../lib/cabecera";
       // En pantallas estrechas las pestañas desbordan: la activa se acerca a la vista (sin animar si se pidió menos movimiento).
       // Solo se desplaza .ptabs en horizontal (scrollIntoView podía mover también ancestros verticales).
       // Diagramas es un ancla de /<id>/software/: con #diagramas, aria-current pasa de Resumen a Diagramas (y vuelve).
@@ -167,7 +168,10 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
         a.target = "_blank";
         a.rel = "noopener noreferrer";
         a.classList.add("ext");
-        a.insertAdjacentHTML("beforeend", '<span class="sr-only"> (se abre en otra pestaña)</span>');
+        const aviso = document.createElement("span");
+        aviso.className = "sr-only";
+        aviso.textContent = " (se abre en otra pestaña)";
+        a.append(aviso);
       });
 
       // Tema claro/oscuro: el script de <head> ya lo aplicó; el botón lo cambia, lo guarda y avisa con "tema-cambio"
@@ -210,6 +214,15 @@ const pestanasSoftware = !esDisciplina && current !== "caratula";
           [...tr.children].forEach((td, i) => heads[i] && td.setAttribute("data-label", heads[i]));
         });
       });
+
+      // Borde inferior de la cabecera fija: el aviso de la vista de lector se pega justo debajo (--cabecera-fondo).
+      const cabecera = document.querySelector<HTMLElement>(".topbar");
+      if (cabecera) {
+        const medirCabecera = () =>
+          document.documentElement.style.setProperty("--cabecera-fondo", fondoCabecera(parseFloat(getComputedStyle(cabecera).top), cabecera.offsetHeight));
+        medirCabecera();
+        if (typeof ResizeObserver !== "undefined") new ResizeObserver(medirCabecera).observe(cabecera);
+      }
 
       fetch("/auth/me")
         .then((r) => (r.ok ? r.json() : null))
