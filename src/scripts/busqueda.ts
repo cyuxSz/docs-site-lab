@@ -2,6 +2,7 @@
 // El texto de localStorage se pinta solo con textContent; nunca con HTML.
 import { agregarReciente, borrarRecientes, PARAM_RESALTADO, recientes } from "../lib/lectura.ts";
 import { almacenSeguro } from "../lib/rutas.ts";
+import { enComponente, escribiendoEn } from "../lib/atajos";
 
 const alm = almacenSeguro(() => localStorage);
 const dialog = document.getElementById("search") as HTMLDialogElement;
@@ -110,8 +111,7 @@ dialog.addEventListener("close", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  const typing = (e.target as HTMLElement).closest("input, textarea, [contenteditable]");
-  if (e.key === "/" && !typing && !dialog.open) {
+  if (e.key === "/" && !(escribiendoEn(e) || enComponente(e)) && !dialog.open) {
     e.preventDefault();
     openSearch();
   }

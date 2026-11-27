@@ -36,6 +36,7 @@
     "sigma": "3.0.3"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "jsdom": "31.0.1",
     "wrangler": "4.162.0"
   }

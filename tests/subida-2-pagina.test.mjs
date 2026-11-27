@@ -30,6 +30,7 @@ import {
   paginaSubida,
   enviarRevocar,
   origenDeNavegador,
+  enviarCrear,
   directivasCsp,
   texto,
 } from "./fixtures/subida-2.mjs";
@@ -311,7 +312,8 @@ test("revocar: un token de subida se revoca con el mismo formulario y la misma r
 test("referrer: la página con el formulario de creación se sirve con same-origin y el navegador deduce el Origin propio", async () => {
   const { env } = crearEnv();
   insertarToken(env, { login: EDITOR });
-  const { res, html, crear } = await paginaSubida(env, sesion(EDITOR));
+  const cookie = sesion(EDITOR);
+  const { res, html, crear, campos } = await paginaSubida(env, cookie);
   assert.ok(crear, "falta el formulario de creación");
   // Con no-referrer Edge envía `Origin: null` en el POST del formulario y la ruta, que exige el Origin propio, da 403.
   assert.equal(res.headers.get("referrer-policy"), "same-origin", "un solo valor");
@@ -326,5 +328,9 @@ test("referrer: la página con el formulario de creación se sirve con same-orig
   assert.equal(csp["default-src"], "'none'");
   assert.equal(csp["form-action"], "'self'");
   assert.ok(!("script-src" in csp));
-  assert.equal(FORM.origin, ORIGIN);
+  // El POST con el Origin que deduce el navegador desde esta respuesta (por su Referrer-Policy real) crea el token.
+  const deducido = origenDeNavegador(res.headers.get("referrer-policy"), ORIGIN, destino);
+  const post = await enviarCrear(env, { cookie, campos: { ...campos, nombre: "CLI" }, headers: { ...FORM, origin: deducido } });
+  assert.equal(post.status, 200, `POST con Origin ${deducido}`);
+  assert.match(await post.text(), /vts_[A-Za-z0-9_-]{43}/, "la respuesta muestra el token creado");
 });

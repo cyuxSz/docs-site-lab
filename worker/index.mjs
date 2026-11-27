@@ -2,6 +2,7 @@
 // Las cabeceras de seguridad se aplican a mano aquí.
 import { manejarLogin } from "../lib/login-core.mjs";
 import { decodificar } from "../lib/decodificar-ruta.mjs";
+import { sinBarraFinal } from "../lib/normalizar-ruta.mjs";
 import { crearHandler as crearComentarios } from "../lib/comentarios-core.mjs";
 import { crearHandler as crearArchivos } from "../lib/archivos-core.mjs";
 import { clienteD1 } from "../lib/almacen-d1.mjs";
@@ -58,9 +59,10 @@ function crearAtenderApi(restringidos, proyectos) {
     return h[nombre];
   }
   return async function atenderApi(request, env, path) {
-    if (path === "/api/comentarios" || path === "/api/comentarios/") return handlerDe(env, "comentarios")(request);
-    if (path === "/api/archivos" || path === "/api/archivos/") return handlerDe(env, "archivos")(request);
-    if (path === "/api/hardware" || path === "/api/hardware/") return handlerDe(env, "hardware")(request);
+    path = sinBarraFinal(path);
+    if (path === "/api/comentarios") return handlerDe(env, "comentarios")(request);
+    if (path === "/api/archivos") return handlerDe(env, "archivos")(request);
+    if (path === "/api/hardware") return handlerDe(env, "hardware")(request);
     return Response.json({ error: "No encontrado" }, { status: 404 });
   };
 }
