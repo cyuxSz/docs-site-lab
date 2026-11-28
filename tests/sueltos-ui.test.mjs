@@ -202,6 +202,52 @@ test("U4 enfocarComentario: al perder el foco se retira el nombre junto con el t
   assert.match(nombre(li), /\bana\b/);
 });
 
+// U4b (hilo de CodeRabbit): «borrado» se decide por la cabecera, no por el autor vacío. pintarComentario() pinta
+// `<span class="comentario-autor">` con "" cuando c.autor es null, pero la cabecera (y su fecha) siguen ahí.
+const SINA = "00000000-0000-4000-8000-000000000004";
+const SINAF = "00000000-0000-4000-8000-000000000005";
+function hilosSinAutor() {
+  const dom = new JSDOM(`<button id="fuera">f</button><ol class="comentarios-lista">
+    <li class="comentario" id="comentario-${SINA}">
+      <div class="comentario-cab"><span class="chip chip-nota">Nota</span><span class="comentario-autor"></span><time datetime="2026-11-21T09:00:00Z">hace 3 h</time></div>
+      <p class="comentario-texto">texto de un comentario sin autor</p>
+    </li>
+    <li class="comentario" id="comentario-${SINAF}">
+      <div class="comentario-cab"><span class="chip chip-nota">Nota</span><span class="comentario-autor">  </span></div>
+      <p class="comentario-texto">otro sin autor ni fecha</p>
+    </li>
+    <li class="comentario borrado" id="comentario-${BORR}"><p class="comentario-texto">Comentario borrado</p></li>
+  </ol>`);
+  dom.window.Element.prototype.scrollIntoView = () => {};
+  return dom.window.document;
+}
+
+test("U4b enfocarComentario: un comentario activo sin autor (con cabecera y fecha) se nombra «Comentario sin autor, <fecha>», no «borrado»", () => {
+  const enfocar = fn(comLib, "src/lib/comentarios.ts", "enfocarComentario");
+  const doc = hilosSinAutor();
+  assert.equal(enfocar(doc, SINA), true);
+  assert.equal(nombre(doc.getElementById(`comentario-${SINA}`)), "Comentario sin autor, hace 3 h");
+});
+
+test("U4b enfocarComentario: un comentario activo sin autor ni fecha se nombra «Comentario sin autor»", () => {
+  const enfocar = fn(comLib, "src/lib/comentarios.ts", "enfocarComentario");
+  const doc = hilosSinAutor();
+  assert.equal(enfocar(doc, SINAF), true);
+  assert.equal(nombre(doc.getElementById(`comentario-${SINAF}`)), "Comentario sin autor");
+});
+
+test("U4b enfocarComentario: sin cabecera sigue siendo «Comentario borrado»; con autor no cambia", () => {
+  const enfocar = fn(comLib, "src/lib/comentarios.ts", "enfocarComentario");
+  const doc = hilosSinAutor();
+  assert.equal(enfocar(doc, BORR), true);
+  assert.equal(nombre(doc.getElementById(`comentario-${BORR}`)), "Comentario borrado");
+  const d2 = hilos();
+  assert.equal(enfocar(d2, UUID), true);
+  assert.equal(nombre(d2.getElementById(`comentario-${UUID}`)), "Comentario de ana, hace 2 h");
+  assert.equal(enfocar(d2, RESP), true);
+  assert.equal(nombre(d2.getElementById(`comentario-${RESP}`)), "Comentario de beto, hace 1 h");
+});
+
 // ---------- U5. Un solo scroll en el diálogo de importar ----------
 const cssGlobal = reglasPlanas(read("src/styles/global.css"));
 function dialogoImportar() {
