@@ -94,7 +94,8 @@ export function enfocarComentario(doc: { getElementById(id: string): ElementoFoc
   el.setAttribute("tabindex", "-1");
   const autor = el.querySelector(":scope > .comentario-cab .comentario-autor")?.textContent?.trim();
   const fecha = el.querySelector(":scope > .comentario-cab time")?.textContent?.trim();
-  el.setAttribute("aria-label", autor ? `Comentario de ${autor}${fecha ? `, ${fecha}` : ""}` : "Comentario borrado");
+  const sufijo = fecha ? `, ${fecha}` : "";
+  el.setAttribute("aria-label", !el.querySelector(":scope > .comentario-cab") ? "Comentario borrado" : autor ? `Comentario de ${autor}${sufijo}` : `Comentario sin autor${sufijo}`);
   el.addEventListener("blur", () => { el.removeAttribute("tabindex"); el.removeAttribute("aria-label"); }, { once: true });
   el.scrollIntoView?.({ block: "start" });
   el.focus({ preventScroll: true });
