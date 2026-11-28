@@ -318,7 +318,7 @@ async function leerPagina(s, opciones, slug) {
     token: s.token,
     query: { proyecto: opciones["--proyecto"], disciplina: opciones["--disciplina"], pagina: slug },
   });
-  if (r.status === 404) throw new ErrorCli(`La página ${slug} no existe (o el proyecto o la disciplina). No se subió nada.`);
+  if (r.status === 404) throw new ErrorCli(`La página ${slug} no existe (o el proyecto o la disciplina).`);
   if (r.status !== 200) throw new ErrorCli(mensajeHttp(r, "hardware"));
   const p = r.json?.pagina;
   if (typeof p?.md !== "string" || !Number.isInteger(p?.version) || p.version < 1) throw new ErrorCli("Respuesta inesperada del portal al leer la página.");
@@ -348,7 +348,13 @@ async function subirDiagrama(opciones, ruta) {
   const s = exigirSesion(opciones);
   const reglas = await cargarReglas();
 
-  let pagina = await leerPagina(s, opciones, slug);
+  let pagina;
+  try {
+    pagina = await leerPagina(s, opciones, slug);
+  } catch (e) {
+    if (e instanceof ErrorCli && !e.uso) throw new ErrorCli(`${e.message} No se subió nada.`);
+    throw e;
+  }
   if (reemplazar && !reglas.bloqueCambiable(pagina.md, reemplazar)) {
     throw new ErrorCli("La página no tiene un único bloque de diagrama de draw.io con esa fuente (falta, está repetido, es de otro editor o está dentro de una cita); no se puede reemplazar. No se subió nada.");
   }
@@ -364,7 +370,7 @@ async function subirDiagrama(opciones, ruta) {
     throw new ErrorCli(`${e.message} No se aplicó nada; la fuente ya quedó subida con id ${idFuente}.`);
   }
   if (rs.status !== 201) throw new ErrorCli(`${mensajeHttp(rs)} No se aplicó nada; la fuente ya quedó subida con id ${idFuente}.`);
-  const ids = `Adjuntos subidos: fuente ${idFuente}, svg ${idSvg}.`;
+  const ids = `Adjuntos subidos, quedaron sueltos: fuente ${idFuente}, svg ${idSvg}.`;
   const fallo = (m) => new ErrorCli(`${m} ${ids}`);
   const cuerpo = (version) =>
     JSON.stringify({ proyecto: opciones["--proyecto"], disciplina: opciones["--disciplina"], accion: "diagrama", pagina: slug, version, fuenteAnterior: reemplazar, fuente: idFuente, svg: idSvg });
