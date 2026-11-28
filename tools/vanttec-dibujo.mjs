@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 // CLI vanttec-dibujo: entrar, salir, estado y subir un adjunto (.drawio, .svg, .kicad_sch, .kicad_pcb).
 import { homedir } from "node:os";
-import { basename } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { statSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { PORTAL_POR_DEFECTO, rutaToken, tokenValido, validarPortal } from "./dibujo/config.mjs";
 import { leerToken, guardarToken, borrarToken, existeArchivo } from "./dibujo/almacen.mjs";
 import { ErrorCli, pedir, mensajeHttp } from "./dibujo/api.mjs";
 import { sanearNombre, extension, TIPOS } from "../lib/archivos-nombre.mjs";
+import { tipoPorContenido, TIPOS_SUBIDA } from "../lib/contenido-subida.mjs";
+import { limpiarTexto } from "./dibujo/texto.mjs";
+import { cargarReglas, SLUG, UUID_MIN } from "./dibujo/diagrama.mjs";
 
-const TIPOS_SUBIDA = ["drawio", "svg", "kicad_sch", "kicad_pcb"];
 const VAR_TOKEN = "VANTTEC_DIBUJO_TOKEN";
-const USO_SUBIR = "subir <archivo> --proyecto <proyecto> --disciplina <disciplina> [--portal <url>]";
+const USO_SUBIR = "subir <archivo> --proyecto <proyecto> --disciplina <disciplina> [--pagina <slug> [--svg <archivo.svg>] [--reemplazar <uuid>]] [--portal <url>]";
 
 const AYUDA = `vanttec-dibujo: sube diagramas y esquemas al portal de documentación.
 
@@ -27,6 +29,9 @@ Opciones:
   --portal <url>    Portal (por defecto ${PORTAL_POR_DEFECTO}; también VANTTEC_DIBUJO_PORTAL). Solo https, salvo localhost.
   --proyecto <p>    Proyecto de destino (subir)
   --disciplina <d>  Disciplina de destino (subir)
+  --pagina <slug>   Sube un .drawio con su .svg y lo pone en esa página (acción diagrama); sin esta opción es un adjunto suelto
+  --svg <archivo>   SVG del diagrama (con --pagina). Sin --svg se busca <base>.svg junto al .drawio
+  --reemplazar <uuid>  UUID (minúsculas) de la fuente del bloque que se cambia (con --pagina); sin él se añade al final
 
 Token:
   Emite un token de subida (vts_) en <portal>/auth/dispositivos. Nunca se pasa como argumento:
@@ -185,7 +190,7 @@ async function entrar(args) {
   if (r.status !== 200) throw new ErrorCli(mensajeHttp(r));
   if (typeof r.json?.login !== "string" || !r.json.login) throw new ErrorCli("Respuesta inesperada del portal: no devolvió el login.");
   guardarToken(RUTA(), { portal, token });
-  out(`Sesión iniciada como ${r.json.login} en ${portal}`);
+  out(`Sesión iniciada como ${limpiarTexto(r.json.login)} en ${portal}`);
 }
 
 async function estado(args) {
@@ -195,7 +200,7 @@ async function estado(args) {
   const r = await pedir(s.portal, "/auth/me", { token: s.token });
   if (r.status !== 200) throw new ErrorCli(mensajeHttp(r));
   if (typeof r.json?.login !== "string") throw new ErrorCli("Respuesta inesperada del portal: no devolvió el login.");
-  out(`Sesión: ${r.json.login}`);
+  out(`Sesión: ${limpiarTexto(r.json.login)}`);
   out(`Portal: ${s.portal}`);
   out(`Token: ${s.origen}`);
   out(`Caducidad: no disponible desde la CLI; consúltala en ${s.portal}/auth/dispositivos`);
@@ -260,48 +265,153 @@ async function salir(args) {
   }
   if (deVar) err(`Recuerda quitar la variable ${VAR_TOKEN} de tu entorno.`);
   if (fallo) process.exitCode = 1;
-  else out(objetivos.length ? "Sesión cerrada: token revocado y archivo borrado." : "Sesión cerrada.");
+  else out(!objetivos.length ? "Sesión cerrada." : hayArchivo ? "Sesión cerrada: token revocado y archivo borrado." : "Sesión cerrada: token revocado.");
 }
 
-async function subir(args) {
-  const { opciones, posicionales } = parsear(args, ["--portal", "--proyecto", "--disciplina"], USO_SUBIR);
-  if (posicionales.length !== 1 || !opciones["--proyecto"] || !opciones["--disciplina"]) {
-    throw new ErrorCli("Faltan argumentos.", { uso: USO_SUBIR });
-  }
-  const ruta = posicionales[0];
+// Valida y lee un archivo local: tipo por extensión, tamaño y contenido. Todo antes de cualquier petición.
+function cargarArchivo(ruta, { permitidas, errorTipo }) {
   const nombre = sanearNombre(basename(ruta));
   const ext = extension(nombre);
-  if (!ext || !TIPOS_SUBIDA.includes(ext)) {
-    throw new ErrorCli(`Tipo de archivo no permitido. Tipos admitidos: ${TIPOS_SUBIDA.join(", ")}.`);
-  }
+  if (!ext || !permitidas.includes(ext)) throw new ErrorCli(errorTipo);
   let st;
   try {
     st = statSync(ruta);
   } catch {
-    throw new ErrorCli("El archivo no existe o no se pudo leer.");
+    throw new ErrorCli(`El archivo ${nombre} no existe o no se pudo leer.`);
   }
-  if (!st.isFile()) throw new ErrorCli("La ruta no es un archivo regular.");
-  if (st.size < 1) throw new ErrorCli("El archivo está vacío.");
+  if (!st.isFile()) throw new ErrorCli(`La ruta de ${nombre} no es un archivo regular.`);
+  if (st.size < 1) throw new ErrorCli(`El archivo ${nombre} está vacío.`);
   const tope = TIPOS[ext].max;
-  if (st.size > tope) throw new ErrorCli(`El archivo es demasiado grande: el tope para .${ext} es ${Math.floor(tope / 1048576)} MB.`);
-  const s = exigirSesion(opciones);
+  if (st.size > tope) throw new ErrorCli(`El archivo ${nombre} es demasiado grande: el tope para .${ext} es ${Math.floor(tope / 1048576)} MB.`);
   let datos;
   try {
     datos = readFileSync(ruta);
   } catch {
-    throw new ErrorCli("El archivo no existe o no se pudo leer.");
+    throw new ErrorCli(`El archivo ${nombre} no existe o no se pudo leer.`);
   }
-  if (datos.length < 1 || datos.length > tope) throw new ErrorCli("El archivo cambió mientras se leía.");
-  const r = await pedir(s.portal, "/api/archivos", {
+  if (datos.length < 1 || datos.length > tope) throw new ErrorCli(`El archivo ${nombre} cambió mientras se leía.`);
+  if (tipoPorContenido(datos) !== ext) throw new ErrorCli(`El contenido de ${nombre} no corresponde al tipo .${ext}.`);
+  return { nombre, ext, datos };
+}
+
+function subirAdjunto(s, opciones, id, { nombre, datos }) {
+  return pedir(s.portal, "/api/archivos", {
     metodo: "POST",
     token: s.token,
-    query: { proyecto: opciones["--proyecto"], disciplina: opciones["--disciplina"], id: randomUUID(), nombre },
+    query: { proyecto: opciones["--proyecto"], disciplina: opciones["--disciplina"], id, nombre },
     cuerpo: datos,
     cabeceras: { "content-type": "application/octet-stream" },
   });
+}
+
+async function subirSuelto(opciones, ruta) {
+  const f = cargarArchivo(ruta, { permitidas: TIPOS_SUBIDA, errorTipo: `Tipo de archivo no permitido. Tipos admitidos: ${TIPOS_SUBIDA.join(", ")}.` });
+  const s = exigirSesion(opciones);
+  const r = await subirAdjunto(s, opciones, randomUUID(), f);
   if (r.status !== 201) throw new ErrorCli(mensajeHttp(r));
-  out(`Subido: ${typeof r.json?.nombre === "string" ? r.json.nombre : nombre}`);
-  out(`id: ${typeof r.json?.id === "string" ? r.json.id : ""}`);
+  out(`Subido: ${typeof r.json?.nombre === "string" ? limpiarTexto(r.json.nombre) : f.nombre}`);
+  out(`id: ${typeof r.json?.id === "string" ? limpiarTexto(r.json.id) : ""}`);
+}
+
+async function leerPagina(s, opciones, slug) {
+  const r = await pedir(s.portal, "/api/hardware", {
+    token: s.token,
+    query: { proyecto: opciones["--proyecto"], disciplina: opciones["--disciplina"], pagina: slug },
+  });
+  if (r.status === 404) throw new ErrorCli(`La página ${slug} no existe (o el proyecto o la disciplina).`);
+  if (r.status !== 200) throw new ErrorCli(mensajeHttp(r, "hardware"));
+  const p = r.json?.pagina;
+  if (typeof p?.md !== "string" || !Number.isInteger(p?.version) || p.version < 1) throw new ErrorCli("Respuesta inesperada del portal al leer la página.");
+  return { md: p.md, version: p.version };
+}
+
+const MAX_REINTENTOS = 2;
+
+async function subirDiagrama(opciones, ruta) {
+  const slug = opciones["--pagina"];
+  if (!SLUG.test(slug)) throw new ErrorCli("--pagina no es válido: la página usa minúsculas, números y guiones (máximo 60 caracteres).");
+  const reemplazar = opciones["--reemplazar"] ?? null;
+  if (reemplazar !== null && !UUID_MIN.test(reemplazar)) throw new ErrorCli("--reemplazar tiene que ser un UUID en minúsculas (el de la fuente del bloque).");
+  const drawio = cargarArchivo(ruta, { permitidas: ["drawio"], errorTipo: "Con --pagina el archivo principal tiene que ser un .drawio." });
+  let rutaSvg = opciones["--svg"];
+  if (rutaSvg === undefined) {
+    rutaSvg = join(dirname(ruta), basename(ruta).replace(/\.[^.]*$/, "") + ".svg");
+    let existe = false;
+    try {
+      existe = statSync(rutaSvg).isFile();
+    } catch { /* no existe */ }
+    if (!existe) {
+      throw new ErrorCli(`No hay SVG junto al .drawio (se buscó ${basename(rutaSvg)}). Indica uno con --svg <archivo.svg>; exportarlo con draw.io Desktop llegará más adelante.`);
+    }
+  }
+  const svg = cargarArchivo(rutaSvg, { permitidas: ["svg"], errorTipo: "--svg tiene que ser un archivo .svg." });
+  const s = exigirSesion(opciones);
+  const reglas = await cargarReglas();
+
+  let pagina;
+  try {
+    pagina = await leerPagina(s, opciones, slug);
+  } catch (e) {
+    if (e instanceof ErrorCli && !e.uso) throw new ErrorCli(`${e.message} No se subió nada.`);
+    throw e;
+  }
+  if (reemplazar && !reglas.bloqueCambiable(pagina.md, reemplazar)) {
+    throw new ErrorCli("La página no tiene un único bloque de diagrama de draw.io con esa fuente (falta, está repetido, es de otro editor o está dentro de una cita); no se puede reemplazar. No se subió nada.");
+  }
+
+  const idFuente = randomUUID();
+  const idSvg = randomUUID();
+  const rf = await subirAdjunto(s, opciones, idFuente, drawio);
+  if (rf.status !== 201) throw new ErrorCli(mensajeHttp(rf));
+  let rs;
+  try {
+    rs = await subirAdjunto(s, opciones, idSvg, svg);
+  } catch (e) {
+    throw new ErrorCli(`${e.message} No se aplicó nada; la fuente ya quedó subida con id ${idFuente}.`);
+  }
+  if (rs.status !== 201) throw new ErrorCli(`${mensajeHttp(rs)} No se aplicó nada; la fuente ya quedó subida con id ${idFuente}.`);
+  const ids = `Adjuntos subidos, quedaron sueltos: fuente ${idFuente}, svg ${idSvg}.`;
+  const fallo = (m) => new ErrorCli(`${m} ${ids}`);
+  const cuerpo = (version) =>
+    JSON.stringify({ proyecto: opciones["--proyecto"], disciplina: opciones["--disciplina"], accion: "diagrama", pagina: slug, version, fuenteAnterior: reemplazar, fuente: idFuente, svg: idSvg });
+
+  for (let intento = 0; ; intento++) {
+    let r;
+    try {
+      r = await pedir(s.portal, "/api/hardware", { metodo: "POST", token: s.token, cuerpo: cuerpo(pagina.version), cabeceras: { "content-type": "application/json" } });
+    } catch {
+      throw fallo("Se perdió la conexión al aplicar el cambio: no se sabe si se aplicó. Revisa la página antes de reintentar.");
+    }
+    if (r.status === 200) {
+      const v = Number.isInteger(r.json?.pagina?.version) ? r.json.pagina.version : "desconocida";
+      out(`Diagrama aplicado en la página ${slug}, versión ${v}.`);
+      out(`fuente: ${idFuente}`);
+      out(`svg: ${idSvg}`);
+      return;
+    }
+    if (!(r.status === 409 && r.json?.codigo === "version")) throw fallo(mensajeHttp(r, "hardware"));
+    if (intento >= MAX_REINTENTOS) throw fallo("La página cambió varias veces mientras se aplicaba y se agotaron los reintentos.");
+    try {
+      pagina = await leerPagina(s, opciones, slug);
+    } catch (e) {
+      throw fallo(`La página cambió y no se pudo releer (${e.message.replace(/\.$/, "")}).`);
+    }
+    if (!reglas.puedeReintentar(pagina.md, { fuenteAnterior: reemplazar, fuente: idFuente, svg: idSvg })) {
+      throw fallo("La página cambió y ya no es seguro reintentar solo (el bloque cambió o ya cita estos adjuntos). Enlázalos a mano o reintenta.");
+    }
+  }
+}
+
+async function subir(args) {
+  const { opciones, posicionales } = parsear(args, ["--portal", "--proyecto", "--disciplina", "--pagina", "--svg", "--reemplazar"], USO_SUBIR);
+  if (posicionales.length !== 1 || !opciones["--proyecto"] || !opciones["--disciplina"]) {
+    throw new ErrorCli("Faltan argumentos.", { uso: USO_SUBIR });
+  }
+  if (!("--pagina" in opciones)) {
+    for (const o of ["--svg", "--reemplazar"]) if (o in opciones) throw new ErrorCli(`${o} solo se usa junto con --pagina.`, { uso: USO_SUBIR });
+    return subirSuelto(opciones, posicionales[0]);
+  }
+  return subirDiagrama(opciones, posicionales[0]);
 }
 
 const COMANDOS = { entrar, salir, estado, subir };
