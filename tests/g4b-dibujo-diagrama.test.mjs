@@ -435,3 +435,83 @@ test("la ayuda documenta --pagina, --svg y --reemplazar", async () => {
   for (const c of ["--pagina", "--svg", "--reemplazar"]) assert.ok(r.stdout.includes(c), `menciona ${c}`);
   assert.equal(ctx.peticiones.length, 0);
 });
+
+// ---------- 8. hilos de CodeRabbit (PR #80) ----------
+// Hilo PRRT_kwDOVU6dHM687LtZ: tras subir los dos adjuntos, ningún fallo dice «No se subió nada»; da los dos ids y que quedaron sueltos.
+function quedanSueltos(r, caso) {
+  assert.notEqual(r.codigo, 0, caso);
+  assert.equal(subidas().length, 2, `${caso}: los dos adjuntos se subieron`);
+  assert.doesNotMatch(r.stderr, /No se subió nada/i, `${caso}: no puede decir que no se subió nada: ${r.stderr}`);
+  for (const id of idsSubidos()) assert.ok(r.stderr.includes(id), `${caso}: da el id ${id}`);
+  assert.match(r.stderr, /sueltos/i, `${caso}: dice que quedaron como adjuntos sueltos: ${r.stderr}`);
+}
+
+test("CodeRabbit LtZ: relectura con 404 tras el 409: no dice «No se subió nada», da los dos ids y que quedaron sueltos", async () => {
+  ctx.guardarArchivo();
+  montarHw({ alPost: cambioQueMantiene, alGet: (_e, n) => (n === 2 ? [404, { error: "Página no encontrada" }] : null) });
+  const f = pareja();
+  const r = await ctx.ejecutar(["subir", f.drawio, "--svg", f.svg, "--pagina", SLUG, "--reemplazar", F0, ...OPC]);
+  assert.equal(aplicaciones().length, 1, "no reintenta");
+  assert.equal(lecturas().length, 2, "lectura inicial + relectura");
+  quedanSueltos(r, "relectura 404");
+});
+
+test("CodeRabbit LtZ: todo fallo después de subir la pareja dice que los adjuntos quedaron sueltos, con los dos ids", async () => {
+  ctx.guardarArchivo();
+  const f = pareja();
+  const casos = [
+    ["409 bloque", { alPost: () => [409, { error: "El bloque del diagrama no está o cambió", codigo: "bloque" }] }],
+    ["404 de la acción", { alPost: () => [404, { error: "Página no encontrada" }] }],
+    ["403 alcance", { alPost: () => [403, { error: "Este token no permite esta operación", codigo: "alcance" }] }],
+    ["conexión perdida al aplicar", { alPost: () => "cortar" }],
+    ["reintentos agotados", { alPost: (e) => { e.version++; } }],
+    ["relectura con 500", { alPost: cambioQueMantiene, alGet: (_e, n) => (n === 2 ? [500, { error: "Error interno" }] : null) }],
+    ["bloque ya no reintentable", { alPost: (e, _c, n) => { if (n === 1) { e.version = 8; e.md = "# Placa\n\nSin diagrama.\n"; } } }],
+  ];
+  for (const [caso, opciones] of casos) {
+    ctx.peticiones = [];
+    montarHw(opciones);
+    const r = await ctx.ejecutar(["subir", f.drawio, "--svg", f.svg, "--pagina", SLUG, "--reemplazar", F0, ...OPC]);
+    quedanSueltos(r, caso);
+  }
+});
+
+test("CodeRabbit LtZ (guarda): 404 en la lectura inicial sigue diciendo «No se subió nada» y no sube", async () => {
+  ctx.guardarArchivo();
+  montarHw();
+  const f = pareja();
+  const r = await ctx.ejecutar(["subir", f.drawio, "--svg", f.svg, "--pagina", "no-existe", ...OPC]);
+  assert.notEqual(r.codigo, 0);
+  assert.match(r.stderr, /No se subió nada/);
+  assert.doesNotMatch(r.stderr, /sueltos/i);
+  assert.equal(subidas().length, 0);
+});
+
+// Hilo PRRT_kwDOVU6dHM687Ltc (descartado): --svg explícito no tiene que compartir carpeta ni nombre base con el .drawio,
+// pero pasa por la misma validación local que el deducido.
+test("CodeRabbit Ltc (guarda): --svg explícito inválido falla en local sin red; en otra carpeta y con otro nombre se acepta", async () => {
+  ctx.guardarArchivo();
+  montarHw();
+  const f = pareja();
+  ctx.archivo(join("dir.svg", "dentro.txt"), "x"); // crea un directorio llamado dir.svg
+  const casos = [
+    [join(ctx.dir, "no-hay", "x.svg"), /no existe|no se pudo leer/i],
+    [join(ctx.dir, "dir.svg"), /no es un archivo/i],
+    [ctx.archivo("otra.png", SVG), /\.svg/i],
+    [ctx.archivo(join("exportes", "vacio.svg"), ""), /vacío/i],
+  ];
+  for (const [rutaSvg, esperado] of casos) {
+    const r = await ctx.ejecutar(["subir", f.drawio, "--svg", rutaSvg, "--pagina", SLUG, ...OPC]);
+    assert.notEqual(r.codigo, 0, rutaSvg);
+    assert.match(r.stderr, /^Error: /m, `${rutaSvg}: mensaje de error de la CLI`);
+    assert.match(r.stderr, esperado, `${rutaSvg}: ${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /\n\s+at /, `${rutaSvg}: sin traza de pila`);
+  }
+  assert.equal(ctx.peticiones.length, 0, "sin red");
+
+  const otra = ctx.archivo(join("exportes", "otra.svg"), SVG);
+  const r = await ctx.ejecutar(["subir", f.drawio, "--svg", otra, "--pagina", SLUG, ...OPC]);
+  assert.equal(r.codigo, 0, r.stderr);
+  assert.equal(subidas()[1].query.get("nombre"), "otra.svg");
+  assert.equal(aplicaciones().length, 1);
+});
