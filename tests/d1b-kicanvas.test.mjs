@@ -31,7 +31,8 @@ const VENDOR = "public/vendor/kicanvas/kicanvas.js";
 const SCRIPT_KICANVAS = "/vendor/kicanvas/kicanvas.js";
 // sha256 del kicanvas.js oficial (kicanvas.org, 2026-04-28, ca910f25…) tras quitar SOLO la sentencia
 // document.body.appendChild(f`<link rel="stylesheet" href="https://fonts.googleapis.com/…" />`); (fin de línea LF).
-const SHA_PARCHEADO = "4b618fdd7beb0516bb3702b5af9dde370b2046e0171fa4e9ec73caa9bc216776";
+// Segundo parche: render() de kc-ui-icon crea el <use> con createElementNS y lo inserta como nodo (sin $$:0:$$ en un href).
+const SHA_PARCHEADO = "b81b82934abbb19171192d86a5b0e4be7824fd82f7ed7f67ce87db9a1ece92d9";
 
 // Inyección para montarVisores: nada de red ni de <script> real en los tests.
 function falsoKicad(texto = SCH) {

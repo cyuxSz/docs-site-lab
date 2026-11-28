@@ -72,7 +72,7 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-padding-top: 96px; }
+html { scroll-padding-top: calc(var(--cabecera-fondo) + 29px); }
 body {
   margin: 0;
   background: var(--bg-image) fixed, var(--bg);
@@ -624,7 +624,7 @@ abbr.glosa { text-decoration: underline dotted var(--accent); text-underline-off
 .comentario { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--glass); }
 .comentario:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 .comentario.resuelto > :not(.comentarios-respuestas), .comentario.resuelto > .comentarios-respuestas > .comentario > * { opacity: .6; }
-:root[data-vista-lector] .comentario { scroll-margin-top: calc(var(--cabecera-fondo) + var(--aviso-lector-alto) + 20px - 96px); }
+:root[data-vista-lector] .comentario { scroll-margin-top: calc(var(--aviso-lector-alto) - 9px); }
 .comentario.borrado > .comentario-texto { color: var(--muted); font-style: italic; }
 .comentario-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
 .comentario-autor { color: var(--text); font-weight: 600; }
@@ -949,10 +949,10 @@ main.caratula { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
 .hw-papelera-restaurar:focus-visible, .hw-papelera .atajos-bar button:focus-visible, [data-hw-abrir-papelera]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Importar páginas (src/components/HwImportar.astro): solo maquetación; las listas hacen scroll propio. */
-.hw-importar { width: 36rem; }
+.hw-importar { width: 36rem; overflow-y: auto; max-height: calc(100dvh - 24px); }
 .hw-importar-cuerpo { display: grid; gap: 10px; min-width: 0; padding: 14px; }
 .hw-importar-cuerpo > *, .hw-importar-cuerpo h3 { margin: 0; }
-.hw-importar-lista { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow: auto; }
+.hw-importar-lista { list-style: none; margin: 0; padding: 0; }
 .hw-importar-lista li { display: grid; justify-content: stretch; gap: 2px; overflow-wrap: anywhere; }
 .hw-importar .hw-progreso { width: 100%; }
 

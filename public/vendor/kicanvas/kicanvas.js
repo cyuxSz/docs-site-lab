@@ -84,9 +84,7 @@ var Ks=Object.defineProperty;var vn=Object.getOwnPropertyDescriptor;var c=(s,e)=
                 height: auto;
                 fill: currentColor;
             }
-        `]}render(){let e=this.textContent??"";if(e.startsWith("svg:")){let t=e.slice(4),r=`${s.sprites_url}#${t}`;return f`<svg viewBox="0 0 48 48" width="48">
-                <use xlink:href="${r}" />
-            </svg>`}else return f`<slot></slot>`}};window.customElements.define("kc-ui-icon",i2);var he=class extends N{static{c(this,"KCUIButtonElement")}static{this.styles=[...N.styles,y`
+        `]}render(){let e=this.textContent??"";if(e.startsWith("svg:")){let t=e.slice(4),r=`${s.sprites_url}#${t}`;let u=document.createElementNS("http://www.w3.org/2000/svg","use");u.setAttribute("href",r);return f`<svg viewBox="0 0 48 48" width="48">${u}</svg>`}else return f`<slot></slot>`}};window.customElements.define("kc-ui-icon",i2);var he=class extends N{static{c(this,"KCUIButtonElement")}static{this.styles=[...N.styles,y`
             :host {
                 display: inline-flex;
                 position: relative;
